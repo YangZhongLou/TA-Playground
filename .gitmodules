@@ -1,0 +1,3 @@
+[submodule "SkillHub"]
+	path = SkillHub
+	url = https://github.com/YangZhongLou/SkillHub.git
