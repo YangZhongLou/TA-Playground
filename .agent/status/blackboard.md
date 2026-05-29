@@ -1,5 +1,5 @@
 ---
-updated: 2026-05-29T10:00:00Z
+updated: 2026-05-29T11:00:00Z
 phase: 1. Plan
 ---
 
@@ -36,6 +36,36 @@ phase: 1. Plan
 | 2026-05-29 | MCP Bug 修复: create_material_instance crash, MID auto-create |
 | 2026-05-29 | UE 5.7 测试工程创建, UnrealMCP submodule 集成 |
 | 2026-05-29 | 安全权限规则: deny/ask 删除操作 |
+
+## Current Milestone
+
+**M1: 玉石材质 (Jade Material) — COMPLETE**
+
+| Phase | 内容 | Result | Status |
+|-------|------|--------|--------|
+| P1 基础材质 | M_Jade_Master + PBR nodes + MI_Jade_Green + 3-point | 18/18 PASS | done |
+| P2 次表面散射 | M_Jade_SSS + SubsurfaceProfile auto-create + 逆光 | 18/18 PASS | done |
+| P3 内部细节 | Fresnel rim glow + procedural noise clouds | 17/17 PASS | done |
+| P4 变体展示 | 白玉/翡翠/紫罗兰 3 variants showcase | 35/35 PASS | done |
+
+**M2: Material Expression System — IN PROGRESS**
+
+| Phase | 内容 | Result | Status |
+|-------|------|--------|--------|
+| P1 Lerp/OneMinus/Tex | Lerp blend, OneMinus smooth→rough, TextureSample | 23/23 PASS | done |
+
+## Active Work
+
+- **Current Phase**: M2 P1 Complete
+- **New nodes**: Lerp (LinearInterpolate), OneMinus, TextureSampleParameter2D (tinted)
+- **Blockers**: None
+
+## Recent Changes
+
+| Date | What |
+|------|------|
+| 2026-05-29 | M2 P1: Lerp + OneMinus + TextureSample 23/23 PASS, 3 new master materials |
+| 2026-05-29 | M1 Complete: 88/88 P1-P4, asset auto-save fix verified |
 
 ## Risk Board
 
