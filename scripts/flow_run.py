@@ -40,11 +40,10 @@ print("  Review: all APIs previously tested [OK]\n")
 # ── Phase 3: Implement ──
 print("Phase 3: Implement")
 
-# Task 1: Cleanup
-print("\n[Task 1] Cleanup...")
+# Task 1: Cleanup actors only (MI is persistent, don't delete)
+print("\n[Task 1] Cleanup actors...")
 for name in ["JadeSphere", "KeyLight", "RimLight", "SkyLight"]:
     step(f"destroy {name}", "destroy_actor", {"name": name}, expect_ok=False)
-step("delete old MI", "delete_asset", {"path": "/Game/Materials/Instances/MI_Jade_Green"}, expect_ok=False)
 
 # Task 2: Create MI
 print("\n[Task 2] Create MI_Jade_Green...")
