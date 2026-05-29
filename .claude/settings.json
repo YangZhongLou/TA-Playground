@@ -15,7 +15,7 @@
       "Bash(mkfs.)",
       "Bash(chmod -R 777 /)",
       "Bash(> /dev/sda)",
-      "PowerShell(Remove-Item -Recurse -Force C:\\)",
+      "PowerShell(Remove-Item -Recurse -Force C:)",
       "PowerShell(Remove-Item -Recurse -Force /)",
       "PowerShell(Clear-Disk)",
       "PowerShell(Format-Volume)"
