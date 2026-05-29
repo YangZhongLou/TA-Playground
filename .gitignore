@@ -1,0 +1,28 @@
+# Unreal Engine
+Binaries/
+Intermediate/
+DerivedDataCache/
+Saved/
+Build/
+*.sln
+*.xcodeproj
+.vs/
+.vscode/
+
+# Content (keep Maps but ignore auto-generated)
+Content/Collections/
+Content/Developers/
+Content/__ExternalActors__/
+Content/__ExternalObjects__/
+
+# UnrealMCP Plugin (junction to submodule)
+Plugins/UnrealMCP/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+Thumbs.db
+.DS_Store
