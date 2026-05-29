@@ -5,7 +5,7 @@
 	"Description": "Technical Artist Playground — UE rendering and graphics experiments",
 	"Modules": [
 		{
-			"Name": "TA-Playground",
+			"Name": "TAPlayground",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
 		}

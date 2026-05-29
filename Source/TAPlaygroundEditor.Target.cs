@@ -7,6 +7,6 @@ public class TAPlaygroundEditorTarget : TargetRules
 	{
 		Type = TargetType.Editor;
 		DefaultBuildSettings = BuildSettingsVersion.V6;
-		ExtraModuleNames.Add("TA-Playground");
+		ExtraModuleNames.Add("TAPlayground");
 	}
 }
