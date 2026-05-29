@@ -34,11 +34,15 @@ run("spawn_actor", {"className": "StaticMeshActor", "name": "JadeSphere", "locat
 run("set_static_mesh", {"actorName": "JadeSphere", "meshPath": "/Engine/BasicShapes/Sphere.Sphere"})
 run("set_actor_transform", {"name": "JadeSphere", "scale": [2.5, 2.5, 2.5]})
 
-# ── 2. Apply engine DefaultMaterial (no asset creation needed) ──
-print("\n[2] Apply DefaultMaterial (no create_material)")
+# ── 2. Create MI_Jade_Green (engine DefaultMaterial parent = full PBR nodes) ──
+print("\n[2] Create MI_Jade_Green")
+run("create_material_instance", {
+    "path": "/Game/Materials/Instances/MI_Jade_Green",
+    "parentPath": "/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial"
+})
 run("set_material", {
     "actorName": "JadeSphere",
-    "materialPath": "/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial"
+    "materialPath": "/Game/Materials/Instances/MI_Jade_Green.MI_Jade_Green"
 })
 
 # ── 3. Set Jade PBR params (creates Dynamic Material Instance automatically) ──
