@@ -1,5 +1,5 @@
-"""Dev-Flow: Plan->Architect->Implement->Test, verified step by step."""
-import json, socket, time
+"""Dev-Flow pipeline — unique names, no destroy, persistent MI."""
+import json, socket, time, uuid
 
 HOST, PORT = "127.0.0.1", 13377
 results = []
@@ -29,89 +29,76 @@ def step(name, method, params=None, expect_ok=True):
         results.append((name, False))
         return {"success": False}
 
-# ── Phase 2: Architect (condensed: all APIs verified) ──
-print("Phase 2: Architect")
-print("  API plan: destroy_actor -> create_material_instance -> spawn_actor ->")
-print("  set_static_mesh -> set_actor_transform -> set_material ->")
-print("  set_material_parameter(×4) -> spawn lights -> set_light_parameters ->")
-print("  focus_viewport -> take_screenshot")
-print("  Review: all APIs previously tested [OK]\n")
+tag = uuid.uuid4().hex[:4]
+sphere = f"JadeSphere_{tag}"
+key = f"KeyLight_{tag}"
+rim = f"RimLight_{tag}"
+sky = f"SkyLight_{tag}"
 
-# ── Phase 3: Implement ──
-print("Phase 3: Implement")
+print("=== Jade Pipeline ===\n")
 
-# Task 1: Cleanup actors only (MI is persistent, don't delete)
-print("\n[Task 1] Cleanup actors...")
-for name in ["JadeSphere", "KeyLight", "RimLight", "SkyLight"]:
-    step(f"destroy {name}", "destroy_actor", {"name": name}, expect_ok=False)
-
-# Task 2: Create MI
-print("\n[Task 2] Create MI_Jade_Green...")
-step("create MI_Jade_Green", "create_material_instance", {
+# Task 1
+print("[1] MI_Jade_Green")
+step("create/reuse MI", "create_material_instance", {
     "path": "/Game/Materials/Instances/MI_Jade_Green",
     "parentPath": "/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial"
 })
-step("verify MI exists", "get_asset_info", {"path": "/Game/Materials/Instances/MI_Jade_Green"})
 
-# Task 3: Sphere + MI + PBR
-print("\n[Task 3] Sphere + MI + PBR...")
+# Task 2
+print(f"\n[2] Sphere ({sphere}) + PBR")
 step("spawn sphere", "spawn_actor", {
-    "className": "StaticMeshActor", "name": "JadeSphere", "location": [0, 0, 150]
+    "className": "StaticMeshActor", "name": sphere, "location": [0, 0, 150]
 })
 step("set mesh", "set_static_mesh", {
-    "actorName": "JadeSphere", "meshPath": "/Engine/BasicShapes/Sphere.Sphere"
+    "actorName": sphere, "meshPath": "/Engine/BasicShapes/Sphere.Sphere"
 })
 step("scale x2.5", "set_actor_transform", {
-    "name": "JadeSphere", "scale": [2.5, 2.5, 2.5]
+    "name": sphere, "scale": [2.5, 2.5, 2.5]
 })
 step("apply MI", "set_material", {
-    "actorName": "JadeSphere",
+    "actorName": sphere,
     "materialPath": "/Game/Materials/Instances/MI_Jade_Green.MI_Jade_Green"
 })
-# PBR params
 for pname, ptype, pval in [
     ("BaseColor", "v", [0.05, 0.35, 0.20]),
     ("Roughness", "s", 0.08),
     ("Specular", "s", 0.55),
     ("Metallic", "s", 0.0),
 ]:
-    params = {"actorName": "JadeSphere", "parameterName": pname}
+    params = {"actorName": sphere, "parameterName": pname}
     if ptype == "s": params["scalarValue"] = pval
     else: params["vectorValue"] = pval
     step(f"{pname}={pval}", "set_material_parameter", params)
 
-# Task 4: Lighting
-print("\n[Task 4] Three-point lighting...")
+# Task 3
+print(f"\n[3] Lights ({key}, {rim}, {sky})")
 step("KeyLight", "spawn_actor", {
-    "className": "PointLight", "name": "KeyLight", "location": [600, 400, 500]
+    "className": "PointLight", "name": key, "location": [600, 400, 500]
 })
 step("KeyLight params", "set_light_parameters", {
-    "actorName": "KeyLight", "intensity": 120.0, "color": [1.0, 0.95, 0.85]
+    "actorName": key, "intensity": 120.0, "color": [1.0, 0.95, 0.85]
 })
 step("RimLight", "spawn_actor", {
-    "className": "PointLight", "name": "RimLight", "location": [-500, -300, 300]
+    "className": "PointLight", "name": rim, "location": [-500, -300, 300]
 })
 step("RimLight params", "set_light_parameters", {
-    "actorName": "RimLight", "intensity": 60.0, "color": [0.4, 0.6, 1.0]
+    "actorName": rim, "intensity": 60.0, "color": [0.4, 0.6, 1.0]
 })
 step("SkyLight", "spawn_actor", {
-    "className": "SkyLight", "name": "SkyLight", "location": [0, 0, 900]
+    "className": "SkyLight", "name": sky, "location": [0, 0, 900]
 })
 
-# Task 5: Focus + Screenshot
-print("\n[Task 5] Focus + Screenshot...")
-step("focus viewport", "focus_viewport", {"actorName": "JadeSphere"})
-r = step("screenshot", "take_screenshot", {"filename": "jade_flow_result"})
+# Task 4
+print(f"\n[4] Focus + Screenshot")
+step("focus viewport", "focus_viewport", {"actorName": sphere})
+r = step("screenshot", "take_screenshot", {"filename": f"jade_{sphere}"})
 if r.get("success"):
-    print(f"       -> {r.get('result',{}).get('path','')}")
+    result = r.get("result", {})
+    print(f"       path={result.get('path','')} saved={result.get('saved','')}")
 
-# ── Phase 4: Test (summary) ──
 passed = sum(1 for _, ok in results if ok)
 total = len(results)
-print(f"\n{'='*50}")
-print(f"Phase 4: Test — {passed}/{total} passed")
-if passed == total:
-    print("ALL TESTS PASSED")
-else:
+print(f"\n=== {passed}/{total} passed ===")
+if passed != total:
     for name, ok in results:
         if not ok: print(f"  FAILED: {name}")
