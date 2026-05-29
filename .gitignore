@@ -23,9 +23,8 @@ __pycache__/
 *.pyc
 .venv/
 
-# Claude Code symlinks
-.claude/agents/
-.claude/skills/
+# Claude Code — all symlinks from SkillHub, don't track
+.claude/
 
 # OS
 Thumbs.db
