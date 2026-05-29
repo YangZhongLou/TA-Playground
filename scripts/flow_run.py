@@ -1,4 +1,4 @@
-"""Dev-Flow pipeline — unique names, no destroy, persistent MI."""
+"""Dev-Flow pipeline — custom M_Jade_Master + MI_Jade_Green + Sphere + Lights + Screenshot."""
 import json, socket, time, uuid
 
 HOST, PORT = "127.0.0.1", 13377
@@ -35,13 +35,33 @@ key = f"KeyLight_{tag}"
 rim = f"RimLight_{tag}"
 sky = f"SkyLight_{tag}"
 
-print("=== Jade Pipeline ===\n")
+print("=== Jade P1 — Custom M_Jade_Master ===\n")
 
-# Task 1
-print("[1] MI_Jade_Green")
-step("create/reuse MI", "create_material_instance", {
+# Task 0: Create M_Jade_Master with PBR nodes
+print("[0] M_Jade_Master (custom parent material)")
+step("create M_Jade_Master", "create_material", {
+    "path": "/Game/Materials/Master/M_Jade_Master",
+    "shadingModel": "default_lit",
+    "blendMode": "opaque",
+    "baseColor": [0.05, 0.35, 0.20],
+    "metallic": 0.0,
+    "roughness": 0.08,
+    "specular": 0.55,
+    "reuse": True
+})
+# Verify
+r = step("verify M_Jade_Master exists", "get_asset_info", {
+    "path": "/Game/Materials/Master/M_Jade_Master"
+})
+if r.get("success"):
+    info = r.get("result", {})
+    print(f"       class={info.get('class','?')} path={info.get('path','?')}")
+
+# Task 1: Create MI_Jade_Green from M_Jade_Master
+print(f"\n[1] MI_Jade_Green (parent = M_Jade_Master)")
+step("create MI", "create_material_instance", {
     "path": "/Game/Materials/Instances/MI_Jade_Green",
-    "parentPath": "/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial"
+    "parentPath": "/Game/Materials/Master/M_Jade_Master.M_Jade_Master"
 })
 
 # Task 2

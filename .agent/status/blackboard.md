@@ -1,6 +1,6 @@
 ---
-updated: 2026-05-29T05:00:00Z
-phase: 6. Commit
+updated: 2026-05-29T08:30:00Z
+phase: 1. Plan
 ---
 
 # Blackboard — TA-Playground
@@ -27,6 +27,9 @@ phase: 6. Commit
 
 | Date | What |
 |------|------|
+| 2026-05-29 | P1 重测通过：16/16 命令全部 PASS（截图初次timeout，重试成功） |
+| 2026-05-29 | Submodule 重构：UnrealMCP 移至 Plugins/UnrealMCP + 插件文件提至 repo root + MaterialEditor 模块依赖修复 |
+| 2026-05-29 | Phase 6 Commit: UnrealMCP submodule 移至 Plugins/UnrealMCP, 插件文件提至 repo root, push 成功 |
 | 2026-05-29 | Jade P1 重新跑通：17/22 核心命令通过，截图保存 |
 | 2026-05-29 | Blackboard 系统上线：dev-flow + project-manager 集成黑板报协议 |
 | 2026-05-29 | MCP Bug 修复: create_material_instance crash, MID auto-create |
