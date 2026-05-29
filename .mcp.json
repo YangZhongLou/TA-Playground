@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "unreal": {
+      "command": "UnrealMCP\\MCP_Server\\target\\debug\\unreal-mcp-server.exe"
+    }
+  }
+}
