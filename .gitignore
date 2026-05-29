@@ -23,6 +23,10 @@ __pycache__/
 *.pyc
 .venv/
 
+# Claude Code symlinks
+.claude/agents/
+.claude/skills/
+
 # OS
 Thumbs.db
 .DS_Store
