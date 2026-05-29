@@ -33,7 +33,7 @@ tag = uuid.uuid4().hex[:4]
 sphere = f"JadeSphere_{tag}"
 key = f"KeyLight_{tag}"
 rim = f"RimLight_{tag}"
-sky = f"SkyLight_{tag}"
+sun = f"SunLight_{tag}"
 
 print("=== Jade P1 — Custom M_Jade_Master ===\n")
 
@@ -49,7 +49,6 @@ step("create M_Jade_Master", "create_material", {
     "specular": 0.55,
     "reuse": True
 })
-# Verify
 r = step("verify M_Jade_Master exists", "get_asset_info", {
     "path": "/Game/Materials/Master/M_Jade_Master"
 })
@@ -90,22 +89,38 @@ for pname, ptype, pval in [
     else: params["vectorValue"] = pval
     step(f"{pname}={pval}", "set_material_parameter", params)
 
-# Task 3
-print(f"\n[3] Lights ({key}, {rim}, {sky})")
+# Task 3: Lights — no SkyLight (captures empty scene = black)
+# Use DirectionalLight (sun) + PointLights for 3-point setup
+print(f"\n[3] Lights ({sun}, {key}, {rim})")
+step("SunLight", "spawn_actor", {
+    "className": "DirectionalLight", "name": sun, "location": [800, 400, 800],
+    "mobility": "Movable"
+})
+step("SunLight params", "set_light_parameters", {
+    "actorName": sun, "intensity": 15.0, "color": [1.0, 0.95, 0.85]
+})
+step("SunLight angle", "set_actor_transform", {
+    "name": sun, "rotation": [-45, -30, 0]
+})
+
 step("KeyLight", "spawn_actor", {
-    "className": "PointLight", "name": key, "location": [600, 400, 500]
+    "className": "PointLight", "name": key, "location": [600, 400, 500],
+    "mobility": "Movable"
 })
 step("KeyLight params", "set_light_parameters", {
-    "actorName": key, "intensity": 120.0, "color": [1.0, 0.95, 0.85]
+    "actorName": key, "intensity": 5000.0, "color": [1.0, 0.95, 0.85]
 })
 step("RimLight", "spawn_actor", {
-    "className": "PointLight", "name": rim, "location": [-500, -300, 300]
+    "className": "PointLight", "name": rim, "location": [-500, -300, 300],
+    "mobility": "Movable"
 })
 step("RimLight params", "set_light_parameters", {
-    "actorName": rim, "intensity": 60.0, "color": [0.4, 0.6, 1.0]
+    "actorName": rim, "intensity": 3000.0, "color": [0.4, 0.6, 1.0]
 })
-step("SkyLight", "spawn_actor", {
-    "className": "SkyLight", "name": sky, "location": [0, 0, 900]
+
+# Fix auto-exposure which can make scene black
+step("auto-exposure off", "run_console_command", {
+    "cmd": "r.DefaultFeature.AutoExposure 0"
 })
 
 # Task 4
