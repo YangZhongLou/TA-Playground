@@ -1,0 +1,117 @@
+// Copyright (c) 2026 TA-Playground. All Rights Reserved.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "HexGeometry.h"
+#include "HexTerrainGenerator.generated.h"
+
+/** Terrain layer types, ordered by elevation. */
+UENUM(BlueprintType)
+enum class EHexTerrainType : uint8
+{
+	Water  UMETA(DisplayName = "Water"),
+	Sand   UMETA(DisplayName = "Sand"),
+	Grass  UMETA(DisplayName = "Grass"),
+	Rock   UMETA(DisplayName = "Rock"),
+	Snow   UMETA(DisplayName = "Snow"),
+	Count  UMETA(Hidden),
+};
+
+/** Configuration for terrain generation. */
+USTRUCT(BlueprintType)
+struct FHexTerrainConfig
+{
+	GENERATED_BODY()
+
+	/** Cell circumradius. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain")
+	float CellRadius = 100.0f;
+
+	/** Maximum elevation variation (peak-to-valley). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain")
+	float HeightScale = 150.0f;
+
+	/** Noise frequency — higher = more detail. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain")
+	float NoiseScale = 0.08f;
+
+	/** Noise octaves — higher = more detail but slower. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain", meta = (ClampMin = "1", ClampMax = "8"))
+	int32 NoiseOctaves = 4;
+
+	/** Height threshold for water [0,1]. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float WaterLevel = 0.28f;
+
+	/** Height threshold for sand (above water). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float SandLevel = 0.38f;
+
+	/** Height threshold for grass. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float GrassLevel = 0.60f;
+
+	/** Height threshold for rock. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float RockLevel = 0.78f;
+
+	/** Water cell thickness (how far below 0 the water extends). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain")
+	float WaterThickness = 20.0f;
+
+	/** Base height offset (sea level). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain")
+	float SeaLevel = 0.0f;
+};
+
+/** Per-cell terrain data. */
+USTRUCT(BlueprintType)
+struct FHexTerrainCellData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FHexCoord Axial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FVector WorldPos;
+
+	/** Normalized height [0,1]. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float NormalizedHeight = 0.0f;
+
+	/** World-space Z height. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	float Height = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	EHexTerrainType TerrainType = EHexTerrainType::Grass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FLinearColor Color = FLinearColor::White;
+};
+
+/**
+ * Procedural terrain generator for hexagonal grids.
+ * Uses layered Perlin noise for height and automatic terrain classification.
+ */
+class TAPLAYGROUND_API FHexTerrainGenerator
+{
+public:
+	/** Generate terrain cell data for a spiral grid. */
+	static TArray<FHexTerrainCellData> Generate(
+		int32 GridRadius,
+		const FHexTerrainConfig& Config
+	);
+
+	/** Get the visual color for a terrain type. */
+	static FLinearColor GetTerrainColor(EHexTerrainType Type);
+
+	/** Get terrain type from normalized height. */
+	static EHexTerrainType ClassifyTerrain(float NormalizedHeight, const FHexTerrainConfig& Config);
+
+private:
+	/** Layered Perlin noise [0,1]. */
+	static float SampleNoise(float Q, float R, float Scale, int32 Octaves);
+};

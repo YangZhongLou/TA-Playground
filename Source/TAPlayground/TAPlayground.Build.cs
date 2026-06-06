@@ -10,5 +10,10 @@ public class TAPlayground : ModuleRules
 			"ProceduralMeshComponent"
 		});
 		PrivateDependencyModuleNames.AddRange(new string[] { });
+
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.Add("UnrealEd");
+		}
 	}
 }

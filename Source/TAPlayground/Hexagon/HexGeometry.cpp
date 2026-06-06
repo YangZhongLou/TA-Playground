@@ -12,12 +12,12 @@ const FHexCoord FHexGeometry::Directions[6] = {
 };
 
 const float FHexGeometry::CornerAnglesRad[6] = {
-	0.0f,                              // 0°   — East
-	UE_PI / 3.0f,                      // 60°  — North-East
-	2.0f * UE_PI / 3.0f,               // 120° — North-West
-	UE_PI,                             // 180° — West
-	4.0f * UE_PI / 3.0f,               // 240° — South-West
-	5.0f * UE_PI / 3.0f,               // 300° — South-East
+	UE_PI / 6.0f,         // 30°  — top-right
+	UE_PI / 2.0f,         // 90°  — top
+	5.0f * UE_PI / 6.0f,  // 150° — top-left
+	7.0f * UE_PI / 6.0f,  // 210° — bottom-left
+	3.0f * UE_PI / 2.0f,  // 270° — bottom
+	11.0f * UE_PI / 6.0f, // 330° — bottom-right
 };
 
 FVector FHexGeometry::HexToWorld(const FHexCoord& Hex, float CellRadius)

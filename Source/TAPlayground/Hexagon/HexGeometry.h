@@ -3,20 +3,24 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "HexGeometry.generated.h"
 
 /**
  * Pure math utilities for hexagonal coordinate systems.
- * No engine dependencies beyond Core — usable in any context.
- *
- * Coordinate system: Pointy-topped hexagons with Axial (q, r) coordinates.
+ * Pointy-topped hexagons with Axial (q, r) coordinates.
  * The third cube coordinate is implicit: s = -q - r.
  */
+USTRUCT(BlueprintType)
 struct TAPLAYGROUND_API FHexCoord
 {
+	GENERATED_BODY()
+
 	/** Axial coordinate column (pointing right). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	int32 Q = 0;
 
 	/** Axial coordinate row (pointing down-right). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	int32 R = 0;
 
 	FHexCoord() = default;
@@ -49,13 +53,13 @@ struct TAPLAYGROUND_API FHexCoord
 	{
 		return FHexCoord(Q * Scale, R * Scale);
 	}
-
-	/** Hash for use in TMap/TSet. */
-	friend uint32 GetTypeHash(const FHexCoord& Coord)
-	{
-		return HashCombine(GetTypeHash(Coord.Q), GetTypeHash(Coord.R));
-	}
 };
+
+/** Hash for use in TMap/TSet. */
+inline uint32 GetTypeHash(const FHexCoord& Coord)
+{
+	return HashCombine(GetTypeHash(Coord.Q), GetTypeHash(Coord.R));
+}
 
 /**
  * Static utility class for hexagonal grid math.
