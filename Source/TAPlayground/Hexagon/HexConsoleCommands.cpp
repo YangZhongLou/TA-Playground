@@ -80,12 +80,29 @@ static void HexDestroyAll(const TArray<FString>& Args)
 	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
 	if (!World) { UE_LOG(LogTemp, Warning, TEXT("hex.DestroyAll: No world")); return; }
 
-	int32 Count = 0;
+	// Collect first to avoid modifying the actor list during iteration,
+	// which can trigger TypedElement framework crashes.
+	TArray<AActor*> ToDestroy;
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
 		if (It->IsA<AHexPrism>() || It->IsA<AHexGrid>() || It->IsA<AHexTerrain>())
 		{
-			It->Destroy();
+			ToDestroy.Add(*It);
+		}
+	}
+
+	// Clear editor selection to avoid dangling TypedElement references
+	if (GEditor)
+	{
+		GEditor->SelectNone(true, true);
+	}
+
+	int32 Count = 0;
+	for (AActor* Actor : ToDestroy)
+	{
+		if (IsValid(Actor))
+		{
+			Actor->Destroy();
 			++Count;
 		}
 	}

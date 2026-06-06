@@ -90,7 +90,8 @@ void FHexPrismGenerator::Generate(
 			OutData.VertexColors.Add(BaseColor);
 			OutData.Tangents.Add(FProcMeshTangent(0.0f, 0.0f, 0.0f));
 
-			AddQuad(OutData, BL, BR, TR, TL);
+// CCW from outside: BL -> TL -> TR -> BR
+			AddQuad(OutData, BL, TL, TR, BR);
 		}
 	}
 
@@ -127,7 +128,7 @@ void FHexPrismGenerator::Generate(
 		for (int32 i = 0; i < 6; ++i)
 		{
 			const int32 Next = (i + 1) % 6;
-			AddTriangle(OutData, BottomCenterIndex, BottomCapRingIndices[Next], BottomCapRingIndices[i]);
+AddTriangle(OutData, BottomCenterIndex, BottomCapRingIndices[i], BottomCapRingIndices[Next]);
 		}
 	}
 
@@ -137,7 +138,7 @@ void FHexPrismGenerator::Generate(
 		for (int32 i = 0; i < 6; ++i)
 		{
 			const int32 Next = (i + 1) % 6;
-			AddTriangle(OutData, TopCenterIndex, TopCapRingIndices[i], TopCapRingIndices[Next]);
+AddTriangle(OutData, TopCenterIndex, TopCapRingIndices[Next], TopCapRingIndices[i]);
 		}
 	}
 
