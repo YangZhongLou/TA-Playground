@@ -51,7 +51,10 @@ void FHexPrismGenerator::Generate(
 	{
 		const int32 NextSide = (Side + 1) % 6;
 
-		for (int32 Seg = 0; Seg < HeightSegments; ++Seg)
+			// Outward normal = bisector of the two adjacent corners
+			const FVector SideNormal = (Corners[Side] + Corners[NextSide]).GetSafeNormal();
+
+			for (int32 Seg = 0; Seg < HeightSegments; ++Seg)
 		{
 			const float BottomAlpha = static_cast<float>(Seg) / static_cast<float>(HeightSegments);
 			const float TopAlpha    = static_cast<float>(Seg + 1) / static_cast<float>(HeightSegments);
@@ -62,7 +65,7 @@ void FHexPrismGenerator::Generate(
 			const int32 BL = OutData.Vertices.Num();
 			OutData.Vertices.Add(FVector(Corners[Side].X, Corners[Side].Y, BottomZ));
 			OutData.UVs.Add(FVector2D(static_cast<float>(Side) / 6.0f, BottomAlpha));
-			OutData.Normals.Add(FVector::ZeroVector);      // calculated by CalculateNormals
+			OutData.Normals.Add(SideNormal);
 			OutData.VertexColors.Add(BaseColor);
 			OutData.Tangents.Add(FProcMeshTangent(0.0f, 0.0f, 0.0f));
 
@@ -70,7 +73,7 @@ void FHexPrismGenerator::Generate(
 			const int32 BR = OutData.Vertices.Num();
 			OutData.Vertices.Add(FVector(Corners[NextSide].X, Corners[NextSide].Y, BottomZ));
 			OutData.UVs.Add(FVector2D(static_cast<float>(Side + 1) / 6.0f, BottomAlpha));
-			OutData.Normals.Add(FVector::ZeroVector);
+			OutData.Normals.Add(SideNormal);
 			OutData.VertexColors.Add(BaseColor);
 			OutData.Tangents.Add(FProcMeshTangent(0.0f, 0.0f, 0.0f));
 
@@ -78,7 +81,7 @@ void FHexPrismGenerator::Generate(
 			const int32 TR = OutData.Vertices.Num();
 			OutData.Vertices.Add(FVector(Corners[NextSide].X, Corners[NextSide].Y, TopZ));
 			OutData.UVs.Add(FVector2D(static_cast<float>(Side + 1) / 6.0f, TopAlpha));
-			OutData.Normals.Add(FVector::ZeroVector);
+			OutData.Normals.Add(SideNormal);
 			OutData.VertexColors.Add(BaseColor);
 			OutData.Tangents.Add(FProcMeshTangent(0.0f, 0.0f, 0.0f));
 
@@ -86,7 +89,7 @@ void FHexPrismGenerator::Generate(
 			const int32 TL = OutData.Vertices.Num();
 			OutData.Vertices.Add(FVector(Corners[Side].X, Corners[Side].Y, TopZ));
 			OutData.UVs.Add(FVector2D(static_cast<float>(Side) / 6.0f, TopAlpha));
-			OutData.Normals.Add(FVector::ZeroVector);
+			OutData.Normals.Add(SideNormal);
 			OutData.VertexColors.Add(BaseColor);
 			OutData.Tangents.Add(FProcMeshTangent(0.0f, 0.0f, 0.0f));
 
