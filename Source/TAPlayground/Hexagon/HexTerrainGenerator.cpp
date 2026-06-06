@@ -24,7 +24,10 @@ TArray<FHexTerrainCellData> FHexTerrainGenerator::Generate(
 			static_cast<float>(Coord.Q),
 			static_cast<float>(Coord.R),
 			Config.NoiseScale,
-			Config.NoiseOctaves
+			Config.NoiseOctaves,
+			Config.NoiseSeed,
+			Config.Lacunarity,
+			Config.Persistence
 		);
 
 		// Clamp and map to world height
@@ -67,8 +70,11 @@ EHexTerrainType FHexTerrainGenerator::ClassifyTerrain(float NormalizedHeight, co
 	return EHexTerrainType::Snow;
 }
 
-float FHexTerrainGenerator::SampleNoise(float Q, float R, float Scale, int32 Octaves)
+float FHexTerrainGenerator::SampleNoise(float Q, float R, float Scale, int32 Octaves, int32 Seed, float Lacunarity, float Persistence)
 {
+	// Offset by seed to create different terrain layouts
+	const float SeedOffset = static_cast<float>(Seed) * 100.0f;
+
 	float Amplitude = 1.0f;
 	float Frequency = Scale;
 	float MaxValue = 0.0f;
@@ -76,13 +82,16 @@ float FHexTerrainGenerator::SampleNoise(float Q, float R, float Scale, int32 Oct
 
 	for (int32 i = 0; i < Octaves; ++i)
 	{
-		const float Sample = FMath::PerlinNoise2D(FVector2D(Q * Frequency, R * Frequency));
+		const float Sample = FMath::PerlinNoise2D(FVector2D(
+			Q * Frequency + SeedOffset,
+			R * Frequency + SeedOffset
+		));
 		// Perlin returns [-0.5, 0.5] in UE, remap to [0,1] per octave
 		Total += (Sample + 0.5f) * Amplitude;
 		MaxValue += Amplitude;
 
-		Amplitude *= 0.5f;
-		Frequency *= 2.0f;
+		Amplitude *= Persistence;
+		Frequency *= Lacunarity;
 	}
 
 	return Total / MaxValue;

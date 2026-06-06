@@ -47,6 +47,37 @@ void AHexTerrain::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 		{
 			ApplyMaterial();
 		}
+
+		// Handle the "Randomize Seed" toggle — when checked, randomize and reset
+		if (Name == GET_MEMBER_NAME_CHECKED(FHexTerrainConfig, bRandomizeSeed))
+		{
+			if (TerrainConfig.bRandomizeSeed)
+			{
+				TerrainConfig.NoiseSeed = FMath::RandRange(0, 99999);
+				TerrainConfig.bRandomizeSeed = false;
+			}
+			RegenerateTerrain();
+		}
+	}
+}
+
+void AHexTerrain::PostEditChangeChainProperty(FPropertyChangedChainEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeChainProperty(PropertyChangedEvent);
+
+	if (!bAutoRegenerate) return;
+
+	// When any nested struct property changes, regenerate.
+	// PostEditChangeChainProperty reliably catches deep property changes
+	// that PostEditChangeProperty might miss with nested structs.
+	const FName HeadName = PropertyChangedEvent.PropertyChain.GetHead()->GetValue()->GetFName();
+	static const TSet<FName> TerrainProps = {
+		GET_MEMBER_NAME_CHECKED(AHexTerrain, TerrainConfig),
+	};
+
+	if (TerrainProps.Contains(HeadName))
+	{
+		RegenerateTerrain();
 	}
 }
 #endif

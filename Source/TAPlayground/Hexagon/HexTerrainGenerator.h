@@ -63,6 +63,22 @@ struct FHexTerrainConfig
 	/** Base height offset (sea level). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain")
 	float SeaLevel = 0.0f;
+
+	/** Random seed for noise — change to get different terrain layout. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain")
+	int32 NoiseSeed = 42;
+
+	/** Click to randomize the seed and regenerate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain", meta = (MakeEditWidget = ""))
+	bool bRandomizeSeed = false;
+
+	/** Lacunarity — frequency multiplier per octave. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain|Advanced", meta = (ClampMin = "1.0", ClampMax = "4.0"))
+	float Lacunarity = 2.0f;
+
+	/** Persistence — amplitude multiplier per octave. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terrain|Advanced", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float Persistence = 0.5f;
 };
 
 /** Per-cell terrain data. */
@@ -113,5 +129,5 @@ public:
 
 private:
 	/** Layered Perlin noise [0,1]. */
-	static float SampleNoise(float Q, float R, float Scale, int32 Octaves);
+	static float SampleNoise(float Q, float R, float Scale, int32 Octaves, int32 Seed = 42, float Lacunarity = 2.0f, float Persistence = 0.5f);
 };
