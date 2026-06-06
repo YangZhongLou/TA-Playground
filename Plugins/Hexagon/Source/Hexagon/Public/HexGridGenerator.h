@@ -8,7 +8,7 @@
 /**
  * Data for a single hex cell in the grid.
  */
-struct TAPLAYGROUND_API FHexCellData
+struct HEXAGON_API FHexCellData
 {
 	/** Axial coordinate of this cell. */
 	FHexCoord Axial;
@@ -31,7 +31,7 @@ struct TAPLAYGROUND_API FHexCellData
 /**
  * Generates hexagonal grid layouts (cell positions and metadata).
  */
-class TAPLAYGROUND_API FHexGridGenerator
+class HEXAGON_API FHexGridGenerator
 {
 public:
 	/**

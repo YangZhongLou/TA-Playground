@@ -15,7 +15,7 @@ class UMaterialInterface;
  * Parameters are editable in-editor and at runtime; mesh regenerates automatically.
  */
 UCLASS(ClassGroup = (Hexagon), meta = (BlueprintSpawnableComponent))
-class TAPLAYGROUND_API AHexPrism : public AActor
+class HEXAGON_API AHexPrism : public AActor
 {
 	GENERATED_BODY()
 

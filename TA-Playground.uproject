@@ -16,6 +16,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "Hexagon",
+			"Enabled": true
+		},
+		{
 			"Name": "ProceduralMeshComponent",
 			"Enabled": true
 		}

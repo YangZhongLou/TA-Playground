@@ -11,7 +11,7 @@
  * The third cube coordinate is implicit: s = -q - r.
  */
 USTRUCT(BlueprintType)
-struct TAPLAYGROUND_API FHexCoord
+struct HEXAGON_API FHexCoord
 {
 	GENERATED_BODY()
 
@@ -64,7 +64,7 @@ inline uint32 GetTypeHash(const FHexCoord& Coord)
 /**
  * Static utility class for hexagonal grid math.
  */
-class TAPLAYGROUND_API FHexGeometry
+class HEXAGON_API FHexGeometry
 {
 public:
 	/** Six axial directions: E, NE, NW, W, SW, SE (clockwise from East). */

@@ -112,7 +112,7 @@ struct FHexTerrainCellData
  * Procedural terrain generator for hexagonal grids.
  * Uses layered Perlin noise for height and automatic terrain classification.
  */
-class TAPLAYGROUND_API FHexTerrainGenerator
+class HEXAGON_API FHexTerrainGenerator
 {
 public:
 	/** Generate terrain cell data for a spiral grid. */

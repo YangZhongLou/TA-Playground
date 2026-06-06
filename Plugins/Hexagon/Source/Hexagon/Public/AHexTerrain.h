@@ -16,7 +16,7 @@ class UMaterialInterface;
  * and automatic terrain type classification (water/sand/grass/rock/snow).
  */
 UCLASS(ClassGroup = (Hexagon), meta = (BlueprintSpawnableComponent))
-class TAPLAYGROUND_API AHexTerrain : public AActor
+class HEXAGON_API AHexTerrain : public AActor
 {
 	GENERATED_BODY()
 

@@ -10,7 +10,7 @@
  * Generates mesh data for a hexagonal prism (pointy-topped).
  * Outputs raw vertex/triangle/UV/normal data that can be fed into any mesh component.
  */
-struct TAPLAYGROUND_API FHexPrismMeshData
+struct HEXAGON_API FHexPrismMeshData
 {
 	TArray<FVector> Vertices;
 	TArray<int32> Triangles;
@@ -33,7 +33,7 @@ struct TAPLAYGROUND_API FHexPrismMeshData
 /**
  * Procedural mesh generator for hexagonal prisms.
  */
-class TAPLAYGROUND_API FHexPrismGenerator
+class HEXAGON_API FHexPrismGenerator
 {
 public:
 	/**

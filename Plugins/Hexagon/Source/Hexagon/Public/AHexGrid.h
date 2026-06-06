@@ -17,7 +17,7 @@ class UMaterialInterface;
  * Each cell can have an independent color via vertex colors.
  */
 UCLASS(ClassGroup = (Hexagon), meta = (BlueprintSpawnableComponent))
-class TAPLAYGROUND_API AHexGrid : public AActor
+class HEXAGON_API AHexGrid : public AActor
 {
 	GENERATED_BODY()
 
