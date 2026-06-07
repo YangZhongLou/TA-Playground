@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "unreal": {
-      "command": "UnrealMCP\\MCP_Server\\target\\debug\\unreal-mcp-server.exe"
+      "command": "D:/Mine/unreal_projects/TA-Playground/Plugins/UnrealMCP/MCP_Server/target/debug/unreal-mcp-server.exe"
     }
   }
 }

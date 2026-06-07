@@ -1,19 +1,34 @@
 // Copyright (c) 2026 TA-Playground. All Rights Reserved.
 
 #include "AHexTerrain.h"
-#include "ProceduralMeshComponent.h"
-#include "HexPrismGenerator.h"
+#include "HexTerrainChunk.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
+#include "Engine/World.h"
 #include "UObject/ConstructorHelpers.h"
+
+// ============================================================================
+// Helper: map hex axial coordinate -> chunk coordinate
+// ============================================================================
+static FIntPoint HexToChunkCoord(const FHexCoord& Hex)
+{
+	const int32 CX = FMath::FloorToInt32(static_cast<float>(Hex.Q) / AHexTerrain::CHUNK_SIZE);
+	const int32 CY = FMath::FloorToInt32(static_cast<float>(Hex.R) / AHexTerrain::CHUNK_SIZE);
+	return FIntPoint(CX, CY);
+}
+
+// ============================================================================
+// AHexTerrain
+// ============================================================================
 
 AHexTerrain::AHexTerrain(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.TickInterval = 0.25f;  // LOD check 4x per second
 
-	MeshComponent = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("HexTerrainMesh"));
-	SetRootComponent(MeshComponent);
-	MeshComponent->bUseAsyncCooking = false;
-	MeshComponent->bUseComplexAsSimpleCollision = true;
+	Root = CreateDefaultSubobject<USceneComponent>(TEXT("HexTerrainRoot"));
+	SetRootComponent(Root);
 
 	static ConstructorHelpers::FObjectFinder<UMaterialInterface> DefaultMaterial(
 		TEXT("/Engine/BasicShapes/BasicShapeMaterial")
@@ -45,10 +60,13 @@ void AHexTerrain::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 		}
 		else if (Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, TerrainMaterial))
 		{
-			ApplyMaterial();
+			ApplyMaterialsToAllChunks();
+		}
+		else if (Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, LayerMaterials))
+		{
+			ApplyMaterialsToAllChunks();
 		}
 
-		// Handle the "Randomize Seed" toggle — when checked, randomize and reset
 		if (Name == GET_MEMBER_NAME_CHECKED(FHexTerrainConfig, bRandomizeSeed))
 		{
 			if (TerrainConfig.bRandomizeSeed)
@@ -67,9 +85,6 @@ void AHexTerrain::PostEditChangeChainProperty(FPropertyChangedChainEvent& Proper
 
 	if (!bAutoRegenerate) return;
 
-	// When any nested struct property changes, regenerate.
-	// PostEditChangeChainProperty reliably catches deep property changes
-	// that PostEditChangeProperty might miss with nested structs.
 	const FName HeadName = PropertyChangedEvent.PropertyChain.GetHead()->GetValue()->GetFName();
 	static const TSet<FName> TerrainProps = {
 		GET_MEMBER_NAME_CHECKED(AHexTerrain, TerrainConfig),
@@ -94,105 +109,217 @@ void AHexTerrain::BeginPlay()
 	RegenerateTerrain();
 }
 
-void AHexTerrain::RegenerateTerrain()
+void AHexTerrain::Tick(float DeltaTime)
 {
-	if (!MeshComponent)
+	Super::Tick(DeltaTime);
+	UpdateChunkLODs();
+}
+
+// ============================================================================
+// LOD
+// ============================================================================
+
+void AHexTerrain::UpdateChunkLODs()
+{
+	if (ChunkMap.Num() == 0)
 	{
 		return;
 	}
 
-	// Update config radius to match actor
-	FHexTerrainConfig Config = TerrainConfig;
-	Config.CellRadius = CellRadius;
+	// Get camera position
+	FVector CameraLocation = FVector::ZeroVector;
+	bool bGotCamera = false;
 
-	TerrainCells = FHexTerrainGenerator::Generate(GridRadius, Config);
-	BuildTerrainMesh();
-}
+	if (UWorld* World = GetWorld())
+	{
+		if (APlayerController* PC = World->GetFirstPlayerController())
+		{
+			if (APawn* Pawn = PC->GetPawnOrSpectator())
+			{
+				CameraLocation = Pawn->GetActorLocation();
+				bGotCamera = true;
+			}
+			else if (PC->PlayerCameraManager)
+			{
+				CameraLocation = PC->PlayerCameraManager->GetCameraLocation();
+				bGotCamera = true;
+			}
+		}
 
-void AHexTerrain::BuildTerrainMesh()
-{
-	MeshComponent->ClearMeshSection(0);
+		if (!bGotCamera)
+		{
+			for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+			{
+				if (APlayerController* PC = It->Get())
+				{
+					if (PC->PlayerCameraManager)
+					{
+						CameraLocation = PC->PlayerCameraManager->GetCameraLocation();
+						bGotCamera = true;
+						break;
+					}
+				}
+			}
+		}
+	}
 
-	if (TerrainCells.Num() == 0)
+	if (!bGotCamera)
 	{
 		return;
 	}
 
 	const float EffectiveRadius = CellRadius * (1.0f - FMath::Clamp(Gap, 0.0f, 0.95f));
 
-	FHexPrismMeshData CombinedMesh;
-
-	for (const FHexTerrainCellData& Cell : TerrainCells)
+	// Build layer materials pointer map for chunks
+	TMap<EHexTerrainType, UMaterialInterface*> LayerMatPtrs;
+	for (const auto& Pair : LayerMaterials)
 	{
-		FHexPrismMeshData CellMesh;
-		const FColor CellColor = Cell.Color.ToFColor(true);
-
-		// Water cells: flat slab extending below sea level
-		// Land cells: hex prism with height based on terrain elevation
-		if (Cell.TerrainType == EHexTerrainType::Water)
+		if (Pair.Value)
 		{
-			const float WaterTop = Cell.Height;
-			const float WaterBottom = Cell.Height - TerrainConfig.WaterThickness;
-			const float WaterHeight = WaterTop - WaterBottom;
-
-			FHexPrismGenerator::Generate(
-				CellMesh, EffectiveRadius, WaterHeight,
-				true, true, 1, CellColor
-			);
-
-			// Offset so bottom is at WaterBottom
-			const float ZOffset = WaterBottom + WaterHeight * 0.5f;
-			for (FVector& V : CellMesh.Vertices)
-			{
-				V.Z += ZOffset;
-			}
-		}
-		else
-		{
-			// Land cell: prism from 0 up to height
-			FHexPrismGenerator::Generate(
-				CellMesh, EffectiveRadius, Cell.Height,
-				true, true, 1, CellColor
-			);
-
-			// Shift so bottom sits at 0 and top at Height
-			const float ZOffset = Cell.Height * 0.5f;
-			for (FVector& V : CellMesh.Vertices)
-			{
-				V.Z += ZOffset;
-			}
-		}
-
-		// Append into combined mesh
-		const int32 BaseVertex = CombinedMesh.Vertices.Num();
-		for (const FVector& V : CellMesh.Vertices)
-		{
-			CombinedMesh.Vertices.Add(V + Cell.WorldPos);
-		}
-		CombinedMesh.UVs.Append(CellMesh.UVs);
-		CombinedMesh.Normals.Append(CellMesh.Normals);
-		CombinedMesh.VertexColors.Append(CellMesh.VertexColors);
-		CombinedMesh.Tangents.Append(CellMesh.Tangents);
-
-		for (int32 Tri : CellMesh.Triangles)
-		{
-			CombinedMesh.Triangles.Add(Tri + BaseVertex);
+			LayerMatPtrs.Add(Pair.Key, Pair.Value);
 		}
 	}
 
-	MeshComponent->CreateMeshSection(
-		0,
-		CombinedMesh.Vertices,
-		CombinedMesh.Triangles,
-		CombinedMesh.Normals,
-		CombinedMesh.UVs,
-		CombinedMesh.VertexColors,
-		CombinedMesh.Tangents,
-		true
-	);
-
-	ApplyMaterial();
+	for (const auto& Pair : ChunkMap)
+	{
+		if (Pair.Value)
+		{
+			Pair.Value->UpdateLOD(
+				CameraLocation, LODSettings,
+				EffectiveRadius, Gap, CachedConfig,
+				LayerMatPtrs.Num() > 0 ? &LayerMatPtrs : nullptr,
+				TerrainMaterial
+			);
+		}
+	}
 }
+
+// ============================================================================
+// Regeneration
+// ============================================================================
+
+void AHexTerrain::RegenerateTerrain()
+{
+	if (!Root)
+	{
+		return;
+	}
+
+	// 1. Generate all cell data
+	FHexTerrainConfig Config = TerrainConfig;
+	Config.CellRadius = CellRadius;
+	TerrainCells = FHexTerrainGenerator::Generate(GridRadius, Config);
+
+	// 2. Cache for LOD updates
+	CachedConfig = Config;
+	CachedEffectiveRadius = CellRadius * (1.0f - FMath::Clamp(Gap, 0.0f, 0.95f));
+
+	// 3. Distribute to chunks and build each
+	BuildAllChunks(Config);
+}
+
+void AHexTerrain::BuildAllChunks(const FHexTerrainConfig& Config)
+{
+	const float EffectiveRadius = CellRadius * (1.0f - FMath::Clamp(Gap, 0.0f, 0.95f));
+
+	// Build non-null layer material pointers for chunk API
+	TMap<EHexTerrainType, UMaterialInterface*> LayerMatPtrs;
+	for (const auto& Pair : LayerMaterials)
+	{
+		if (Pair.Value)
+		{
+			LayerMatPtrs.Add(Pair.Key, Pair.Value);
+		}
+	}
+
+	// Group cells by chunk coordinate
+	TMap<FIntPoint, TArray<FHexTerrainCellData>> Distribution;
+	for (const FHexTerrainCellData& Cell : TerrainCells)
+	{
+		const FIntPoint ChunkCoord = HexToChunkCoord(Cell.Axial);
+		Distribution.FindOrAdd(ChunkCoord).Add(Cell);
+	}
+
+	TSet<FIntPoint> ActiveChunkCoords;
+	Distribution.GetKeys(ActiveChunkCoords);
+
+	// Create or update chunks
+	for (const auto& Pair : Distribution)
+	{
+		const FIntPoint& Coord = Pair.Key;
+		const TArray<FHexTerrainCellData>& ChunkCells = Pair.Value;
+
+		UHexTerrainChunk* Chunk = nullptr;
+
+		if (TObjectPtr<UHexTerrainChunk>* Existing = ChunkMap.Find(Coord))
+		{
+			Chunk = *Existing;
+		}
+		else
+		{
+			Chunk = NewObject<UHexTerrainChunk>(this, NAME_None, RF_Transactional);
+			Chunk->SetChunkCoord(Coord);
+			Chunk->RegisterComponent();
+			Chunk->AttachToComponent(Root, FAttachmentTransformRules::KeepRelativeTransform);
+			ChunkMap.Add(Coord, Chunk);
+		}
+
+		// Debug chunk coloring: deterministic color per chunk coordinate
+		if (bDebugChunkColors)
+		{
+			const uint32 Hash = HashCombine(GetTypeHash(Coord.X), GetTypeHash(Coord.Y));
+			const FColor ChunkDebugColor(
+				static_cast<uint8>((Hash * 37 + 101) % 256),
+				static_cast<uint8>((Hash * 53 + 157) % 256),
+				static_cast<uint8>((Hash * 71 + 199) % 256)
+			);
+			Chunk->SetDebugColor(ChunkDebugColor);
+		}
+		else
+		{
+			Chunk->ClearDebugColor();
+		}
+
+		// Set cells — chunk will create per-layer or single-section mesh
+		Chunk->SetCells(ChunkCells, EffectiveRadius, Gap, Config);
+
+		// Apply materials
+		if (LayerMatPtrs.Num() > 0)
+		{
+			Chunk->ApplyLayerMaterials(LayerMatPtrs, TerrainMaterial);
+		}
+		else
+		{
+			Chunk->ApplySingleMaterial(TerrainMaterial);
+		}
+	}
+
+	PruneUnusedChunks(ActiveChunkCoords);
+}
+
+void AHexTerrain::PruneUnusedChunks(const TSet<FIntPoint>& ActiveChunkCoords)
+{
+	TArray<FIntPoint> ToRemove;
+	for (const auto& Pair : ChunkMap)
+	{
+		if (!ActiveChunkCoords.Contains(Pair.Key))
+		{
+			ToRemove.Add(Pair.Key);
+		}
+	}
+
+	for (const FIntPoint& Coord : ToRemove)
+	{
+		if (UHexTerrainChunk* Chunk = ChunkMap.FindAndRemoveChecked(Coord))
+		{
+			Chunk->DestroyComponent();
+		}
+	}
+}
+
+// ============================================================================
+// Queries
+// ============================================================================
 
 const FHexTerrainCellData* AHexTerrain::GetCell(const FHexCoord& Coord) const
 {
@@ -216,10 +343,111 @@ EHexTerrainType AHexTerrain::GetTerrainTypeAtPosition(const FVector& Pos) const
 	return EHexTerrainType::Water;
 }
 
-void AHexTerrain::ApplyMaterial()
+// ============================================================================
+// Material
+// ============================================================================
+
+void AHexTerrain::ApplyMaterialsToAllChunks()
 {
-	if (MeshComponent && TerrainMaterial)
+	TMap<EHexTerrainType, UMaterialInterface*> LayerMatPtrs;
+	for (const auto& Pair : LayerMaterials)
 	{
-		MeshComponent->SetMaterial(0, TerrainMaterial);
+		if (Pair.Value)
+		{
+			LayerMatPtrs.Add(Pair.Key, Pair.Value);
+		}
 	}
+
+	for (const auto& Pair : ChunkMap)
+	{
+		if (Pair.Value)
+		{
+			if (LayerMatPtrs.Num() > 0)
+			{
+				Pair.Value->ApplyLayerMaterials(LayerMatPtrs, TerrainMaterial);
+			}
+			else
+			{
+				Pair.Value->ApplySingleMaterial(TerrainMaterial);
+			}
+		}
+	}
+}
+
+void AHexTerrain::SetLayerMaterial(EHexTerrainType Type, UMaterialInterface* Material)
+{
+	if (Material)
+	{
+		LayerMaterials.Add(Type, Material);
+	}
+	else
+	{
+		LayerMaterials.Remove(Type);
+	}
+	ApplyMaterialsToAllChunks();
+}
+
+void AHexTerrain::PrintStats() const
+{
+	UE_LOG(LogTemp, Log, TEXT("========== HexTerrain Stats =========="));
+	UE_LOG(LogTemp, Log, TEXT("  Actor:          %s"), *GetName());
+	UE_LOG(LogTemp, Log, TEXT("  GridRadius:     %d"), GridRadius);
+	UE_LOG(LogTemp, Log, TEXT("  CellRadius:     %.1f"), CellRadius);
+	UE_LOG(LogTemp, Log, TEXT("  Total Cells:    %d"), TerrainCells.Num());
+	UE_LOG(LogTemp, Log, TEXT("  Chunks:         %d  (CHUNK_SIZE=%d)"), ChunkMap.Num(), CHUNK_SIZE);
+	UE_LOG(LogTemp, Log, TEXT("  Gap:            %.2f"), Gap);
+
+	// Per-chunk details
+	TMap<int32, int32> LODCounts;
+	int32 TotalChunkCells = 0;
+	int32 EmptyChunks = 0;
+	int32 SingleSectionChunks = 0;
+	int32 MultiSectionChunks = 0;
+
+	for (const auto& Pair : ChunkMap)
+	{
+		const UHexTerrainChunk* Chunk = Pair.Value;
+		if (!Chunk) { ++EmptyChunks; continue; }
+
+		const int32 CellCount = Chunk->GetCellCount();
+		TotalChunkCells += CellCount;
+		LODCounts.FindOrAdd(Chunk->GetCurrentLOD())++;
+
+		const int32 NumSections = Chunk->GetNumSections();
+		if (NumSections <= 1) ++SingleSectionChunks;
+		else ++MultiSectionChunks;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("  Cells in chunks:%d"), TotalChunkCells);
+	UE_LOG(LogTemp, Log, TEXT("  Empty chunks:   %d"), EmptyChunks);
+	UE_LOG(LogTemp, Log, TEXT("  Sections:       %d multi-layer, %d single-layer"),
+		MultiSectionChunks, SingleSectionChunks);
+
+	// LOD distribution
+	FString LODStr;
+	for (const auto& LodPair : LODCounts)
+	{
+		LODStr += FString::Printf(TEXT("LOD%d=%d "), LodPair.Key, LodPair.Value);
+	}
+	UE_LOG(LogTemp, Log, TEXT("  LOD dist:       %s"), *LODStr);
+
+	// Terrain type distribution
+	TMap<EHexTerrainType, int32> TypeCounts;
+	for (const FHexTerrainCellData& Cell : TerrainCells)
+	{
+		TypeCounts.FindOrAdd(Cell.TerrainType)++;
+	}
+
+	FString TypeStr;
+	for (uint8 i = 0; i < static_cast<uint8>(EHexTerrainType::Count); ++i)
+	{
+		const EHexTerrainType Type = static_cast<EHexTerrainType>(i);
+		if (int32* Count = TypeCounts.Find(Type))
+		{
+			TypeStr += FString::Printf(TEXT("%s=%d "),
+				*UEnum::GetValueAsString(Type), *Count);
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("  Terrain types:  %s"), *TypeStr);
+	UE_LOG(LogTemp, Log, TEXT("========================================"));
 }
