@@ -189,6 +189,64 @@ static void HexCreateTestScene(const TArray<FString>& Args)
 }
 
 // ============================================================================
+// hex.CreateGrassTerrain — grass-only terrain with rolling hills
+// ============================================================================
+static void HexCreateGrassTerrain(const TArray<FString>& Args)
+{
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World) { UE_LOG(LogTemp, Warning, TEXT("hex.CreateGrassTerrain: No world")); return; }
+
+	const int32 R = Args.Num() > 0 ? FCString::Atoi(*Args[0]) : 12;
+
+	// Clean up old
+	{
+		TArray<AActor*> ToDestroy;
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			if (It->IsA<AHexPrism>() || It->IsA<AHexGrid>() || It->IsA<AHexTerrain>())
+				ToDestroy.Add(*It);
+		}
+		for (AActor* Actor : ToDestroy)
+			if (IsValid(Actor)) Actor->Destroy();
+	}
+
+	AHexTerrain* Terrain = World->SpawnActor<AHexTerrain>(FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!Terrain) { UE_LOG(LogTemp, Error, TEXT("Failed to spawn terrain")); return; }
+
+	// Grass-only classification: everything is grass
+	Terrain->CellRadius = 120.0f;
+	Terrain->GridRadius = R;
+	Terrain->Gap = 0.02f;
+	Terrain->TerrainConfig.HeightScale = 250.0f;
+	Terrain->TerrainConfig.NoiseScale = 0.06f;
+	Terrain->TerrainConfig.NoiseOctaves = 3;
+	Terrain->TerrainConfig.WaterLevel = 0.0f;    // no water
+	Terrain->TerrainConfig.SandLevel = 0.0f;     // no sand
+	Terrain->TerrainConfig.GrassLevel = 10.0f;   // everything → grass (above max height)
+	Terrain->TerrainConfig.RockLevel = 1.0f;     // no rock
+	Terrain->TerrainConfig.NoiseSeed = FMath::RandRange(0, 99999);
+	Terrain->LODSettings.LOD1Distance = 8000.0f;
+	Terrain->LODSettings.LOD2Distance = 20000.0f;
+
+	// Use vertex-color material so grass appears green
+	{
+		UMaterialInterface* VCMat = LoadObject<UMaterialInterface>(nullptr,
+			TEXT("/Engine/EngineDebugMaterials/VertexColorViewModeMaterial.VertexColorViewModeMaterial"));
+		if (VCMat)
+		{
+			Terrain->TerrainMaterial = VCMat;
+		}
+	}
+
+	Terrain->RegenerateTerrain();
+
+	UE_LOG(LogTemp, Log, TEXT("========== Grass Terrain Ready =========="));
+	UE_LOG(LogTemp, Log, TEXT("  Cells: %d  |  Chunks: %d  |  HeightScale: %.0f"),
+		1 + R * (R + 1) * 3, Terrain->GetChunkCount(), 250.0f);
+	Terrain->PrintStats();
+}
+
+// ============================================================================
 // hex.Stats — print stats for all hex terrain actors in the world
 // ============================================================================
 static void HexStats(const TArray<FString>& Args)
@@ -228,6 +286,7 @@ static void RegisterHexCommands()
 	REGISTER_CMD("hex.SpawnTerrain",   "Spawn hex terrain. <CellRadius> <GridRadius> <HeightScale> [NoiseScale]", HexSpawnTerrain);
 	REGISTER_CMD("hex.DestroyAll",     "Destroy all hex actors in the current world",              HexDestroyAll);
 	REGISTER_CMD("hex.CreateTestScene","Create test scene: terrain + light + debug colors. [GridRadius=15] [CellRadius=100]", HexCreateTestScene);
+	REGISTER_CMD("hex.CreateGrassTerrain","Create grass-only rolling hills terrain. [GridRadius=12]", HexCreateGrassTerrain);
 	REGISTER_CMD("hex.Stats",          "Print statistics for all hex terrain actors",              HexStats);
 
 #undef REGISTER_CMD
