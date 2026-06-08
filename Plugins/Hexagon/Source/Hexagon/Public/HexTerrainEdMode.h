@@ -9,6 +9,7 @@
 
 #include "HexGeometry.h"
 class AHexTerrain;
+class FHexTerrainEdModeToolkit;
 
 /**
  * Editor mode for painting terrain types onto a HexTerrain.
@@ -36,8 +37,11 @@ public:
 	virtual bool InputKey(FEditorViewportClient* ViewportClient, FViewport* Viewport, FKey Key, EInputEvent Event) override;
 	virtual bool InputDelta(FEditorViewportClient* ViewportClient, FViewport* Viewport, FVector& Drag, FRotator& Rot, FVector& Scale) override;
 	virtual void Render(const FSceneView* View, FViewport* Viewport, FPrimitiveDrawInterface* PDI) override;
-	virtual bool UsesToolkits() const override { return false; }
+	virtual bool UsesToolkits() const override { return true; }
 	virtual bool CapturedMouseMove(FEditorViewportClient* ViewportClient, FViewport* Viewport, int32 X, int32 Y) override { return false; }
+
+	/** Get the toolkit widget. */
+	TSharedPtr<FHexTerrainEdModeToolkit> GetToolkit() const;
 
 private:
 	/** Line-trace to find the hex cell under the cursor. */

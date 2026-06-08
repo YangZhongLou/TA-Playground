@@ -1,6 +1,7 @@
 // Copyright (c) 2026 TA-Playground. All Rights Reserved.
 
 #include "HexTerrainEdMode.h"
+#include "HexTerrainEdModeToolkit.h"
 
 #if WITH_EDITOR
 
@@ -14,6 +15,7 @@
 #include "EngineUtils.h"
 #include "SceneView.h"
 #include "CollisionQueryParams.h"
+#include "Toolkits/ToolkitManager.h"
 
 // ============================================================================
 // Mode ID
@@ -52,7 +54,16 @@ void FHexTerrainEdMode::Enter()
 		}
 	}
 
+	// Create and activate the standalone toolkit panel
+	Toolkit = MakeShareable(new FHexTerrainEdModeToolkit());
+	Toolkit->Init(Owner->GetToolkitHost());
+
 	UE_LOG(LogTemp, Log, TEXT("HexTerrainPaint mode entered. Left-click to paint, Ctrl+Left-click to erase."));
+}
+
+TSharedPtr<FHexTerrainEdModeToolkit> FHexTerrainEdMode::GetToolkit() const
+{
+	return StaticCastSharedPtr<FHexTerrainEdModeToolkit>(Toolkit);
 }
 
 void FHexTerrainEdMode::Exit()

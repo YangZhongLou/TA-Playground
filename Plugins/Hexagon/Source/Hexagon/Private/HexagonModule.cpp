@@ -362,6 +362,43 @@ static void HexCreateFullTerrain(const TArray<FString>& Args)
 }
 
 // ============================================================================
+// hex.PaintCell — change a single cell's terrain type
+// ============================================================================
+static void HexPaintCell(const TArray<FString>& Args)
+{
+	if (Args.Num() < 3) { UE_LOG(LogTemp, Warning, TEXT("Usage: hex.PaintCell <Q> <R> <Type>")); return; }
+
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World) return;
+
+	const int32 Q = FCString::Atoi(*Args[0]);
+	const int32 R = FCString::Atoi(*Args[1]);
+	const FString TypeStr = Args[2];
+
+	static TMap<FString, EHexTerrainType> TypeMap = {
+		{TEXT("Water"), EHexTerrainType::Water}, {TEXT("water"), EHexTerrainType::Water},
+		{TEXT("Sand"),  EHexTerrainType::Sand},  {TEXT("sand"),  EHexTerrainType::Sand},
+		{TEXT("Grass"), EHexTerrainType::Grass}, {TEXT("grass"), EHexTerrainType::Grass},
+		{TEXT("Rock"),  EHexTerrainType::Rock},  {TEXT("rock"),  EHexTerrainType::Rock},
+		{TEXT("Snow"),  EHexTerrainType::Snow},  {TEXT("snow"),  EHexTerrainType::Snow},
+	};
+
+	EHexTerrainType* Found = TypeMap.Find(TypeStr);
+	if (!Found) { UE_LOG(LogTemp, Warning, TEXT("hex.PaintCell: Unknown type '%s'. Use: Water/Sand/Grass/Rock/Snow"), *TypeStr); return; }
+
+	// Find the first terrain actor
+	for (TActorIterator<AHexTerrain> It(World); It; ++It)
+	{
+		AHexTerrain* Terrain = *It;
+		TArray<FHexCoord> Coords = { FHexCoord(Q, R) };
+		Terrain->PaintCells(Coords, *Found);
+		UE_LOG(LogTemp, Log, TEXT("hex.PaintCell: Painted cell (%d,%d) to %s"), Q, R, *TypeStr);
+		return;
+	}
+	UE_LOG(LogTemp, Warning, TEXT("hex.PaintCell: No HexTerrain actor found"));
+}
+
+// ============================================================================
 // hex.Stats — print stats for all hex terrain actors in the world
 // ============================================================================
 static void HexStats(const TArray<FString>& Args)
@@ -514,6 +551,7 @@ static void RegisterHexCommands()
 	REGISTER_CMD("hex.CreateGrassTerrain","Create grass-only rolling hills terrain. [GridRadius=12]", HexCreateGrassTerrain);
 	REGISTER_CMD("hex.CreateGrassSandTerrain","Create grass+sand mixed terrain. [GridRadius=14]", HexCreateGrassSandTerrain);
 	REGISTER_CMD("hex.CreateFullTerrain","Create large terrain with all 5 types (5x scale). [GridRadius=31]", HexCreateFullTerrain);
+	REGISTER_CMD("hex.PaintCell",        "Paint a cell: hex.PaintCell <Q> <R> <Water/Sand/Grass/Rock/Snow>", HexPaintCell);
 	REGISTER_CMD("hex.Stats",          "Print statistics for all hex terrain actors",              HexStats);
 	REGISTER_CMD("hex.SetCell",        "Set a single hex cell terrain type. <Q> <R> <Type>  e.g. hex.SetCell 3 0 Sand", HexSetCell);
 	REGISTER_CMD("hex.FillRing",       "Fill all cells in a ring to one type. <CenterQ> <CenterR> <Radius> <Type>  e.g. hex.FillRing 0 0 5 Grass", HexFillRing);
