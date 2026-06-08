@@ -281,8 +281,8 @@ static void HexCreateGrassSandTerrain(const TArray<FString>& Args)
 	Terrain->TerrainConfig.HeightScale = 300.0f;
 	Terrain->TerrainConfig.NoiseScale = 0.05f;
 	Terrain->TerrainConfig.NoiseOctaves = 3;
-	Terrain->TerrainConfig.WaterLevel = 0.15f;
-	Terrain->TerrainConfig.SandLevel = 0.40f;
+	Terrain->TerrainConfig.WaterLevel = 0.30f;   // more water
+	Terrain->TerrainConfig.SandLevel = 0.60f;    // large sand zone
 	Terrain->TerrainConfig.GrassLevel = 10.0f;
 	Terrain->TerrainConfig.RockLevel = 1.0f;
 	Terrain->TerrainConfig.NoiseSeed = FMath::RandRange(0, 99999);
