@@ -7,8 +7,8 @@
 #include "CoreMinimal.h"
 #include "EdMode.h"
 
+#include "HexGeometry.h"
 class AHexTerrain;
-struct FHexCoord;
 
 /**
  * Editor mode for painting terrain types onto a HexTerrain.

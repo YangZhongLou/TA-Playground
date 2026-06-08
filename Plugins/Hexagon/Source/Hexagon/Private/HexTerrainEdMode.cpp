@@ -86,12 +86,12 @@ bool FHexTerrainEdMode::HitTestTerrain(
 		ViewportClient->GetScene(),
 		ViewportClient->EngineShowFlags)
 		.SetRealtimeUpdate(ViewportClient->IsRealtime()));
-
 	FSceneView* View = ViewportClient->CalcSceneView(&ViewFamily);
 	if (!View) return false;
 
-	FVector WorldOrigin, WorldDirection;
-	View->DeprojectScreenToWorld(FVector2D(X, Y), View->UnscaledViewRect, WorldOrigin, WorldDirection);
+	FViewportCursorLocation Cursor(View, ViewportClient, X, Y);
+	const FVector WorldOrigin = Cursor.GetOrigin();
+	const FVector WorldDirection = Cursor.GetDirection();
 
 	// Line trace against the world
 	FHitResult Hit;
@@ -307,8 +307,8 @@ void FHexTerrainEdMode::Render(
 	for (int32 Ring = 0; Ring < 3; ++Ring)
 	{
 		const float R = DrawRadius * (1.0f - Ring * 0.3f);
-		PDI->DrawCircle(Center, FVector::UpVector, FVector::ForwardVector,
-			BrushColor, FMath::Max(R, 1.0f), 32, SDPG_Foreground, 1.5f);
+		// Manual circle drawing (PDI::DrawCircle not available in UE 5.7)
+		for (int32 Seg = 0; Seg < 32; ++Seg) { const float A0 = UE_TWO_PI * Seg / 32.0f; const float A1 = UE_TWO_PI * (Seg + 1) / 32.0f; PDI->DrawLine(FVector(Center.X + FMath::Cos(A0)*R, Center.Y + FMath::Sin(A0)*R, Center.Z), FVector(Center.X + FMath::Cos(A1)*R, Center.Y + FMath::Sin(A1)*R, Center.Z), BrushColor, SDPG_Foreground, 1.5f, 0, true); }
 	}
 
 	// Draw hex cell outlines for cells in the brush (only for small brush sizes)

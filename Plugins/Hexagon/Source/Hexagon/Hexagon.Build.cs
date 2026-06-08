@@ -25,6 +25,7 @@ public class Hexagon : ModuleRules
 				"LevelEditor",
 				"Slate",
 				"SlateCore",
+				"EditorFramework",
 			});
 		}
 	}

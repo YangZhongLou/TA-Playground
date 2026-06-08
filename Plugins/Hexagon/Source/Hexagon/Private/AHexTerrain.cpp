@@ -410,7 +410,7 @@ void AHexTerrain::RebuildDirtyChunks(const TSet<FIntPoint>& DirtyChunkCoords)
 		const FIntPoint& Coord = Pair.Key;
 		const TArray<FHexTerrainCellData>& ChunkCells = Pair.Value;
 
-		UHexTerrainChunk** Found = ChunkMap.Find(Coord);
+		TObjectPtr<UHexTerrainChunk>* Found = ChunkMap.Find(Coord);
 		if (!Found || !*Found) continue;
 
 		UHexTerrainChunk* Chunk = *Found;

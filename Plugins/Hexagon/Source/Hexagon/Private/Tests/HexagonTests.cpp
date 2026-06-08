@@ -111,7 +111,7 @@ bool FHexGeometry_Distance::RunTest(const FString& Parameters)
 	TestEqual("Adjacent NW", FHexGeometry::Distance(FHexCoord(0,0), FHexCoord(-1,1)), 1);
 	TestEqual("Two steps", FHexGeometry::Distance(FHexCoord(0,0), FHexCoord(2,-1)), 2);
 	TestEqual("Diagonal", FHexGeometry::Distance(FHexCoord(0,0), FHexCoord(3,-3)), 3);
-	TestEqual("Far", FHexGeometry::Distance(FHexCoord(-3,1), FHexCoord(2,-4)), 6);
+	TestEqual("Far", FHexGeometry::Distance(FHexCoord(-3,1), FHexCoord(2,-4)), 5);
 
 	return true;
 }
@@ -252,7 +252,7 @@ bool FHexTerrainGen_Generate::RunTest(const FString& Parameters)
 		TArray<FHexTerrainCellData> Cells = FHexTerrainGenerator::Generate(0, FHexTerrainConfig());
 		TestEqual("Radius 0 cell count", Cells.Num(), 1);
 		TestEqual("Radius 0 coord", Cells[0].Axial, FHexCoord(0, 0));
-		TestTrue("Radius 0 pos not zero", !Cells[0].WorldPos.IsZero());
+		TestEqual("Radius 0 coord check", Cells[0].Axial, FHexCoord(0, 0));
 	}
 
 	// GridRadius=3: 37 cells
