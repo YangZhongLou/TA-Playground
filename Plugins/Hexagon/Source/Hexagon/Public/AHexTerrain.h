@@ -80,6 +80,35 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Material")
 	TObjectPtr<UMaterialInterface> TerrainMaterial;
 
+	/** When true, terrain types come from ManualCellTypes instead of noise-based classification. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Manual")
+	bool bManualMode = false;
+
+	/** Default terrain type for cells not in ManualCellTypes when bManualMode is on. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Manual")
+	EHexTerrainType DefaultManualType = EHexTerrainType::Grass;
+
+	/** Per-cell terrain type overrides.  Applied only when bManualMode is true. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Manual")
+	TMap<FHexCoord, EHexTerrainType> ManualCellTypes;
+
+	/** Brush radius in hex grid units (0 = single cell, 1 = +1 ring, ...). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Brush", meta = (ClampMin = "0.0", ClampMax = "20.0"))
+	float BrushRadius = 1.0f;
+
+	/** Terrain type to apply when painting with the brush. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Brush")
+	EHexTerrainType BrushTerrainType = EHexTerrainType::Grass;
+
+	/**
+	 * World-space UV tile size in world units.
+	 * When > 0, all cell UVs use a world-space planar projection so textures
+	 * tile seamlessly across adjacent cells.  Set to 0 to use default per-cell UVs.
+	 * Typical values: 100–500 (texture repeats every N cm across the terrain).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Texture", meta = (ClampMin = "0.0"))
+	float TextureTileSize = 200.0f;
+
 public:
 	/** Regenerate terrain from current parameters. */
 	UFUNCTION(BlueprintCallable, Category = "Hexagon|Terrain")
@@ -110,6 +139,18 @@ public:
 	/** Print terrain statistics to log (cell count, chunk count, LOD distribution). */
 	UFUNCTION(BlueprintCallable, Category = "Hexagon|Debug")
 	void PrintStats() const;
+
+	/**
+	 * Incremental paint: change a set of cells to a new terrain type.
+	 * Only rebuilds the chunks that contain the affected cells.
+	 * Automatically enables bManualMode.
+	 */
+	void PaintCells(const TArray<FHexCoord>& Coords, EHexTerrainType Type);
+
+	/**
+	 * Rebuild only the specified chunks (by chunk coordinate).
+	 */
+	void RebuildDirtyChunks(const TSet<FIntPoint>& DirtyChunkCoords);
 
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Hexagon", meta = (AllowPrivateAccess = "true"))

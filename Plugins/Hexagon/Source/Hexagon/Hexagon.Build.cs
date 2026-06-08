@@ -19,7 +19,13 @@ public class Hexagon : ModuleRules
 
 		if (Target.bBuildEditor)
 		{
-			PrivateDependencyModuleNames.Add("UnrealEd");
+			PrivateDependencyModuleNames.AddRange(new string[]
+			{
+				"UnrealEd",
+				"LevelEditor",
+				"Slate",
+				"SlateCore",
+			});
 		}
 	}
 }

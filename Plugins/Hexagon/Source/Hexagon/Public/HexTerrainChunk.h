@@ -73,7 +73,8 @@ public:
 		const TArray<FHexTerrainCellData>& InCells,
 		float EffectiveRadius,
 		float Gap,
-		const FHexTerrainConfig& Config
+		const FHexTerrainConfig& Config,
+		float UVTileSize = 0.0f
 	);
 
 	/**
@@ -82,6 +83,7 @@ public:
 	 * @param LayerMaterials Optional per-terrain-type materials. If non-empty, separate
 	 *        mesh sections are created for each terrain type present in this chunk.
 	 * @param DefaultMaterial Fallback material for terrain types not in LayerMaterials.
+	 * @param UVTileSize World-space UV tile size (0 = use default local-space UVs).
 	 */
 	void RebuildMeshForLOD(
 		int32 LODLevel,
@@ -89,7 +91,8 @@ public:
 		float Gap,
 		const FHexTerrainConfig& Config,
 		const TMap<EHexTerrainType, UMaterialInterface*>* LayerMaterials = nullptr,
-		UMaterialInterface* DefaultMaterial = nullptr
+		UMaterialInterface* DefaultMaterial = nullptr,
+		float UVTileSize = 0.0f
 	);
 
 	/**
@@ -103,7 +106,8 @@ public:
 		float Gap,
 		const FHexTerrainConfig& Config,
 		const TMap<EHexTerrainType, UMaterialInterface*>* LayerMaterials = nullptr,
-		UMaterialInterface* DefaultMaterial = nullptr
+		UMaterialInterface* DefaultMaterial = nullptr,
+		float UVTileSize = 0.0f
 	);
 
 	/** Apply a single material to ALL sections (clears per-layer layout). */
@@ -145,6 +149,9 @@ private:
 	/** Cached material set from last ApplyLayerMaterials call (for LOD rebuild). */
 	const TMap<EHexTerrainType, UMaterialInterface*>* CachedLayerMaterials = nullptr;
 	TObjectPtr<UMaterialInterface> CachedDefaultMaterial;
+
+	/** Cached texture tile size for world-space UVs (0 = use default UVs). */
+	float CachedUVTileSize = 0.0f;
 
 	/** Build a single cell mesh for a given LOD. */
 	void BuildCellMesh(

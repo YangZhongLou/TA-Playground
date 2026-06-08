@@ -14,9 +14,11 @@ void UHexTerrainChunk::SetCells(
 	const TArray<FHexTerrainCellData>& InCells,
 	float EffectiveRadius,
 	float Gap,
-	const FHexTerrainConfig& Config)
+	const FHexTerrainConfig& Config,
+	float UVTileSize)
 {
 	Cells = InCells;
+	CachedUVTileSize = UVTileSize;
 
 	// Compute chunk center from cell positions
 	if (Cells.Num() > 0)
@@ -31,7 +33,7 @@ void UHexTerrainChunk::SetCells(
 
 	// Always build at LOD 0 for initial set / regeneration
 	RebuildMeshForLOD(0, EffectiveRadius, Gap, Config,
-		CachedLayerMaterials, CachedDefaultMaterial);
+		CachedLayerMaterials, CachedDefaultMaterial, UVTileSize);
 }
 
 void UHexTerrainChunk::RebuildMeshForLOD(
@@ -40,8 +42,11 @@ void UHexTerrainChunk::RebuildMeshForLOD(
 	float Gap,
 	const FHexTerrainConfig& Config,
 	const TMap<EHexTerrainType, UMaterialInterface*>* LayerMaterials,
-	UMaterialInterface* DefaultMaterial)
+	UMaterialInterface* DefaultMaterial,
+	float UVTileSize)
 {
+	CachedUVTileSize = UVTileSize;
+
 	if (LODLevel == CurrentLOD && SectionTerrainTypes.Num() > 0)
 	{
 		// Already at correct LOD — just re-apply materials if needed
@@ -89,7 +94,6 @@ void UHexTerrainChunk::RebuildMeshForLOD(
 		}
 
 		int32 SectionIdx = 0;
-		// Iterate in terrain type order for deterministic section indices
 		for (uint8 TypeIdx = 0; TypeIdx < static_cast<uint8>(EHexTerrainType::Count); ++TypeIdx)
 		{
 			const EHexTerrainType Type = static_cast<EHexTerrainType>(TypeIdx);
@@ -130,7 +134,7 @@ void UHexTerrainChunk::RebuildMeshForLOD(
 	}
 	else
 	{
-		// --- Single-section mode (current behavior) ---
+		// --- Single-section mode ---
 		FHexPrismMeshData CombinedMesh;
 
 		for (const FHexTerrainCellData& Cell : Cells)
@@ -162,7 +166,7 @@ void UHexTerrainChunk::RebuildMeshForLOD(
 			CombinedMesh.UVs,
 			CombinedMesh.VertexColors,
 			CombinedMesh.Tangents,
-			true  // bCreateCollision
+			true
 		);
 	}
 
@@ -178,10 +182,11 @@ void UHexTerrainChunk::BuildCellMesh(
 {
 	const FColor CellColor = (DebugColor.A > 0) ? DebugColor : Cell.Color.ToFColor(true);
 
-	// LOD 2: flat hexagon (no side faces, no bottom)
+	// LOD 2: flat hexagon
 	if (LODLevel >= 2)
 	{
-		FHexPrismGenerator::GenerateFlatHexagon(OutMesh, EffectiveRadius, 0.0f, CellColor);
+		FHexPrismGenerator::GenerateFlatHexagon(OutMesh, EffectiveRadius, 0.0f, CellColor,
+			Cell.WorldPos, CachedUVTileSize);
 		const float ZOffset = Cell.Height;
 		for (FVector& V : OutMesh.Vertices)
 		{
@@ -190,7 +195,7 @@ void UHexTerrainChunk::BuildCellMesh(
 		return;
 	}
 
-	// LOD 0 & 1: 3D prism with varying detail
+	// LOD 0 & 1: 3D prism
 	const int32 HeightSeg = (LODLevel == 0) ? 2 : 1;
 	const bool bCapBottom = (LODLevel == 0);
 
@@ -202,7 +207,8 @@ void UHexTerrainChunk::BuildCellMesh(
 
 		FHexPrismGenerator::Generate(
 			OutMesh, EffectiveRadius, WaterHeight,
-			true, bCapBottom, HeightSeg, CellColor
+			true, bCapBottom, HeightSeg, CellColor,
+			Cell.WorldPos, CachedUVTileSize
 		);
 
 		const float ZOffset = WaterBottom + WaterHeight * 0.5f;
@@ -215,7 +221,8 @@ void UHexTerrainChunk::BuildCellMesh(
 	{
 		FHexPrismGenerator::Generate(
 			OutMesh, EffectiveRadius, Cell.Height,
-			true, bCapBottom, HeightSeg, CellColor
+			true, bCapBottom, HeightSeg, CellColor,
+			Cell.WorldPos, CachedUVTileSize
 		);
 
 		const float ZOffset = Cell.Height * 0.5f;
@@ -233,7 +240,8 @@ bool UHexTerrainChunk::UpdateLOD(
 	float Gap,
 	const FHexTerrainConfig& Config,
 	const TMap<EHexTerrainType, UMaterialInterface*>* LayerMaterials,
-	UMaterialInterface* DefaultMaterial)
+	UMaterialInterface* DefaultMaterial,
+	float UVTileSize)
 {
 	if (Cells.Num() == 0)
 	{
@@ -242,7 +250,6 @@ bool UHexTerrainChunk::UpdateLOD(
 
 	const float Distance = FVector::Dist(CameraPosition, CachedCenter);
 
-	// Determine target LOD with hysteresis
 	int32 TargetLOD = 0;
 
 	const float HystMult = 1.0f + LODSettings.Hysteresis;
@@ -259,7 +266,7 @@ bool UHexTerrainChunk::UpdateLOD(
 		if (Distance > LOD2Hyst) TargetLOD = 2;
 		else if (Distance < LODSettings.LOD1Distance * (1.0f - LODSettings.Hysteresis)) TargetLOD = 0;
 	}
-	else // CurrentLOD == 2 or -1
+	else
 	{
 		if (Distance < LODSettings.LOD2Distance * (1.0f - LODSettings.Hysteresis))
 		{
@@ -275,8 +282,9 @@ bool UHexTerrainChunk::UpdateLOD(
 	{
 		CachedLayerMaterials = LayerMaterials;
 		CachedDefaultMaterial = DefaultMaterial;
+		CachedUVTileSize = UVTileSize;
 		RebuildMeshForLOD(TargetLOD, EffectiveRadius, Gap, Config,
-			LayerMaterials, DefaultMaterial);
+			LayerMaterials, DefaultMaterial, UVTileSize);
 		return true;
 	}
 
@@ -303,7 +311,6 @@ void UHexTerrainChunk::ApplyLayerMaterials(
 {
 	if (SectionTerrainTypes.Num() == 0)
 	{
-		// Single-section mode — apply default
 		if (DefaultMaterial)
 		{
 			SetMaterial(0, DefaultMaterial);
@@ -311,7 +318,6 @@ void UHexTerrainChunk::ApplyLayerMaterials(
 		return;
 	}
 
-	// Multi-section mode — apply per-type materials
 	for (const auto& Pair : SectionTerrainTypes)
 	{
 		const int32 SectionIdx = Pair.Key;

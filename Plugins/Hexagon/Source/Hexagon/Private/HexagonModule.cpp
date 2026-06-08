@@ -18,6 +18,8 @@
 #include "Engine/StaticMeshActor.h"
 #include "EditorLevelUtils.h"
 #include "LevelEditor.h"
+#include "HexTerrainEdMode.h"
+#include "EditorModeRegistry.h"
 
 // ============================================================================
 // hex.SpawnPrism
@@ -319,6 +321,116 @@ static void HexStats(const TArray<FString>& Args)
 }
 
 // ============================================================================
+// Helper: find first terrain actor or report error
+// ============================================================================
+static AHexTerrain* FindFirstTerrain()
+{
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World) { UE_LOG(LogTemp, Warning, TEXT("No world")); return nullptr; }
+
+	for (TActorIterator<AHexTerrain> It(World); It; ++It)
+	{
+		return *It;
+	}
+	UE_LOG(LogTemp, Warning, TEXT("No AHexTerrain found. Try hex.CreateTestScene first."));
+	return nullptr;
+}
+
+// ============================================================================
+// Helper: parse terrain type from string
+// ============================================================================
+static bool ParseTerrainType(const FString& Str, EHexTerrainType& OutType)
+{
+	const UEnum* Enum = StaticEnum<EHexTerrainType>();
+	if (!Enum) return false;
+
+	const int64 Val = Enum->GetValueByNameString(Str);
+	if (Val == INDEX_NONE)
+	{
+		// Try case-insensitive
+		for (uint8 i = 0; i < static_cast<uint8>(EHexTerrainType::Count); ++i)
+		{
+			const EHexTerrainType T = static_cast<EHexTerrainType>(i);
+			const FString Name = Enum->GetNameStringByValue(static_cast<int64>(T));
+			if (Name.Equals(Str, ESearchCase::IgnoreCase))
+			{
+				OutType = T;
+				return true;
+			}
+		}
+		UE_LOG(LogTemp, Warning, TEXT("Unknown terrain type '%s'. Use: Water, Sand, Grass, Rock, Snow"), *Str);
+		return false;
+	}
+
+	OutType = static_cast<EHexTerrainType>(Val);
+	return true;
+}
+
+// ============================================================================
+// hex.SetCell <Q> <R> <Type>
+// Set a single hex cell to the given terrain type (enables manual mode).
+// ============================================================================
+static void HexSetCell(const TArray<FString>& Args)
+{
+	if (Args.Num() < 3)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Usage: hex.SetCell <Q> <R> <Type>  — e.g. hex.SetCell 3 0 Sand"));
+		return;
+	}
+
+	const int32 Q = FCString::Atoi(*Args[0]);
+	const int32 R = FCString::Atoi(*Args[1]);
+
+	EHexTerrainType Type;
+	if (!ParseTerrainType(Args[2], Type)) return;
+
+	AHexTerrain* Terrain = FindFirstTerrain();
+	if (!Terrain) return;
+
+	Terrain->ManualCellTypes.Add(FHexCoord(Q, R), Type);
+	Terrain->bManualMode = true;
+	Terrain->RegenerateTerrain();
+
+	UE_LOG(LogTemp, Log, TEXT("hex.SetCell: (%d, %d) → %s"), Q, R, *UEnum::GetValueAsString(Type));
+}
+
+// ============================================================================
+// hex.FillRing <CenterQ> <CenterR> <Radius> <Type>
+// Fill all cells within the given ring radius to a terrain type (enables manual mode).
+// ============================================================================
+static void HexFillRing(const TArray<FString>& Args)
+{
+	if (Args.Num() < 4)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Usage: hex.FillRing <CenterQ> <CenterR> <Radius> <Type>  — e.g. hex.FillRing 0 0 5 Grass"));
+		return;
+	}
+
+	const int32 CenterQ = FCString::Atoi(*Args[0]);
+	const int32 CenterR = FCString::Atoi(*Args[1]);
+	const int32 Radius = FCString::Atoi(*Args[2]);
+
+	EHexTerrainType Type;
+	if (!ParseTerrainType(Args[3], Type)) return;
+
+	AHexTerrain* Terrain = FindFirstTerrain();
+	if (!Terrain) return;
+
+	// Get all cells within radius using spiral
+	const TArray<FHexCoord> Coords = FHexGeometry::GetSpiral(FHexCoord(CenterQ, CenterR), Radius);
+
+	for (const FHexCoord& Coord : Coords)
+	{
+		Terrain->ManualCellTypes.Add(Coord, Type);
+	}
+	Terrain->bManualMode = true;
+	Terrain->RegenerateTerrain();
+
+	UE_LOG(LogTemp, Log, TEXT("hex.FillRing: center(%d,%d) radius=%d  →  %d cells set to %s"),
+		CenterQ, CenterR, Radius, Coords.Num(), *UEnum::GetValueAsString(Type));
+}
+
+// ============================================================================
 // Command registration
 // ============================================================================
 static TArray<IConsoleCommand*> GHexCommands;
@@ -340,6 +452,8 @@ static void RegisterHexCommands()
 	REGISTER_CMD("hex.CreateGrassTerrain","Create grass-only rolling hills terrain. [GridRadius=12]", HexCreateGrassTerrain);
 	REGISTER_CMD("hex.CreateGrassSandTerrain","Create grass+sand mixed terrain. [GridRadius=14]", HexCreateGrassSandTerrain);
 	REGISTER_CMD("hex.Stats",          "Print statistics for all hex terrain actors",              HexStats);
+	REGISTER_CMD("hex.SetCell",        "Set a single hex cell terrain type. <Q> <R> <Type>  e.g. hex.SetCell 3 0 Sand", HexSetCell);
+	REGISTER_CMD("hex.FillRing",       "Fill all cells in a ring to one type. <CenterQ> <CenterR> <Radius> <Type>  e.g. hex.FillRing 0 0 5 Grass", HexFillRing);
 
 #undef REGISTER_CMD
 
@@ -354,10 +468,33 @@ static void UnregisterHexCommands()
 }
 #endif // WITH_EDITOR
 
+// ============================================================================
+// Editor mode registration (WITH_EDITOR)
+// ============================================================================
+
+#if WITH_EDITOR
+static void RegisterHexEditorModes()
+{
+	FEditorModeRegistry::Get().RegisterMode<FHexTerrainEdMode>(
+		FHexTerrainEdMode::EM_HexTerrainPaint,
+		NSLOCTEXT("Hexagon", "HexTerrainPaintMode", "Hex Terrain Paint"),
+		FSlateIcon(),
+		true
+	);
+	UE_LOG(LogTemp, Log, TEXT("Hexagon: registered HexTerrainPaint editor mode"));
+}
+
+static void UnregisterHexEditorModes()
+{
+	FEditorModeRegistry::Get().UnregisterMode(FHexTerrainEdMode::EM_HexTerrainPaint);
+}
+#endif
+
 void FHexagonModule::StartupModule()
 {
 #if WITH_EDITOR
 	FCoreDelegates::OnPostEngineInit.AddStatic(&RegisterHexCommands);
+	FCoreDelegates::OnPostEngineInit.AddStatic(&RegisterHexEditorModes);
 #endif
 }
 
@@ -365,6 +502,7 @@ void FHexagonModule::ShutdownModule()
 {
 #if WITH_EDITOR
 	UnregisterHexCommands();
+	UnregisterHexEditorModes();
 #endif
 }
 

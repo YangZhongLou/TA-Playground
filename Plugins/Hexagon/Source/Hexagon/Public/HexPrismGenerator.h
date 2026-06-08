@@ -54,7 +54,9 @@ public:
 		bool bCapTop = true,
 		bool bCapBottom = true,
 		int32 HeightSegments = 1,
-		FColor BaseColor = FColor::White
+		FColor BaseColor = FColor::White,
+		FVector WorldOffset = FVector::ZeroVector,
+		float UVTileSize = 0.0f
 	);
 
 	/**
@@ -65,7 +67,9 @@ public:
 		FHexPrismMeshData& OutData,
 		float Radius,
 		float Height = 0.0f,
-		FColor BaseColor = FColor::White
+		FColor BaseColor = FColor::White,
+		FVector WorldOffset = FVector::ZeroVector,
+		float UVTileSize = 0.0f
 	);
 
 private:

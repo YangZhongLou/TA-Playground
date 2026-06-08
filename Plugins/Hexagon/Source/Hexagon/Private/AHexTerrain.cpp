@@ -64,7 +64,16 @@ void AHexTerrain::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 		}
 		else if (Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, LayerMaterials))
 		{
-			ApplyMaterialsToAllChunks();
+			// LayerMaterials change requires full rebuild — mesh sections must be
+			// split by terrain type so each section gets the correct per-layer material.
+			RegenerateTerrain();
+		}
+		else if (Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, bManualMode) ||
+		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, TextureTileSize) ||
+		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, DefaultManualType) ||
+		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, ManualCellTypes))
+		{
+			RegenerateTerrain();
 		}
 
 		if (Name == GET_MEMBER_NAME_CHECKED(FHexTerrainConfig, bRandomizeSeed))
@@ -188,7 +197,8 @@ void AHexTerrain::UpdateChunkLODs()
 				CameraLocation, LODSettings,
 				EffectiveRadius, Gap, CachedConfig,
 				LayerMatPtrs.Num() > 0 ? &LayerMatPtrs : nullptr,
-				TerrainMaterial
+				TerrainMaterial,
+				TextureTileSize
 			);
 		}
 	}
@@ -205,16 +215,34 @@ void AHexTerrain::RegenerateTerrain()
 		return;
 	}
 
-	// 1. Generate all cell data
+	// 1. Generate all cell data with auto-classification
 	FHexTerrainConfig Config = TerrainConfig;
 	Config.CellRadius = CellRadius;
 	TerrainCells = FHexTerrainGenerator::Generate(GridRadius, Config);
 
-	// 2. Cache for LOD updates
+	// 2. Apply manual terrain type overrides
+	if (bManualMode)
+	{
+		for (FHexTerrainCellData& Cell : TerrainCells)
+		{
+			if (const EHexTerrainType* Override = ManualCellTypes.Find(Cell.Axial))
+			{
+				Cell.TerrainType = *Override;
+				Cell.Color = FHexTerrainGenerator::GetTerrainColor(*Override);
+			}
+			else
+			{
+				Cell.TerrainType = DefaultManualType;
+				Cell.Color = FHexTerrainGenerator::GetTerrainColor(DefaultManualType);
+			}
+		}
+	}
+
+	// 3. Cache for LOD updates
 	CachedConfig = Config;
 	CachedEffectiveRadius = CellRadius * (1.0f - FMath::Clamp(Gap, 0.0f, 0.95f));
 
-	// 3. Distribute to chunks and build each
+	// 4. Distribute to chunks and build each
 	BuildAllChunks(Config);
 }
 
@@ -281,7 +309,7 @@ void AHexTerrain::BuildAllChunks(const FHexTerrainConfig& Config)
 		}
 
 		// Set cells — chunk will create per-layer or single-section mesh
-		Chunk->SetCells(ChunkCells, EffectiveRadius, Gap, Config);
+		Chunk->SetCells(ChunkCells, EffectiveRadius, Gap, Config, TextureTileSize);
 
 		// Apply materials
 		if (LayerMatPtrs.Num() > 0)
@@ -313,6 +341,88 @@ void AHexTerrain::PruneUnusedChunks(const TSet<FIntPoint>& ActiveChunkCoords)
 		if (UHexTerrainChunk* Chunk = ChunkMap.FindAndRemoveChecked(Coord))
 		{
 			Chunk->DestroyComponent();
+		}
+	}
+}
+
+// ============================================================================
+// Incremental paint
+// ============================================================================
+
+void AHexTerrain::PaintCells(const TArray<FHexCoord>& Coords, EHexTerrainType Type)
+{
+	if (Coords.Num() == 0) return;
+
+	// Enable manual mode and record overrides
+	bManualMode = true;
+	for (const FHexCoord& C : Coords)
+	{
+		ManualCellTypes.Add(C, Type);
+	}
+
+	// Update TerrainCells in-place (avoids full regeneration)
+	const FLinearColor TypeColor = FHexTerrainGenerator::GetTerrainColor(Type);
+	for (FHexTerrainCellData& Cell : TerrainCells)
+	{
+		if (const EHexTerrainType* Override = ManualCellTypes.Find(Cell.Axial))
+		{
+			Cell.TerrainType = *Override;
+			Cell.Color = FHexTerrainGenerator::GetTerrainColor(*Override);
+		}
+	}
+
+	// Collect affected chunks
+	TSet<FIntPoint> DirtyChunks;
+	for (const FHexCoord& C : Coords)
+	{
+		DirtyChunks.Add(HexToChunkCoord(C));
+	}
+
+	RebuildDirtyChunks(DirtyChunks);
+}
+
+void AHexTerrain::RebuildDirtyChunks(const TSet<FIntPoint>& DirtyChunkCoords)
+{
+	const float EffectiveRadius = CellRadius * (1.0f - FMath::Clamp(Gap, 0.0f, 0.95f));
+
+	TMap<EHexTerrainType, UMaterialInterface*> LayerMatPtrs;
+	for (const auto& Pair : LayerMaterials)
+	{
+		if (Pair.Value)
+		{
+			LayerMatPtrs.Add(Pair.Key, Pair.Value);
+		}
+	}
+
+	// Re-group TerrainCells by chunk coord for the dirty chunks only
+	TMap<FIntPoint, TArray<FHexTerrainCellData>> DirtyDistribution;
+	for (const FHexTerrainCellData& Cell : TerrainCells)
+	{
+		const FIntPoint ChunkCoord = HexToChunkCoord(Cell.Axial);
+		if (DirtyChunkCoords.Contains(ChunkCoord))
+		{
+			DirtyDistribution.FindOrAdd(ChunkCoord).Add(Cell);
+		}
+	}
+
+	for (const auto& Pair : DirtyDistribution)
+	{
+		const FIntPoint& Coord = Pair.Key;
+		const TArray<FHexTerrainCellData>& ChunkCells = Pair.Value;
+
+		UHexTerrainChunk** Found = ChunkMap.Find(Coord);
+		if (!Found || !*Found) continue;
+
+		UHexTerrainChunk* Chunk = *Found;
+		Chunk->SetCells(ChunkCells, EffectiveRadius, Gap, CachedConfig);
+
+		if (LayerMatPtrs.Num() > 0)
+		{
+			Chunk->ApplyLayerMaterials(LayerMatPtrs, TerrainMaterial);
+		}
+		else
+		{
+			Chunk->ApplySingleMaterial(TerrainMaterial);
 		}
 	}
 }
