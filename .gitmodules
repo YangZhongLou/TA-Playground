@@ -1,6 +1,3 @@
-[submodule "SkillHub"]
-	path = SkillHub
-	url = https://github.com/YangZhongLou/SkillHub.git
 [submodule "UnrealMCP"]
 	path = Plugins/UnrealMCP
 	url = https://github.com/YangZhongLou/UnrealMCP.git
