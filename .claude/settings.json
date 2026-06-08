@@ -1,0 +1,57 @@
+{
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": ["unreal"],
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "PowerShell(*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(rm -rf ~/*)",
+      "Bash(rm -rf --no-preserve-root)",
+      "Bash(dd if=/dev/zero of=/dev/)",
+      "Bash(mkfs.)",
+      "Bash(chmod -R 777 /)",
+      "Bash(> /dev/sda)",
+      "PowerShell(Remove-Item -Recurse -Force C:)",
+      "PowerShell(Remove-Item -Recurse -Force /)",
+      "PowerShell(Clear-Disk)",
+      "PowerShell(Format-Volume)"
+    ],
+    "ask": [
+      "Bash(rm )",
+      "Bash(rmdir )",
+      "Bash(rm -rf )",
+      "PowerShell(Remove-Item)",
+      "Bash(del )",
+      "Bash(git reset --hard)",
+      "Bash(git clean)",
+      "Bash(git push --force)",
+      "Bash(git branch -D)",
+      "PowerShell(Clear-Content)",
+      "PowerShell(Clear-RecycleBin)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Edit(*.md)",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/.claude/hooks/md-lint.py\""
+          },
+          {
+            "type": "command",
+            "if": "Write(*.md)",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/.claude/hooks/md-lint.py\""
+          }
+        ]
+      }
+    ]
+  }
+}
