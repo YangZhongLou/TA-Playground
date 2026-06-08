@@ -26,6 +26,7 @@ public class Hexagon : ModuleRules
 				"Slate",
 				"SlateCore",
 				"EditorFramework",
+				"ToolMenus",
 			});
 		}
 	}
