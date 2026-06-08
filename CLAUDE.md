@@ -31,7 +31,7 @@ Personal skill hub. Skills in `.claude/skills/`, agents in `.claude/agents/`, co
 | qa-engineer | `/qa-engineer` | Test writing, strategy, case design, TDD, bug reporting, quality gates |
 | programmer | `/programmer` | Write code, style, language guides (TS/JS/Python/Go/Rust/Java/SQL/Shell) |
 | project-manager | `/project-manager` | Milestone-based project planning, task breakdown, progress tracking |
-| technical-artist | `/technical-artist` | UE material creation, shader development, visual effects prototyping. Dispatches to material skills. |
+| technical-artist | `/technical-artist` | UE material, shader, visual effects prototyping |
 
 ## Skills
 

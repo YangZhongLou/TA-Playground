@@ -148,9 +148,9 @@
 
 | # | 测试项 | 命令/操作 | 预期 |
 |---|--------|----------|------|
-| 11.1 | UE 编译 | 在 VS/Rider 中 Build Hexagon 模块 | 0 errors, 0 warnings |
-| 11.2 | 头文件包含 | - | 无缺失 include，`FSlateIcon`/`FEdMode`/`FPrimitiveDrawInterface` 均可用 |
-| 11.3 | 模块加载 | 启动 UE 编辑器 → 打开项目 | Hexagon 模块正常加载，命令注册成功 |
+| 14.1 | UE 编译 | 在 VS/Rider 中 Build Hexagon 模块 | 0 errors, 0 warnings |
+| 14.2 | 头文件包含 | - | 无缺失 include，`FSlateIcon`/`FEdMode`/`FPrimitiveDrawInterface` 均可用 |
+| 14.3 | 模块加载 | 启动 UE 编辑器 → 打开项目 | Hexagon 模块正常加载，命令注册成功 |
 
 ---
 

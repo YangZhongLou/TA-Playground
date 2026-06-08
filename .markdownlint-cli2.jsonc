@@ -1,0 +1,11 @@
+{
+  "config": {
+    "default": true,
+    "MD013": { "line_length": 120 },
+    "MD031": false,
+    "MD032": false,
+    "MD033": false,
+    "MD040": false,
+    "MD060": false
+  }
+}
