@@ -305,6 +305,63 @@ static void HexCreateGrassSandTerrain(const TArray<FString>& Args)
 }
 
 // ============================================================================
+// hex.CreateFullTerrain — large terrain with all 5 terrain types
+// ============================================================================
+static void HexCreateFullTerrain(const TArray<FString>& Args)
+{
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World) { UE_LOG(LogTemp, Warning, TEXT("hex.CreateFullTerrain: No world")); return; }
+
+	const int32 R = Args.Num() > 0 ? FCString::Atoi(*Args[0]) : 31;
+
+	// Clean up
+	{
+		TArray<AActor*> ToDestroy;
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			if (It->IsA<AHexPrism>() || It->IsA<AHexGrid>() || It->IsA<AHexTerrain>())
+				ToDestroy.Add(*It);
+		}
+		for (AActor* Actor : ToDestroy)
+			if (IsValid(Actor)) Actor->Destroy();
+	}
+
+	AHexTerrain* Terrain = World->SpawnActor<AHexTerrain>(FVector::ZeroVector, FRotator::ZeroRotator);
+	if (!Terrain) { UE_LOG(LogTemp, Error, TEXT("Failed to spawn terrain")); return; }
+
+	// Large terrain: all 5 types
+	Terrain->CellRadius = 100.0f;
+	Terrain->GridRadius = R;
+	Terrain->Gap = 0.02f;
+	Terrain->TerrainConfig.HeightScale = 500.0f;
+	Terrain->TerrainConfig.NoiseScale = 0.06f;
+	Terrain->TerrainConfig.NoiseOctaves = 3;
+	Terrain->TerrainConfig.WaterLevel = 0.22f;
+	Terrain->TerrainConfig.SandLevel = 0.40f;
+	Terrain->TerrainConfig.GrassLevel = 0.60f;
+	Terrain->TerrainConfig.RockLevel = 0.78f;
+	Terrain->TerrainConfig.NoiseSeed = FMath::RandRange(0, 99999);
+	Terrain->LODSettings.LOD1Distance = 8000.0f;
+	Terrain->LODSettings.LOD2Distance = 20000.0f;
+
+	// Load all 5 materials
+	auto LoadMat = [](const TCHAR* Path) { return LoadObject<UMaterialInterface>(nullptr, Path); };
+	if (auto* M = LoadMat(TEXT("/Game/Materials/M_Water.M_Water"))) Terrain->LayerMaterials.Add(EHexTerrainType::Water, M);
+	if (auto* M = LoadMat(TEXT("/Game/Materials/M_Sand.M_Sand")))   Terrain->LayerMaterials.Add(EHexTerrainType::Sand, M);
+	if (auto* M = LoadMat(TEXT("/Game/Materials/M_Grass.M_Grass"))) Terrain->LayerMaterials.Add(EHexTerrainType::Grass, M);
+	if (auto* M = LoadMat(TEXT("/Game/Materials/M_Rock.M_Rock")))   Terrain->LayerMaterials.Add(EHexTerrainType::Rock, M);
+	if (auto* M = LoadMat(TEXT("/Game/Materials/M_Snow.M_Snow")))   Terrain->LayerMaterials.Add(EHexTerrainType::Snow, M);
+
+	Terrain->RegenerateTerrain();
+
+	const int32 TotalCells = 1 + R * (R + 1) * 3;
+	UE_LOG(LogTemp, Log, TEXT("========== Full Terrain Ready =========="));
+	UE_LOG(LogTemp, Log, TEXT("  GridRadius=%d  |  Cells=%d  |  Chunks=%d  |  5x scale"), R, TotalCells, Terrain->GetChunkCount());
+	UE_LOG(LogTemp, Log, TEXT("  Water(15%%) Sand(35%%) Grass(60%%) Rock(85%%) Snow(top)"));
+	Terrain->PrintStats();
+}
+
+// ============================================================================
 // hex.Stats — print stats for all hex terrain actors in the world
 // ============================================================================
 static void HexStats(const TArray<FString>& Args)
@@ -456,6 +513,7 @@ static void RegisterHexCommands()
 	REGISTER_CMD("hex.CreateTestScene","Create test scene: terrain + light + debug colors. [GridRadius=15] [CellRadius=100]", HexCreateTestScene);
 	REGISTER_CMD("hex.CreateGrassTerrain","Create grass-only rolling hills terrain. [GridRadius=12]", HexCreateGrassTerrain);
 	REGISTER_CMD("hex.CreateGrassSandTerrain","Create grass+sand mixed terrain. [GridRadius=14]", HexCreateGrassSandTerrain);
+	REGISTER_CMD("hex.CreateFullTerrain","Create large terrain with all 5 types (5x scale). [GridRadius=31]", HexCreateFullTerrain);
 	REGISTER_CMD("hex.Stats",          "Print statistics for all hex terrain actors",              HexStats);
 	REGISTER_CMD("hex.SetCell",        "Set a single hex cell terrain type. <Q> <R> <Type>  e.g. hex.SetCell 3 0 Sand", HexSetCell);
 	REGISTER_CMD("hex.FillRing",       "Fill all cells in a ring to one type. <CenterQ> <CenterR> <Radius> <Type>  e.g. hex.FillRing 0 0 5 Grass", HexFillRing);
