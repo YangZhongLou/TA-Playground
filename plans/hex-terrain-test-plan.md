@@ -154,6 +154,36 @@
 
 ---
 
+## 7. LOD 调试可视化
+
+| # | 测试项 | 操作 | 预期结果 |
+|---|--------|------|---------|
+| 15.1 | 启用 LOD 调试 | 选中 terrain → Details → Hexagon\|Debug → 勾选 `bDebugLODColors` | chunk 按 LOD 着色：绿/黄/红 |
+| 15.2 | 关闭 LOD 调试 | 取消勾选 `bDebugLODColors` | 所有 chunk 恢复原始颜色 |
+| 15.3 | 与 bDebugChunkColors 切换 | 先勾选 `bDebugChunkColors`，再勾选 `bDebugLODColors` | LOD 颜色覆盖 chunk 颜色；关闭后自动恢复 chunk 颜色 |
+| 15.4 | 远距离观察 | 将相机远离 terrain | 远处 chunk 切换 LOD 后颜色随之变化 |
+
+## 8. 性能日志
+
+| # | 测试项 | 操作 | 预期结果 |
+|---|--------|------|---------|
+| 16.1 | 启用性能日志 | 选中 terrain → Hexagon\|Debug → 勾选 `bLogPerformance` | Output Log 输出超过阈值（默认 16ms）的 chunk 重建耗时 |
+| 16.2 | 调整阈值 | 修改 `PerformanceWarningThresholdMs = 5.0` | 更多 chunk 重建触发 Warning 输出 |
+| 16.3 | 大 terrain 创建 | 勾选 bLogPerformance → 创建 GridRadius=20 terrain | Log 输出各 chunk 重建时间，可识别慢 chunk |
+
+## 9. Editor 菜单
+
+| # | 测试项 | 操作 | 预期结果 |
+|---|--------|------|---------|
+| 17.1 | 菜单出现 | 点击顶部 Window 菜单 | 出现 "Hexagon" 子菜单 |
+| 17.2 | Create Test Scene | Window → Hexagon → Create Test Scene | terrain + 灯光生成，Output Log 输出 Stats |
+| 17.3 | Create Grass Terrain | Window → Hexagon → Create Grass Terrain | 绿色草地 terrain 生成 |
+| 17.4 | Create Grass+Sand Terrain | Window → Hexagon → Create Grass+Sand Terrain | 水+沙+草混合 terrain 生成 |
+| 17.5 | Destroy All | Window → Hexagon → Destroy All | 所有 hex actor 被删除 |
+| 17.6 | Print Stats | Window → Hexagon → Print Stats | Output Log 输出 terrain 统计信息 |
+
+---
+
 ## 测试环境
 
 - **项目**: TA-Playground

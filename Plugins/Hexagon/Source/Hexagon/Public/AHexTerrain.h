@@ -132,6 +132,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Debug")
 	bool bDebugChunkColors = false;
 
+	/** When true, chunks are color-coded by LOD level: green=LOD0, yellow=LOD1, red=LOD2. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Debug")
+	bool bDebugLODColors = false;
+
+	/** When true, log per-chunk rebuild timing in BuildAllChunks and RebuildDirtyChunks. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Debug")
+	bool bLogPerformance = false;
+
+	/** Threshold in milliseconds above which chunk rebuilds emit a warning. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Debug", meta = (ClampMin = "1.0", ClampMax = "500.0"))
+	float PerformanceWarningThresholdMs = 16.0f;
+
 	/** Set material for a specific terrain type (runtime). */
 	UFUNCTION(BlueprintCallable, Category = "Hexagon|Material")
 	void SetLayerMaterial(EHexTerrainType Type, UMaterialInterface* Material);

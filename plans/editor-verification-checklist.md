@@ -10,49 +10,61 @@
 |---|---------|---------|
 | 0.1 | 在 Rider/VS 中 Build `Hexagon` 模块，启动 UE 编辑器 | 0 errors，编辑器正常启动 |
 | 0.2 | 打开地图 `HexagonPlayground`（File → Open Level → 选择 HexagonPlayground） | 地图加载成功，视口可见 |
-| 0.3 | 打开 Output Log（Window → Developer Tools → Output Log） | 日志面板可见，后续可观察命令输出 |
+| 0.3 | 打开 Output Log（Window → Developer Tools → Output Log） | 日志面板可见，后续可观察自动重建日志 |
 
 ---
 
 ## 1. 基础地形创建
 
-**测试目标**：验证 terrain 能正常生成、打印统计、清理。
+**测试目标**：验证通过 Place Actors 面板创建 terrain、自动生成、手动删除。
 
-### 1.1 创建测试场景
+### 1.1 创建地形
 
 | 步骤 | 操作 |
 |------|------|
-| ① | 在 Output Log 底部的控制台输入：`hex.CreateTestScene 10 120` |
-| ② | 按 Enter 执行 |
+| ① | 打开 **Place Actors** 面板（Window → Place Actors） |
+| ② | 在搜索栏输入 `HexTerrain` |
+| ③ | 将 **AHexTerrain** 拖入视口（或双击） |
+| ④ | 在 **Details** 面板 → **Hexagon \| Terrain** → 设置 `GridRadius = 10` |
+| ⑤ | 设置 `CellRadius = 120` |
+| ⑥ | 在 **Hexagon \| Debug** → 勾选 `bDebugChunkColors = true` |
 
 **预期结果**：
-- 视口中出现一个六边形地形（GridRadius=10，CellRadius=120）
-- 地形上方有方向光（DirectionalLight）和天空光（SkyLight）
-- Output Log 输出类似：
-  ```
-  ========== Test Scene Ready ==========
-  ========== HexTerrain Stats ==========
-    Total Cells:    331
-    Chunks:         N  (CHUNK_SIZE=16)
-    Terrain types:  Water=X Sand=Y Grass=Z Rock=W Snow=V
-  ========================================
-  ```
+- 视口中出现六边形地形（GridRadius=10，CellRadius=120）
+- 因 `bAutoRegenerate` 默认开启，参数修改后 terrain 自动重建
+- 每个 chunk 显示不同颜色（debug 模式）
+- Output Log 输出 terrain 自动重建信息
 
-### 1.2 查看统计
+### 1.2 放置灯光
 
 | 步骤 | 操作 |
 |------|------|
-| ① | 控制台输入：`hex.Stats` |
+| ① | Place Actors → Lights → 将 **Directional Light** 拖入视口 |
+| ② | 选中灯光 → Details → 设置 Intensity = 8.0，Light Color = 淡暖色 |
+| ③ | Place Actors → Lights → 将 **Sky Light** 拖入视口 |
+| ④ | 选中 → Details → 设置 Intensity = 1.5 |
 
-**预期结果**：Output Log 再次输出 terrain stats，与 1.1 一致。
+**预期结果**：terrain 被照亮，阴影和高光可见，地形层次感清晰。
 
-### 1.3 清理
+### 1.3 从 Details 面板查看 terrain 信息
 
 | 步骤 | 操作 |
 |------|------|
-| ① | 控制台输入：`hex.DestroyAll` |
+| ① | 选中 terrain → 查看 Details 面板各项参数 |
 
-**预期结果**：视口中 terrain、灯光全部消失。Log 显示 `destroyed N hex actors`。
+**预期结果**：
+- `GridRadius = 10`，`CellRadius = 120`
+- 总 cell 数可通过公式验证：`1 + 10 × (10 + 1) × 3 = 331`
+- terrain 自动重建完成，视口中可见的 cell 数量与公式计算相符
+
+### 1.4 删除地形
+
+| 步骤 | 操作 |
+|------|------|
+| ① | 在视口或 **World Outliner** 中选中 terrain actor |
+| ② | 按 **Delete** 键 |
+
+**预期结果**：terrain 从视口中消失。World Outliner 中无 AHexTerrain 残留。
 
 ---
 
@@ -60,14 +72,18 @@
 
 **测试目标**：验证按地形类型分配材质、编辑器实时修改材质触发生效。
 
-### 2.1 创建混合地形
+### 2.1 创建带材质的混合地形
 
 | 步骤 | 操作 |
 |------|------|
-| ① | 控制台输入：`hex.CreateGrassSandTerrain 14` |
+| ① | Place Actors → 拖入 **AHexTerrain** |
+| ② | Details → Hexagon \| Terrain → 设置 `GridRadius = 14`，`CellRadius = 120` |
+| ③ | 展开 `TerrainConfig` → 设置 `WaterLevel = 0.15`，`SandLevel = 0.40`，`GrassLevel = 1.0`，`RockLevel = 1.0` |
+| ④ | Details → Hexagon \| Material → 展开 `LayerMaterials` |
+| ⑤ | 点击 **+** 添加 3 条映射：`Water → M_Water`、`Sand → M_Sand`、`Grass → M_Grass` |
 
 **预期结果**：
-- 视口中出现 terrain（GridRadius=14，CellRadius=120）
+- 视口中 terrain 自动重建
 - 低洼处显示 **蓝色**（Water），中低处显示 **黄色**（Sand），高处显示 **绿色**（Grass）
 - 三种颜色/材质在同一 terrain 上同时可见
 
@@ -86,8 +102,6 @@
 | Water | `M_Water` |
 | Sand | `M_Sand` |
 | Grass | `M_Grass` |
-| Rock | `M_Rock` |
-| Snow | `M_Snow` |
 
 ### 2.3 运行时添加新材质
 
@@ -95,7 +109,8 @@
 |------|------|
 | ① | 在 `LayerMaterials` TMap 中点击 **+** 添加条目 |
 | ② | Key 选 `Rock`，Value 下拉选择 `M_Rock` |
-| ③ | 等待 terrain 自动重建（约 0.5-1 秒） |
+| ③ | 适当降低 `SandLevel` 或提高 `RockLevel` 以暴露出 Rock 区域 |
+| ④ | 等待 terrain 自动重建（约 0.5-1 秒） |
 
 **预期结果**：terrain 重建后，高海拔的 Rock 区域绑定 M_Rock 材质，颜色变化可见。
 
@@ -141,30 +156,28 @@
 
 **预期结果**：terrain 重建，全部 cell 变 Sand（黄色）。
 
-### 3.3 SetCell 单个 cell
+### 3.3 通过 TMap 编辑器设置单个 cell
 
 | 步骤 | 操作 |
 |------|------|
-| ① | 控制台输入：`hex.SetCell 5 3 Grass` |
-| ② | 控制台输入：`hex.SetCell 5 4 Water` |
+| ① | Details → **Hexagon \| Manual** → 展开 `ManualCellTypes` |
+| ② | 点击 **+** 添加条目 → Key 设为 `(5, 3)`，Value 选 `Grass` |
+| ③ | 再次点击 **+** → Key 设为 `(5, 4)`，Value 选 `Water` |
 
 **预期结果**：
 - 坐标 (5,3) 的 cell 变绿色
 - 坐标 (5,4) 的 cell 变蓝色
-- Output Log 输出：`hex.SetCell: (5, 3) → EHexTerrainType::Grass`
-- 其余 cell 保持 Sand（黄色）
+- 其余 cell 保持 Sand（黄色，DefaultManualType）
 
-### 3.4 FillRing 批量设置
+### 3.4 通过 TMap 编辑器批量设置
 
 | 步骤 | 操作 |
 |------|------|
-| ① | 控制台输入：`hex.FillRing 0 0 2 Rock` |
-| ② | 控制台输入：`hex.FillRing 8 3 1 Sand` |
+| ① | 在 `ManualCellTypes` 中继续添加条目，覆盖中心区域多个 cell |
+| ② | 例如：(0,0)→Rock、(1,0)→Rock、(0,1)→Rock、(1,1)→Rock、(2,0)→Rock 等 |
+| ③ | 观察 terrain 自动重建 |
 
-**预期结果**：
-- 中心 (0,0) 半径 2 环共 **19 个 cell** 全变 Rock（灰色）
-- (8,3) 周围 1 环共 **7 个 cell** 全变 Sand（黄色）
-- Output Log 分别输出设置的 cell 数量
+**预期结果**：所添加的 cell 全部变为对应类型。未被覆盖的 cell 仍使用 `DefaultManualType`。
 
 ### 3.5 手动↔自动切换
 
@@ -183,7 +196,7 @@
 |------|------|
 | ① | 在 **Hexagon \| Manual** → 展开 `ManualCellTypes` |
 
-**预期结果**：TMap 编辑器列出之前 setCell/FillRing 添加的所有条目，格式：
+**预期结果**：TMap 编辑器列出之前添加的所有条目，格式：
 ```
 (5,3)  → Grass
 (5,4)  → Water
@@ -201,10 +214,12 @@
 
 | 步骤 | 操作 |
 |------|------|
-| ① | 控制台输入：`hex.DestroyAll` 清理 |
-| ② | 控制台输入：`hex.CreateGrassTerrain 12` |
-| ③ | 菜单栏 → **Modes** 下拉（通常在工具栏左上角区域） |
-| ④ | 选择 **Hex Terrain Paint** |
+| ① | 选中 terrain → 按 **Delete** 删除旧的 |
+| ② | Place Actors → 拖入 **AHexTerrain** → 设置 `GridRadius = 12`，`CellRadius = 120` |
+| ③ | `TerrainConfig` → `GrassLevel = 1.0`，`WaterLevel = 0`，`SandLevel = 0`，`RockLevel = 1.0`（令全部 cell 为 Grass） |
+| ④ | 在 `LayerMaterials` 中添加 `Grass → M_Grass` |
+| ⑤ | 菜单栏 → **Modes** 下拉（通常在工具栏左上角区域） |
+| ⑥ | 选择 **Hex Terrain Paint** |
 
 **预期结果**：
 - 菜单中出现 "Hex Terrain Paint" 选项
@@ -323,7 +338,7 @@
 |------|------|
 | ① | 设置 `TextureTileSize = 100` |
 
-**预期结果**：terrain 自动重建（无报错）。如果使用了带纹理的材质，纹理图案会更加密集。
+**预期结果**：terrain 自动重建（无报错）。如果使用了带纹理的材质，纹理图案更加密集。
 
 ### 5.3 调整 TileSize（稀疏平铺）
 
@@ -359,39 +374,43 @@
 
 | 步骤 | 操作 |
 |------|------|
-| ① | 控制台输入：`hex.SetCell 999 999 Snow` |
+| ① | 确保 bManualMode 开启 → 展开 `ManualCellTypes` |
+| ② | 点击 **+** → Key 设为 `(999, 999)`，Value 选 `Snow` |
 
 **预期结果**：
 - **不崩溃、不卡顿**
 - 坐标超出 terrain 范围，条目被加入 ManualCellTypes 但无匹配 cell（无可见变化）
 
-### 6.2 无效类型名
+### 6.2 ClampMin 值约束
 
 | 步骤 | 操作 |
 |------|------|
-| ① | 控制台输入：`hex.SetCell 0 0 Lava` |
+| ① | 选中 terrain → Details → Hexagon \| Terrain |
+| ② | 尝试输入 `GridRadius = -1` |
 
 **预期结果**：
 - **不崩溃**
-- Output Log 显示：`Unknown terrain type 'Lava'. Use: Water, Sand, Grass, Rock, Snow`
-- terrain 无变化
+- ClampMin 限位生效，值被钳制为 0（或滑动条无法拖至负数）
 
-### 6.3 无 terrain 时命令
+### 6.3 删除 terrain 后的状态
 
 | 步骤 | 操作 |
 |------|------|
-| ① | 控制台输入：`hex.DestroyAll` |
-| ② | 控制台输入：`hex.SetCell 0 0 Grass` |
+| ① | 选中 terrain → 按 **Delete** 键删除 |
+| ② | 确认 World Outliner 中无 AHexTerrain |
+| ③ | 查看 Details 面板和视口 |
 
 **预期结果**：
 - **不崩溃**
-- Output Log 显示：`No AHexTerrain found. Try hex.CreateTestScene first.`
+- Details 面板清空/显示 "Nothing Selected"
+- 视口恢复正常，无残留渲染
 
 ### 6.4 无 terrain 时进入 Paint 模式
 
 | 步骤 | 操作 |
 |------|------|
-| ① | Modes 下拉 → 选择 **Hex Terrain Paint** |
+| ① | 确认场景中无 AHexTerrain |
+| ② | Modes 下拉 → 选择 **Hex Terrain Paint** |
 
 **预期结果**：
 - 模式正常进入
@@ -402,8 +421,10 @@
 
 | 步骤 | 操作 |
 |------|------|
-| ① | `hex.CreateGrassTerrain 12` → 进入 Paint 模式 |
-| ② | BrushRadius=3，在 terrain 上**大范围快速拖拽**，跨越 chunk 边界 |
+| ① | Place Actors → 拖入 AHexTerrain → GridRadius=12, CellRadius=120, 全部设为 Grass（同 §4.1） |
+| ② | 进入 Hex Terrain Paint 模式 |
+| ③ | BrushRadius=3，BrushTerrainType=Sand |
+| ④ | 在 terrain 上**大范围快速拖拽**，跨越 chunk 边界 |
 
 **预期结果**：
 - 两侧 chunk 都正确更新
@@ -419,11 +440,13 @@
 
 | 步骤 | 操作 |
 |------|------|
-| ① | 控制台输入：`hex.DestroyAll` |
-| ② | 控制台输入：`hex.CreateTestScene 20 100`（GridRadius=20，~1200 cell） |
-| ③ | 进入 Hex Terrain Paint 模式 |
-| ④ | BrushRadius=3，BrushTerrainType=Sand |
-| ⑤ | **快速拖拽涂刷** 5-10 秒，覆盖大片区域 |
+| ① | 删除旧 terrain |
+| ② | Place Actors → 拖入 **AHexTerrain** |
+| ③ | Details → `GridRadius = 20`，`CellRadius = 100`（~1200 cell） |
+| ④ | `GrassLevel = 1.0`，`WaterLevel = 0`，`SandLevel = 0`，`RockLevel = 1.0`（全部 Grass） |
+| ⑤ | 进入 **Hex Terrain Paint** 模式 |
+| ⑥ | BrushRadius=3，BrushTerrainType=Sand |
+| ⑦ | **快速拖拽涂刷** 5-10 秒，覆盖大片区域 |
 
 **预期结果**：
 - 涂刷过程无明显卡顿或帧率骤降
@@ -437,14 +460,14 @@
 | 分类 | 项数 | 通过 | 失败 | 备注 |
 |------|:---:|:---:|:---:|------|
 | 0. 前置准备 | 3 | | | |
-| 1. 基础地形 | 3 | | | |
+| 1. 基础地形 | 4 | | | |
 | 2. LayerMaterials | 5 | | | |
 | 3. 手动模式 | 6 | | | |
 | 4. 笔刷绘制 | 9 | | | |
 | 5. 纹理 UV | 5 | | | |
 | 6. 边界鲁棒性 | 5 | | | |
 | 7. 性能 | 1 | | | |
-| **总计** | **37** | | | |
+| **总计** | **38** | | | |
 
 ---
 

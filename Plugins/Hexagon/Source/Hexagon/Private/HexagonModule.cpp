@@ -20,6 +20,11 @@
 #include "LevelEditor.h"
 #include "HexTerrainEdMode.h"
 #include "EditorModeRegistry.h"
+#include "ToolMenus.h"
+#include "ToolMenuSection.h"
+#include "ToolMenuEntry.h"
+#include "ToolMenuDelegates.h"
+#include "Framework/Commands/UIAction.h"
 
 // ============================================================================
 // hex.SpawnPrism
@@ -488,6 +493,96 @@ static void UnregisterHexEditorModes()
 {
 	FEditorModeRegistry::Get().UnregisterMode(FHexTerrainEdMode::EM_HexTerrainPaint);
 }
+
+// ============================================================================
+// Editor menu registration (WITH_EDITOR)
+// ============================================================================
+static bool GHexMenuRegistered = false;
+
+static void RegisterHexEditorMenus()
+{
+	if (GHexMenuRegistered) return;
+	GHexMenuRegistered = true;
+
+	UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateLambda([]()
+	{
+		UToolMenu* WindowMenu = UToolMenus::Get()->ExtendMenu("LevelEditor.MainMenu.Window");
+		FToolMenuSection& Section = WindowMenu->FindOrAddSection("WindowLayout");
+
+		Section.AddSubMenu(
+			"HexagonMenu",
+			NSLOCTEXT("Hexagon", "HexagonMenu", "Hexagon"),
+			NSLOCTEXT("Hexagon", "HexagonMenuTooltip", "Hexagon terrain tools"),
+			FNewToolMenuDelegate::CreateLambda([](UToolMenu* SubMenu)
+			{
+				// --- Terrain Presets ---
+				FToolMenuSection& PresetSection = SubMenu->AddSection(
+					"HexagonPresets", NSLOCTEXT("Hexagon", "PresetsSection", "Terrain Presets"));
+
+				PresetSection.AddMenuEntry(
+					"HexCreateTestScene",
+					NSLOCTEXT("Hexagon", "CreateTestScene", "Create Test Scene"),
+					NSLOCTEXT("Hexagon", "CreateTestSceneTooltip", "Create test terrain with lights and debug colors (GridRadius=15, CellRadius=100)"),
+					FSlateIcon(),
+					FUIAction(FExecuteAction::CreateLambda([]() {
+						TArray<FString> Args;
+						HexCreateTestScene(Args);
+					}))
+				);
+
+				PresetSection.AddMenuEntry(
+					"HexCreateGrassTerrain",
+					NSLOCTEXT("Hexagon", "CreateGrassTerrain", "Create Grass Terrain"),
+					NSLOCTEXT("Hexagon", "CreateGrassTerrainTooltip", "Create grass-only rolling hills terrain (GridRadius=12)"),
+					FSlateIcon(),
+					FUIAction(FExecuteAction::CreateLambda([]() {
+						TArray<FString> Args;
+						HexCreateGrassTerrain(Args);
+					}))
+				);
+
+				PresetSection.AddMenuEntry(
+					"HexCreateGrassSandTerrain",
+					NSLOCTEXT("Hexagon", "CreateGrassSandTerrain", "Create Grass+Sand Terrain"),
+					NSLOCTEXT("Hexagon", "CreateGrassSandTerrainTooltip", "Create mixed grass, sand, and water terrain (GridRadius=14)"),
+					FSlateIcon(),
+					FUIAction(FExecuteAction::CreateLambda([]() {
+						TArray<FString> Args;
+						HexCreateGrassSandTerrain(Args);
+					}))
+				);
+
+				// --- Utilities ---
+				FToolMenuSection& UtilSection = SubMenu->AddSection(
+					"HexagonUtilities", NSLOCTEXT("Hexagon", "UtilitiesSection", "Utilities"));
+
+				UtilSection.AddMenuEntry(
+					"HexDestroyAll",
+					NSLOCTEXT("Hexagon", "DestroyAll", "Destroy All"),
+					NSLOCTEXT("Hexagon", "DestroyAllTooltip", "Destroy all hex actors in the level"),
+					FSlateIcon(),
+					FUIAction(FExecuteAction::CreateLambda([]() {
+						TArray<FString> Args;
+						HexDestroyAll(Args);
+					}))
+				);
+
+				UtilSection.AddMenuEntry(
+					"HexPrintStats",
+					NSLOCTEXT("Hexagon", "PrintStats", "Print Stats"),
+					NSLOCTEXT("Hexagon", "PrintStatsTooltip", "Print terrain statistics (cell count, chunk count, LOD dist) to Output Log"),
+					FSlateIcon(),
+					FUIAction(FExecuteAction::CreateLambda([]() {
+						TArray<FString> Args;
+						HexStats(Args);
+					}))
+				);
+			})
+		);
+	}));
+
+	UE_LOG(LogTemp, Log, TEXT("Hexagon: registered editor menus"));
+}
 #endif
 
 void FHexagonModule::StartupModule()
@@ -495,6 +590,7 @@ void FHexagonModule::StartupModule()
 #if WITH_EDITOR
 	FCoreDelegates::OnPostEngineInit.AddStatic(&RegisterHexCommands);
 	FCoreDelegates::OnPostEngineInit.AddStatic(&RegisterHexEditorModes);
+	RegisterHexEditorMenus();
 #endif
 }
 

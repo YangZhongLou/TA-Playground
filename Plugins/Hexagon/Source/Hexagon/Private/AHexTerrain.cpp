@@ -6,6 +6,7 @@
 #include "GameFramework/Pawn.h"
 #include "Engine/World.h"
 #include "UObject/ConstructorHelpers.h"
+#include "HAL/PlatformTime.h"
 
 // ============================================================================
 // Helper: map hex axial coordinate -> chunk coordinate
@@ -74,6 +75,36 @@ void AHexTerrain::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, ManualCellTypes))
 		{
 			RegenerateTerrain();
+		}
+		else if (Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, bDebugLODColors))
+		{
+			if (bDebugLODColors)
+			{
+				// Immediately apply LOD debug colors
+				UpdateChunkLODs();
+			}
+			else
+			{
+				// Clear LOD debug colors from all chunks
+				for (const auto& Pair : ChunkMap)
+				{
+					if (!Pair.Value) continue;
+					if (bDebugChunkColors)
+					{
+						// Re-apply chunk debug colors without full rebuild
+						const FIntPoint Coord = Pair.Value->GetChunkCoord();
+						const uint32 Hash = HashCombine(GetTypeHash(Coord.X), GetTypeHash(Coord.Y));
+						Pair.Value->SetDebugColor(FColor(
+							static_cast<uint8>((Hash * 37 + 101) % 256),
+							static_cast<uint8>((Hash * 53 + 157) % 256),
+							static_cast<uint8>((Hash * 71 + 199) % 256)));
+					}
+					else
+					{
+						Pair.Value->ClearDebugColor();
+					}
+				}
+			}
 		}
 
 		if (Name == GET_MEMBER_NAME_CHECKED(FHexTerrainConfig, bRandomizeSeed))
@@ -200,6 +231,20 @@ void AHexTerrain::UpdateChunkLODs()
 				TerrainMaterial,
 				TextureTileSize
 			);
+
+			// LOD debug visualization: color chunks by LOD level
+			if (bDebugLODColors)
+			{
+				FColor LODColor;
+				switch (Pair.Value->GetCurrentLOD())
+				{
+				case 0: LODColor = FColor(0, 200, 0);    break; // Green
+				case 1: LODColor = FColor(220, 220, 0);  break; // Yellow
+				case 2: LODColor = FColor(220, 0, 0);    break; // Red
+				default: LODColor = FColor(100, 100, 100); break; // Gray
+				}
+				Pair.Value->SetDebugColor(LODColor);
+			}
 		}
 	}
 }
@@ -309,10 +354,25 @@ void AHexTerrain::BuildAllChunks(const FHexTerrainConfig& Config)
 		}
 
 		// Set cells — chunk will create per-layer or single-section mesh
-		Chunk->SetCells(ChunkCells, EffectiveRadius, Gap, Config, TextureTileSize);
+		const bool bHasLayerMats = LayerMatPtrs.Num() > 0;
+		const double BuildStart = bLogPerformance ? FPlatformTime::Seconds() : 0.0;
+		Chunk->SetCells(ChunkCells, EffectiveRadius, Gap, Config,
+			bHasLayerMats ? &LayerMatPtrs : nullptr,
+			bHasLayerMats ? TerrainMaterial.Get() : nullptr,
+			TextureTileSize);
+		if (bLogPerformance)
+		{
+			const double ElapsedMs = (FPlatformTime::Seconds() - BuildStart) * 1000.0;
+			if (ElapsedMs > PerformanceWarningThresholdMs)
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("Chunk (%d,%d) rebuild: %.1f ms (%d cells) [Regenerate]"),
+					Coord.X, Coord.Y, ElapsedMs, ChunkCells.Num());
+			}
+		}
 
-		// Apply materials
-		if (LayerMatPtrs.Num() > 0)
+		// Apply materials (always called so section materials stay up-to-date)
+		if (bHasLayerMats)
 		{
 			Chunk->ApplyLayerMaterials(LayerMatPtrs, TerrainMaterial);
 		}
@@ -414,9 +474,25 @@ void AHexTerrain::RebuildDirtyChunks(const TSet<FIntPoint>& DirtyChunkCoords)
 		if (!Found || !*Found) continue;
 
 		UHexTerrainChunk* Chunk = *Found;
-		Chunk->SetCells(ChunkCells, EffectiveRadius, Gap, CachedConfig);
+		const bool bHasLayerMats = LayerMatPtrs.Num() > 0;
 
-		if (LayerMatPtrs.Num() > 0)
+		const double BuildStart = bLogPerformance ? FPlatformTime::Seconds() : 0.0;
+		Chunk->SetCells(ChunkCells, EffectiveRadius, Gap, CachedConfig,
+			bHasLayerMats ? &LayerMatPtrs : nullptr,
+			bHasLayerMats ? TerrainMaterial.Get() : nullptr,
+			TextureTileSize);
+		if (bLogPerformance)
+		{
+			const double ElapsedMs = (FPlatformTime::Seconds() - BuildStart) * 1000.0;
+			if (ElapsedMs > PerformanceWarningThresholdMs)
+			{
+				UE_LOG(LogTemp, Warning,
+					TEXT("Chunk (%d,%d) rebuild: %.1f ms (%d cells) [Paint]"),
+					Coord.X, Coord.Y, ElapsedMs, ChunkCells.Num());
+			}
+		}
+
+		if (bHasLayerMats)
 		{
 			Chunk->ApplyLayerMaterials(LayerMatPtrs, TerrainMaterial);
 		}

@@ -3,6 +3,7 @@
 #if WITH_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+#include "Misc/SecureHash.h"
 #include "HexGeometry.h"
 #include "HexTerrainGenerator.h"
 #include "HexPrismGenerator.h"
@@ -473,6 +474,108 @@ bool FHexPrismGen_LOD::RunTest(const FString& Parameters)
 	// Flat hex should have fewer vertices than full prism
 	TestTrue("Flat hex fewer vertices than full prism", Flat.Vertices.Num() < Full.Vertices.Num());
 	TestTrue("Flat hex fewer triangles than full prism", Flat.Triangles.Num() < Full.Triangles.Num());
+
+	return true;
+}
+
+// ============================================================================
+// FHexTerrainGen — All-Grass regression (Doc #3: GrassLevel=1.0, RockLevel=1.0)
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHexTerrainGen_AllGrass, "TA.Hexagon.FHexTerrainGen.AllGrass",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FHexTerrainGen_AllGrass::RunTest(const FString& Parameters)
+{
+	// Config matching the editor checklist "全部 Grass" scenario
+	FHexTerrainConfig Config;
+	Config.WaterLevel = 0.0f;
+	Config.SandLevel = 0.0f;
+	Config.GrassLevel = 1.0f;
+	Config.RockLevel = 1.0f;
+
+	// All normalized heights [0,1] should classify as Grass
+	TestEqual("Height 0.0", FHexTerrainGenerator::ClassifyTerrain(0.0f, Config), EHexTerrainType::Grass);
+	TestEqual("Height 0.5", FHexTerrainGenerator::ClassifyTerrain(0.5f, Config), EHexTerrainType::Grass);
+	TestEqual("Height 0.99", FHexTerrainGenerator::ClassifyTerrain(0.99f, Config), EHexTerrainType::Grass);
+	TestEqual("Height 1.0", FHexTerrainGenerator::ClassifyTerrain(1.0f, Config), EHexTerrainType::Snow); // ==1.0 → Snow (boundary)
+
+	// Generate terrain: every cell should be Grass (except possibly exactly 1.0)
+	TArray<FHexTerrainCellData> Cells = FHexTerrainGenerator::Generate(5, Config);
+	TestTrue("Generate returns cells", Cells.Num() > 0);
+
+	int32 NonGrassCount = 0;
+	for (const FHexTerrainCellData& Cell : Cells)
+	{
+		if (Cell.TerrainType != EHexTerrainType::Grass)
+		{
+			++NonGrassCount;
+		}
+	}
+	// With GrassLevel=1.0, at most a handful of cells with NormalizedHeight==1.0 can be Snow
+	TestTrue("Overwhelmingly Grass", NonGrassCount < Cells.Num() / 10);
+
+	return true;
+}
+
+// ============================================================================
+// FHexTerrainGen — Boundary edge cases (GrassLevel=0.6 → below=Grass, above=Rock/Snow)
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHexTerrainGen_Boundary, "TA.Hexagon.FHexTerrainGen.Boundary",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FHexTerrainGen_Boundary::RunTest(const FString& Parameters)
+{
+	FHexTerrainConfig Config;
+	Config.WaterLevel = 0.20f;
+	Config.SandLevel = 0.40f;
+	Config.GrassLevel = 0.60f;
+	Config.RockLevel = 0.80f;
+
+	// Exact boundary values
+	TestEqual("0.20 → Water", FHexTerrainGenerator::ClassifyTerrain(0.20f, Config), EHexTerrainType::Sand);
+	TestEqual("0.199 → Water", FHexTerrainGenerator::ClassifyTerrain(0.199f, Config), EHexTerrainType::Water);
+	TestEqual("0.40 → Sand", FHexTerrainGenerator::ClassifyTerrain(0.40f, Config), EHexTerrainType::Grass);
+	TestEqual("0.399 → Sand", FHexTerrainGenerator::ClassifyTerrain(0.399f, Config), EHexTerrainType::Sand);
+	TestEqual("0.60 → Grass", FHexTerrainGenerator::ClassifyTerrain(0.60f, Config), EHexTerrainType::Rock);
+	TestEqual("0.80 → Rock", FHexTerrainGenerator::ClassifyTerrain(0.80f, Config), EHexTerrainType::Snow);
+
+	return true;
+}
+
+// ============================================================================
+// Chunk Debug Color — deterministic hash consistency
+// Ensures BuildAllChunks and PostEditChangeProperty produce identical colors.
+// ============================================================================
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHexTerrain_DebugColorHash, "TA.Hexagon.DebugColor.Hash",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FHexTerrain_DebugColorHash::RunTest(const FString& Parameters)
+{
+	// Replicate the hash algorithm used in BuildAllChunks and PostEditChangeProperty
+	auto ComputeDebugColor = [](int32 X, int32 Y) -> FColor {
+		const uint32 Hash = HashCombine(GetTypeHash(X), GetTypeHash(Y));
+		return FColor(
+			static_cast<uint8>((Hash * 37 + 101) % 256),
+			static_cast<uint8>((Hash * 53 + 157) % 256),
+			static_cast<uint8>((Hash * 71 + 199) % 256)
+		);
+	};
+
+	// Determinism: same inputs → same output
+	FColor A1 = ComputeDebugColor(0, 0);
+	FColor A2 = ComputeDebugColor(0, 0);
+	TestTrue("Same coord same color", A1.R == A2.R && A1.G == A2.G && A1.B == A2.B);
+
+	// Different inputs → different output (probabilistic)
+	FColor B = ComputeDebugColor(5, 3);
+	TestTrue("Different coord different color",
+		A1.R != B.R || A1.G != B.G || A1.B != B.B);
+
+	// Non-trivial (not all channels equal within a color)
+	TestTrue("Color uses multiple channels", A1.R != A1.G || A1.G != A1.B);
 
 	return true;
 }

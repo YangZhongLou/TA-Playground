@@ -15,6 +15,8 @@ void UHexTerrainChunk::SetCells(
 	float EffectiveRadius,
 	float Gap,
 	const FHexTerrainConfig& Config,
+	const TMap<EHexTerrainType, UMaterialInterface*>* LayerMaterials,
+	UMaterialInterface* DefaultMaterial,
 	float UVTileSize)
 {
 	Cells = InCells;
@@ -31,9 +33,10 @@ void UHexTerrainChunk::SetCells(
 		CachedCenter /= static_cast<float>(Cells.Num());
 	}
 
-	// Always build at LOD 0 for initial set / regeneration
+	// Force full rebuild — cells have changed
+	CurrentLOD = -1;
 	RebuildMeshForLOD(0, EffectiveRadius, Gap, Config,
-		CachedLayerMaterials, CachedDefaultMaterial, UVTileSize);
+		LayerMaterials, DefaultMaterial, UVTileSize);
 }
 
 void UHexTerrainChunk::RebuildMeshForLOD(
@@ -280,8 +283,6 @@ bool UHexTerrainChunk::UpdateLOD(
 
 	if (TargetLOD != CurrentLOD)
 	{
-		CachedLayerMaterials = LayerMaterials;
-		CachedDefaultMaterial = DefaultMaterial;
 		CachedUVTileSize = UVTileSize;
 		RebuildMeshForLOD(TargetLOD, EffectiveRadius, Gap, Config,
 			LayerMaterials, DefaultMaterial, UVTileSize);
