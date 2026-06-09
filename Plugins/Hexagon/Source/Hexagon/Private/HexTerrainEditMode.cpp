@@ -26,7 +26,7 @@ void FHexTerrainEditMode::Enter()
 	if (UWorld* World = GetWorld())
 		for (TActorIterator<AHexTerrain> It(World); It; ++It)
 			{ if (GEditor) { GEditor->SelectNone(false, true); GEditor->SelectActor(*It, true, false); } break; }
-	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: Left-drag=Add  Shift-drag=Select  Del=Delete selected  Esc=Clear/Exit"));
+	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: Left=Select  Shift=Multi-select  Del=Delete  Esc=Exit"));
 }
 
 void FHexTerrainEditMode::Exit()
@@ -52,7 +52,7 @@ TArray<FHexCoord> FHexTerrainEditMode::GetCellsInBox(const FHexCoord& A, const F
 }
 
 // ============================================================================
-// Cursor → hex
+// Cursor to hex
 // ============================================================================
 bool FHexTerrainEditMode::CursorToHex(
 	FEditorViewportClient* ViewportClient, int32 X, int32 Y,
@@ -81,36 +81,20 @@ bool FHexTerrainEditMode::CursorToHex(
 }
 
 // ============================================================================
-// Add / Delete
+// Delete selected
 // ============================================================================
-void FHexTerrainEditMode::AddCells(AHexTerrain* Terrain, const TArray<FHexCoord>& Cells)
-{
-	if (!Terrain || Cells.Num() == 0) return;
-	int32 Count = 0;
-	for (const FHexCoord& Coord : Cells)
-	{
-		if (Terrain->RemovedCells.Contains(Coord))
-			{ Terrain->RemovedCells.Remove(Coord); ++Count; }
-		else if (!Terrain->HasCell(Coord))
-			{ Terrain->ExtraCells.Add(Coord); ++Count; }
-	}
-	Terrain->RegenerateTerrain();
-	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: added %d cells"), Count);
-}
-
 void FHexTerrainEditMode::DeleteSelected(AHexTerrain* Terrain)
 {
 	if (!Terrain || SelectedCells.Num() == 0) return;
-	int32 Count = 0;
 	for (const FHexCoord& Coord : SelectedCells)
 	{
 		if (Terrain->ExtraCells.Contains(Coord))
-			{ Terrain->ExtraCells.Remove(Coord); ++Count; }
+			Terrain->ExtraCells.Remove(Coord);
 		else if (Terrain->HasCell(Coord))
-			{ Terrain->RemovedCells.Add(Coord); ++Count; }
+			Terrain->RemovedCells.Add(Coord);
 	}
 	Terrain->RegenerateTerrain();
-	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: deleted %d cells"), Count);
+	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: deleted %d cells"), SelectedCells.Num());
 	SelectedCells.Empty();
 }
 
@@ -129,8 +113,6 @@ bool FHexTerrainEditMode::MouseMove(
 		CachedTerrain = Terrain;
 		CachedHexCoord = Coord;
 		CachedCursorWorldPos = FHexGeometry::HexToWorld(Coord, Terrain->CellRadius);
-		if (!bIsEditing)
-			PreviewCells = { Coord };
 	}
 	else
 	{
@@ -148,12 +130,8 @@ bool FHexTerrainEditMode::StartTracking(
 
 	bIsEditing = true;
 	DragStartCoord = *CachedHexCoord;
-
-	const bool bShift = Viewport->KeyState(EKeys::LeftShift) ||
-	                    Viewport->KeyState(EKeys::RightShift);
-	DragOp = bShift ? EDragOp::Select : EDragOp::Add;
+	DragOp = EDragOp::Select;
 	PreviewCells = { DragStartCoord };
-
 	return true;
 }
 
@@ -181,23 +159,35 @@ bool FHexTerrainEditMode::EndTracking(
 	AHexTerrain* Terrain = CachedTerrain.Get();
 	if (!Terrain) return true;
 
-	if (DragOp == EDragOp::Select)
+	const bool bShift = Viewport->KeyState(EKeys::LeftShift) ||
+	                    Viewport->KeyState(EKeys::RightShift);
+
+	if (bShift)
 	{
-		// Shift+drag: select cells for later deletion
+		// Shift+drag: toggle/add to multi-selection
+		for (const FHexCoord& Coord : PreviewCells)
+		{
+			if (Terrain->HasCell(Coord))
+			{
+				if (SelectedCells.Contains(Coord))
+					SelectedCells.Remove(Coord);
+				else
+					SelectedCells.AddUnique(Coord);
+			}
+		}
+	}
+	else
+	{
+		// No shift: replace selection
+		SelectedCells.Empty();
 		for (const FHexCoord& Coord : PreviewCells)
 		{
 			if (Terrain->HasCell(Coord))
 				SelectedCells.AddUnique(Coord);
 		}
-		UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: selected %d cells (Del to delete)"),
-			SelectedCells.Num());
 	}
-	else
-	{
-		AddCells(Terrain, PreviewCells);
-	}
+	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: %d cells selected (Del=delete, Shift=toggle)"), SelectedCells.Num());
 	PreviewCells = { *CachedHexCoord };
-
 	return true;
 }
 
@@ -209,14 +199,12 @@ bool FHexTerrainEditMode::InputKey(
 	    Key == EKeys::MouseScrollUp || Key == EKeys::MouseScrollDown)
 		return false;
 
-	// Delete key: remove selected cells
 	if (Key == EKeys::Delete && Event == IE_Pressed && SelectedCells.Num() > 0)
 	{
 		DeleteSelected(CachedTerrain.Get());
 		return true;
 	}
 
-	// Esc: clear selection (1st press) or exit mode (2nd press)
 	if (Key == EKeys::Escape && Event == IE_Pressed)
 	{
 		if (SelectedCells.Num() > 0)
@@ -264,10 +252,8 @@ void FHexTerrainEditMode::Render(
 	for (const FHexCoord& Coord : SelectedCells)
 		DrawHex(Coord, FColor(255, 220, 40), 3.0f);
 
-	// Drag preview cells
-	const FColor AddColor(80, 255, 80);
-	const FColor SelColor(255, 200, 60);
-	const FColor& PreviewColor = (DragOp == EDragOp::Select) ? SelColor : AddColor;
+	// Drag preview cells — light blue
+	const FColor PreviewColor(80, 200, 255);
 	for (const FHexCoord& Coord : PreviewCells)
 		if (!SelectedCells.Contains(Coord))
 			DrawHex(Coord, PreviewColor, 2.0f);

@@ -265,7 +265,29 @@ void AHexTerrain::RegenerateTerrain()
 	Config.CellRadius = CellRadius;
 	TerrainCells = FHexTerrainGenerator::Generate(GridRadius, Config);
 
-	// 2. Apply manual terrain type overrides
+	// 2. Remove cells marked for deletion
+	for (const FHexCoord& Removed : RemovedCells)
+	{
+		TerrainCells.RemoveAll([&](const FHexTerrainCellData& C) { return C.Axial == Removed; });
+	}
+
+	// 3. Add extra cells that don't exist yet
+	for (const FHexCoord& Extra : ExtraCells)
+	{
+		if (!TerrainCells.ContainsByPredicate([&](const FHexTerrainCellData& C) { return C.Axial == Extra; }))
+		{
+			FHexTerrainCellData NewCell;
+			NewCell.Axial = Extra;
+			NewCell.WorldPos = FHexGeometry::HexToWorld(Extra, Config.CellRadius);
+			NewCell.NormalizedHeight = 0.5f;
+			NewCell.Height = Config.SeaLevel + 0.5f * Config.HeightScale;
+			NewCell.TerrainType = BrushTerrainType;
+			NewCell.Color = FHexTerrainGenerator::GetTerrainColor(BrushTerrainType);
+			TerrainCells.Add(NewCell);
+		}
+	}
+
+	// 4. Apply manual terrain type overrides
 	if (bManualMode)
 	{
 		for (FHexTerrainCellData& Cell : TerrainCells)
@@ -283,11 +305,11 @@ void AHexTerrain::RegenerateTerrain()
 		}
 	}
 
-	// 3. Cache for LOD updates
+	// 5. Cache for LOD updates
 	CachedConfig = Config;
 	CachedEffectiveRadius = CellRadius * (1.0f - FMath::Clamp(Gap, 0.0f, 0.95f));
 
-	// 4. Distribute to chunks and build each
+	// 6. Distribute to chunks and build each
 	BuildAllChunks(Config);
 }
 
