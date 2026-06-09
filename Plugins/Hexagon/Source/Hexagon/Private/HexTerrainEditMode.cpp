@@ -150,15 +150,19 @@ void FHexTerrainEditMode::AddCells(const TArray<FHexCoord>& Coords)
 	AHexTerrain* T = Terrain.Get();
 	if (!T || Coords.Num() == 0) return;
 
-	// Clear any "removed" flags for these cells, add to extra
+	// Mark cells for creation and set their terrain type
+	T->bManualMode = true;
 	for (const FHexCoord& C : Coords)
 	{
 		if (T->RemovedCells.Contains(C))
 			T->RemovedCells.Remove(C);
 		if (!T->HasCell(C))
 			T->ExtraCells.Add(C);
+		T->ManualCellTypes.Add(C, T->BrushTerrainType);
 	}
-	T->PaintCells(Coords, T->BrushTerrainType);
+
+	// Full regeneration handles both ExtraCells and type overrides
+	T->RegenerateTerrain();
 	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: added %d cells"), Coords.Num());
 }
 
