@@ -184,6 +184,34 @@
 
 ---
 
+## 10. 自由地形编辑 (Hex Terrain Edit)
+
+| # | 测试项 | 操作 | 预期结果 |
+|---|--------|------|---------|
+| 18.1 | 进入模式 | Modes → Hex Terrain Edit | 模式切换成功，terrain 自动选中 |
+| 18.2 | 悬停预览（空 cell） | 鼠标移到 terrain 外空白处 | 绿色六边形轮廓显示 |
+| 18.3 | 悬停预览（已有 cell） | 鼠标移到 terrain 内 | 红色六边形轮廓显示 |
+| 18.4 | 单击添加 | 在空白处左键点击 | 一个 cell 被添加，Log 显示 added=1 |
+| 18.5 | 拖拽框选添加 | 空白处左键拖拽形成矩形，松手 | 框内空 cell 批量添加 |
+| 18.6 | Ctrl+拖拽删除 | 按住 Ctrl，在已有 cell 区拖拽 | 框内已有 cell 被删除，空白不动 |
+| 18.7 | Toggle 切换 | 混合区域不按 Ctrl 拖拽 | 空 cell 添加，已有 cell 删除 |
+| 18.8 | 右键不受影响 | 右键拖拽/滚轮 | 正常视角操作，不触发编辑 |
+| 18.9 | 编辑后涂刷 | Edit 模式增删 → 切换到 Paint 模式涂刷 | 新增 cell 正常响应笔刷 |
+| 18.10 | ExtraCells 可见 | 选中 terrain → Details → Hexagon\|Shape | ExtraCells 集合列出添加的 cell |
+| 18.11 | RemovedCells 可见 | 已有 cell 删除后 | RemovedCells 集合列出删除的 cell |
+| 18.12 | 跨 chunk 操作 | 大 GridRadius → 跨边界框选 | 两侧 chunk 正确重建 |
+
+## 11. 数据模型验证
+
+| # | 测试项 | 操作 | 预期结果 |
+|---|--------|------|---------|
+| 19.1 | ExtraCells 持久化 | 添加 cell → 保存地图 → 重开 | cell 保持存在 |
+| 19.2 | RemovedCells 持久化 | Ctrl+拖拽删除 → 保存 → 重开 | cell 保持删除状态 |
+| 19.3 | 恢复已删 cell | 对 RemovedCells 中的 cell 再次添加 | RemovedCells 条目清除，cell 恢复 |
+| 19.4 | 删除额外 cell | Ctrl+拖拽删除 ExtraCell | ExtraCells 条目清除，cell 消失 |
+
+---
+
 ## 测试环境
 
 - **项目**: TA-Playground
