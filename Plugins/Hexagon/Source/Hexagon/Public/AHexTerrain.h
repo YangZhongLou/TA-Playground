@@ -92,6 +92,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Manual")
 	TMap<FHexCoord, EHexTerrainType> ManualCellTypes;
 
+	/** Cells to include beyond the spiral boundary (free-form terrain expansion). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Shape")
+	TSet<FHexCoord> ExtraCells;
+
+	/** Spiral cells to exclude (free-form terrain carving). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Shape")
+	TSet<FHexCoord> RemovedCells;
+
 	/** Brush radius in hex grid units (0 = single cell, 1 = +1 ring, ...). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Brush", meta = (ClampMin = "0.0", ClampMax = "20.0"))
 	float BrushRadius = 1.0f;
@@ -123,6 +131,9 @@ public:
 
 	/** Get all generated cell data (C++ only). */
 	const TArray<FHexTerrainCellData>& GetTerrainCells() const { return TerrainCells; }
+
+	/** Check whether a cell exists at the given hex coordinate. */
+	bool HasCell(const FHexCoord& Coord) const;
 
 	/** Get number of active chunks. */
 	UFUNCTION(BlueprintCallable, Category = "Hexagon|Terrain")

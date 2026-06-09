@@ -127,7 +127,6 @@ public:
 	/** Get terrain type from normalized height. */
 	static EHexTerrainType ClassifyTerrain(float NormalizedHeight, const FHexTerrainConfig& Config);
 
-private:
-	/** Layered Perlin noise [0,1]. */
+	/** Layered Perlin noise [0,1] — exposed for custom cell generation. */
 	static float SampleNoise(float Q, float R, float Scale, int32 Octaves, int32 Seed = 42, float Lacunarity = 2.0f, float Persistence = 0.5f);
 };

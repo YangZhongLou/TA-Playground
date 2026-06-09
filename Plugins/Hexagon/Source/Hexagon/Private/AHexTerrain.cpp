@@ -72,7 +72,9 @@ void AHexTerrain::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 		else if (Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, bManualMode) ||
 		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, TextureTileSize) ||
 		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, DefaultManualType) ||
-		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, ManualCellTypes))
+		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, ManualCellTypes) ||
+		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, ExtraCells) ||
+		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, RemovedCells))
 		{
 			RegenerateTerrain();
 		}
@@ -264,6 +266,40 @@ void AHexTerrain::RegenerateTerrain()
 	FHexTerrainConfig Config = TerrainConfig;
 	Config.CellRadius = CellRadius;
 	TerrainCells = FHexTerrainGenerator::Generate(GridRadius, Config);
+
+	// 1a. Filter out RemovedCells
+	if (RemovedCells.Num() > 0)
+	{
+		TerrainCells.RemoveAll([this](const FHexTerrainCellData& C) {
+			return RemovedCells.Contains(C.Axial);
+		});
+	}
+
+	// 1b. Add ExtraCells (noise-sampled heights for seamless blending)
+	if (ExtraCells.Num() > 0)
+	{
+		TSet<FHexCoord> Existing;
+		for (const FHexTerrainCellData& C : TerrainCells) { Existing.Add(C.Axial); }
+
+		for (const FHexCoord& Coord : ExtraCells)
+		{
+			if (Existing.Contains(Coord)) continue;
+			Existing.Add(Coord);
+
+			FHexTerrainCellData Cell;
+			Cell.Axial = Coord;
+			Cell.WorldPos = FHexGeometry::HexToWorld(Coord, Config.CellRadius);
+			Cell.NormalizedHeight = FHexTerrainGenerator::SampleNoise(
+				static_cast<float>(Coord.Q), static_cast<float>(Coord.R),
+				Config.NoiseScale, Config.NoiseOctaves, Config.NoiseSeed,
+				Config.Lacunarity, Config.Persistence);
+			Cell.NormalizedHeight = FMath::Clamp(Cell.NormalizedHeight, 0.0f, 1.0f);
+			Cell.Height = Config.SeaLevel + Cell.NormalizedHeight * Config.HeightScale;
+			Cell.TerrainType = FHexTerrainGenerator::ClassifyTerrain(Cell.NormalizedHeight, Config);
+			Cell.Color = FHexTerrainGenerator::GetTerrainColor(Cell.TerrainType);
+			TerrainCells.Add(Cell);
+		}
+	}
 
 	// 2. Apply manual terrain type overrides
 	if (bManualMode)
@@ -517,6 +553,11 @@ const FHexTerrainCellData* AHexTerrain::GetCell(const FHexCoord& Coord) const
 		}
 	}
 	return nullptr;
+}
+
+bool AHexTerrain::HasCell(const FHexCoord& Coord) const
+{
+	return GetCell(Coord) != nullptr;
 }
 
 EHexTerrainType AHexTerrain::GetTerrainTypeAtPosition(const FVector& Pos) const

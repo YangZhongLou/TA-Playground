@@ -19,6 +19,7 @@
 #include "EditorLevelUtils.h"
 #include "LevelEditor.h"
 #include "HexTerrainEdMode.h"
+#include "HexTerrainEditMode.h"
 #include "EditorModeRegistry.h"
 #include "ToolMenus.h"
 #include "ToolMenuSection.h"
@@ -582,12 +583,19 @@ static void RegisterHexEditorModes()
 		FSlateIcon(),
 		true
 	);
-	UE_LOG(LogTemp, Log, TEXT("Hexagon: registered HexTerrainPaint editor mode"));
+	FEditorModeRegistry::Get().RegisterMode<FHexTerrainEditMode>(
+		FHexTerrainEditMode::EM_HexTerrainEdit,
+		NSLOCTEXT("Hexagon", "HexTerrainEditMode", "Hex Terrain Edit"),
+		FSlateIcon(),
+		true
+	);
+	UE_LOG(LogTemp, Log, TEXT("Hexagon: registered HexTerrainPaint + HexTerrainEdit editor modes"));
 }
 
 static void UnregisterHexEditorModes()
 {
 	FEditorModeRegistry::Get().UnregisterMode(FHexTerrainEdMode::EM_HexTerrainPaint);
+	FEditorModeRegistry::Get().UnregisterMode(FHexTerrainEditMode::EM_HexTerrainEdit);
 }
 
 // ============================================================================

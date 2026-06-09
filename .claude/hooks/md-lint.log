@@ -46,3 +46,27 @@
 [2026-05-30T12:25:28.257856] LINT: exit=1 issues=82 chars
 [2026-05-30T12:25:29.698611] CALLED: filepath=D:\Playground\SkillHub\CLAUDE.md
 [2026-05-30T12:25:30.248397] LINT: exit=0 issues=0 chars
+[2026-06-08T12:15:07.137669] CALLED: filepath=d:\Playground\TA-Playground\plans\hex-terrain-test-plan.md
+[2026-06-08T12:15:07.960784] LINT: exit=1 issues=22402 chars
+[2026-06-08T12:16:11.085941] CALLED: filepath=d:\Playground\TA-Playground\CLAUDE.md
+[2026-06-08T12:16:11.716050] LINT: exit=1 issues=119 chars
+[2026-06-08T12:16:16.349355] CALLED: filepath=d:\Playground\TA-Playground\CLAUDE.md
+[2026-06-08T12:16:16.962867] LINT: exit=0 issues=0 chars
+[2026-06-08T20:27:56.418046] CALLED: filepath=D:\Playground\TA-Playground\plans\editor-verification-checklist.md
+[2026-06-08T20:27:57.071403] LINT: exit=0 issues=0 chars
+[2026-06-08T20:44:56.977488] CALLED: filepath=D:\Playground\TA-Playground\plans\editor-verification-checklist.md
+[2026-06-08T20:44:57.518151] LINT: exit=0 issues=0 chars
+[2026-06-08T20:45:03.426326] CALLED: filepath=D:\Playground\TA-Playground\plans\editor-verification-checklist.md
+[2026-06-08T20:45:03.961173] LINT: exit=0 issues=0 chars
+[2026-06-08T20:45:07.463447] CALLED: filepath=D:\Playground\TA-Playground\plans\editor-verification-checklist.md
+[2026-06-08T20:45:07.989709] LINT: exit=0 issues=0 chars
+[2026-06-08T20:45:12.821461] CALLED: filepath=D:\Playground\TA-Playground\plans\editor-verification-checklist.md
+[2026-06-08T20:45:13.350896] LINT: exit=0 issues=0 chars
+[2026-06-08T20:45:32.241633] CALLED: filepath=D:\Playground\TA-Playground\plans\hex-terrain-test-plan.md
+[2026-06-08T20:45:32.762263] LINT: exit=1 issues=104 chars
+[2026-06-08T20:45:40.364356] CALLED: filepath=D:\Playground\TA-Playground\plans\hex-terrain-test-plan.md
+[2026-06-08T20:45:40.885376] LINT: exit=0 issues=0 chars
+[2026-06-08T20:59:54.220340] CALLED: filepath=D:\Playground\TA-Playground\plans\editor-verification-checklist.md
+[2026-06-08T20:59:54.773319] LINT: exit=1 issues=112 chars
+[2026-06-08T21:00:02.539239] CALLED: filepath=D:\Playground\TA-Playground\plans\editor-verification-checklist.md
+[2026-06-08T21:00:03.099956] LINT: exit=0 issues=0 chars
