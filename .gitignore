@@ -26,6 +26,9 @@ __pycache__/
 # Claude Code — all symlinks from SkillHub, don't track
 .claude/
 
+# Hunyuan3D local environment
+hunyuan/
+
 # OS
 Thumbs.db
 .DS_Store
