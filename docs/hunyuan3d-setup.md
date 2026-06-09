@@ -97,7 +97,12 @@ python setup.py install
 cd ../../..
 ```
 
-> 纹理渲染器编译需要 **Visual Studio Build Tools**（MSVC C++ 工具链）
+> ⚠️ **编译坑**：需 Visual Studio **2022**（2017-2022 均可），VS 2025/Insiders 版本 CUDA 不支持。
+> 如装有多版本 VS，必须显式激活 VS 2022 环境：
+> ```powershell
+> $env:TORCH_CUDA_ARCH_LIST="8.6"
+> cmd /c "call ""C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"" x64 && set DISTUTILS_USE_SDK=1 && cd /d <path> && python -m pip install -e ."
+> ```
 
 ### 7. HuggingFace 登录
 
