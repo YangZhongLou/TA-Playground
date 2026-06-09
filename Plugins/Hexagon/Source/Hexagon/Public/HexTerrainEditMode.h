@@ -16,8 +16,9 @@ class AHexTerrain;
  * Usage:
  *   1. Place an AHexTerrain in the level.
  *   2. Switch to "Hex Terrain Edit" mode (Modes dropdown).
- *   3. Hover: green hex = click to add, red hex = Ctrl+Click to remove.
- *   4. Click-drag: rectangle selection, release to add/remove all cells in box.
+ *   3. Left-click/drag to add cells.
+ *   4. Shift+drag to select cells → Del key to delete selected.
+ *   5. Esc: clear selection (1st) / exit mode (2nd).
  */
 class FHexTerrainEditMode : public FEdMode
 {
@@ -32,6 +33,7 @@ public:
 	virtual bool MouseMove(FEditorViewportClient* ViewportClient, FViewport* Viewport, int32 X, int32 Y) override;
 	virtual bool StartTracking(FEditorViewportClient* ViewportClient, FViewport* Viewport) override;
 	virtual bool EndTracking(FEditorViewportClient* ViewportClient, FViewport* Viewport) override;
+	virtual bool CapturedMouseMove(FEditorViewportClient* ViewportClient, FViewport* Viewport, int32 X, int32 Y) override;
 	virtual bool InputKey(FEditorViewportClient* ViewportClient, FViewport* Viewport, FKey Key, EInputEvent Event) override;
 	virtual bool InputDelta(FEditorViewportClient* ViewportClient, FViewport* Viewport, FVector& Drag, FRotator& Rot, FVector& Scale) override;
 	virtual void Render(const FSceneView* View, FViewport* Viewport, FPrimitiveDrawInterface* PDI) override;
@@ -40,33 +42,22 @@ public:
 private:
 	bool CursorToHex(FEditorViewportClient* ViewportClient, int32 X, int32 Y,
 		AHexTerrain*& OutTerrain, FHexCoord& OutCoord);
-
 	static TArray<FHexCoord> GetCellsInBox(const FHexCoord& A, const FHexCoord& B);
+	void AddCells(AHexTerrain* Terrain, const TArray<FHexCoord>& Cells);
+	void DeleteSelected(AHexTerrain* Terrain);
 
-	void ExecuteCells(AHexTerrain* Terrain, const TArray<FHexCoord>& Cells, bool bRemove);
+	/** Drag mode: Add or Select. */
+	enum class EDragOp : uint8 { Add, Select };
+	EDragOp DragOp = EDragOp::Add;
 
-	/** Mouse is down and we are actively editing. */
 	bool bIsEditing = false;
-
-	/** Whether Ctrl was held when drag started. */
-	bool bDragRemove = false;
-
-	/** Drag-start hex coord (box corner). */
 	FHexCoord DragStartCoord = FHexCoord(0, 0);
+	TArray<FHexCoord> PreviewCells;   // cells in current drag box
+	TArray<FHexCoord> SelectedCells;  // selected cells (for deletion)
 
-	/** Cells in current selection box (drag start → cursor). */
-	TArray<FHexCoord> SelectionCells;
-
-	/** Cached terrain under cursor. */
 	TWeakObjectPtr<AHexTerrain> CachedTerrain;
-
-	/** Cached cursor hex coord (single-cell hover). */
 	TOptional<FHexCoord> CachedHexCoord;
-
-	/** World position at cached coord. */
 	FVector CachedCursorWorldPos = FVector::ZeroVector;
-
-	/** Whether cursor projects onto a valid terrain position. */
 	bool bCursorValid = false;
 };
 
