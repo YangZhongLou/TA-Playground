@@ -6,6 +6,7 @@
 #include "ProceduralMeshComponent.h"
 #include "HexTerrainGenerator.h"
 #include "HexPrismGenerator.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "HexTerrainChunk.generated.h"
 
 /**
@@ -80,7 +81,9 @@ public:
 		const FHexTerrainConfig& Config,
 		const TMap<EHexTerrainType, UMaterialInterface*>* LayerMaterials = nullptr,
 		UMaterialInterface* DefaultMaterial = nullptr,
-		float UVTileSize = 0.0f
+		float UVTileSize = 0.0f,
+		FHexCellLookup CellLookup = nullptr,
+		const TMap<EHexTerrainType, float>* LayerUVScales = nullptr
 	);
 
 	/**
@@ -98,7 +101,9 @@ public:
 		const FHexTerrainConfig& Config,
 		const TMap<EHexTerrainType, UMaterialInterface*>* LayerMaterials = nullptr,
 		UMaterialInterface* DefaultMaterial = nullptr,
-		float UVTileSize = 0.0f
+		float UVTileSize = 0.0f,
+		FHexCellLookup CellLookup = nullptr,
+		const TMap<EHexTerrainType, float>* LayerUVScales = nullptr
 	);
 
 	/**
@@ -113,7 +118,8 @@ public:
 		const FHexTerrainConfig& Config,
 		const TMap<EHexTerrainType, UMaterialInterface*>* LayerMaterials = nullptr,
 		UMaterialInterface* DefaultMaterial = nullptr,
-		float UVTileSize = 0.0f
+		float UVTileSize = 0.0f,
+		FHexCellLookup CellLookup = nullptr
 	);
 
 	/** Apply a single material to ALL sections (clears per-layer layout). */
@@ -125,6 +131,22 @@ public:
 		UMaterialInterface* DefaultMaterial
 	);
 
+	/** Find the section index for a terrain type. Returns INDEX_NONE if not found. */
+	int32 FindSectionByType(EHexTerrainType Type) const;
+
+	/**
+	 * Set a texture parameter on the MID for a specific terrain type.
+	 * The material must have a Texture2D parameter with the given name.
+	 * Only the render state is marked dirty — no mesh rebuild.
+	 */
+	void SetLayerTexture(EHexTerrainType Type, FName ParameterName, UTexture* Texture);
+
+	/**
+	 * Set a scalar parameter on the MID for a specific terrain type.
+	 * Only the render state is marked dirty — no mesh rebuild.
+	 */
+	void SetLayerScalarParameter(EHexTerrainType Type, FName ParameterName, float Value);
+
 	/** Override vertex color for all cells in this chunk (debug visualization). */
 	void SetDebugColor(FColor InColor) { DebugColor = InColor; }
 	void ClearDebugColor() { DebugColor = FColor::Transparent; }
@@ -132,6 +154,9 @@ public:
 
 	/** Get the world-space center of this chunk's bounding box. */
 	FVector GetChunkCenter() const;
+
+	/** Callback type: given a hex coordinate, returns pointer to cell data or nullptr. */
+	using FHexCellLookup = TFunction<const FHexTerrainCellData*(const FHexCoord&)>;
 
 private:
 	/** Chunk coordinate in chunk-space (not hex axial space). */
@@ -152,6 +177,10 @@ private:
 	/** Map from section index to terrain type (populated when per-layer materials used). */
 	TMap<int32, EHexTerrainType> SectionTerrainTypes;
 
+	/** Cached MIDs per section index — created from assigned materials for runtime param changes. */
+	UPROPERTY()
+	TMap<int32, TObjectPtr<UMaterialInstanceDynamic>> SectionMIDs;
+
 	/** Cached texture tile size for world-space UVs (0 = use default UVs). */
 	float CachedUVTileSize = 0.0f;
 
@@ -161,6 +190,8 @@ private:
 		const FHexTerrainCellData& Cell,
 		int32 LODLevel,
 		float EffectiveRadius,
-		const FHexTerrainConfig& Config
+		const FHexTerrainConfig& Config,
+		FHexCellLookup CellLookup = nullptr,
+		float LayerUVScale = 1.0f
 	);
 };

@@ -96,3 +96,34 @@ float FHexTerrainGenerator::SampleNoise(float Q, float R, float Scale, int32 Oct
 
 	return Total / MaxValue;
 }
+
+TArray<FHexCoord> FHexTerrainGenerator::GetNeighborCoords(const FHexCoord& Center)
+{
+	// Pointy-topped hex neighbors in ring order: E, NE, NW, W, SW, SE
+	static const FHexCoord Dirs[6] = {
+		FHexCoord(1, 0), FHexCoord(1, -1), FHexCoord(0, -1),
+		FHexCoord(-1, 0), FHexCoord(-1, 1), FHexCoord(0, 1)
+	};
+
+	TArray<FHexCoord> Result;
+	Result.Reserve(6);
+	for (int32 i = 0; i < 6; ++i)
+	{
+		Result.Add(Center + Dirs[i]);
+	}
+	return Result;
+}
+
+void FHexTerrainGenerator::GetCornerCells(const FHexCoord& Cell, int32 CornerIndex,
+	FHexCoord& OutSelf, FHexCoord& OutNeighborA, FHexCoord& OutNeighborB)
+{
+	static const FHexCoord Dirs[6] = {
+		FHexCoord(1, 0), FHexCoord(1, -1), FHexCoord(0, -1),
+		FHexCoord(-1, 0), FHexCoord(-1, 1), FHexCoord(0, 1)
+	};
+
+	const int32 Ci = FMath::Clamp(CornerIndex, 0, 5);
+	OutSelf = Cell;
+	OutNeighborA = Cell + Dirs[Ci];
+	OutNeighborB = Cell + Dirs[(Ci + 1) % 6];
+}

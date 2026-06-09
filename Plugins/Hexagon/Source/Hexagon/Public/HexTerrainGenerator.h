@@ -129,4 +129,13 @@ public:
 
 	/** Layered Perlin noise [0,1] — exposed for custom cell generation. */
 	static float SampleNoise(float Q, float R, float Scale, int32 Octaves, int32 Seed = 42, float Lacunarity = 2.0f, float Persistence = 0.5f);
+
+	/** Get the 6 neighbor hex coordinates for a given cell. Index 0..5 = E, NE, NW, W, SW, SE. */
+	static TArray<FHexCoord> GetNeighborCoords(const FHexCoord& Center);
+
+	/** Get the 3 hex coordinates whose cells meet at a given corner of a cell.
+	 *  Corner index 0..5 matches hex corner angle order.
+	 *  Returns: {cell itself, neighbor in direction i, neighbor in direction (i+1)%6} */
+	static void GetCornerCells(const FHexCoord& Cell, int32 CornerIndex,
+		FHexCoord& OutSelf, FHexCoord& OutNeighborA, FHexCoord& OutNeighborB);
 };

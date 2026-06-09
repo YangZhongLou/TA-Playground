@@ -1,4 +1,4 @@
-// Copyright (c) 2026 TA-Playground. All Rights Reserved.
+﻿// Copyright (c) 2026 TA-Playground. All Rights Reserved.
 
 #include "AHexTerrain.h"
 #include "HexTerrainChunk.h"
@@ -222,6 +222,10 @@ void AHexTerrain::UpdateChunkLODs()
 		}
 	}
 
+	auto CellLookup = [this](const FHexCoord& Coord) -> const FHexTerrainCellData* {
+		return GetCell(Coord);
+	};
+
 	for (const auto& Pair : ChunkMap)
 	{
 		if (Pair.Value)
@@ -231,7 +235,7 @@ void AHexTerrain::UpdateChunkLODs()
 				EffectiveRadius, Gap, CachedConfig,
 				LayerMatPtrs.Num() > 0 ? &LayerMatPtrs : nullptr,
 				TerrainMaterial,
-				TextureTileSize
+				TextureTileSize, CellLookup, &LayerUVScales
 			);
 
 			// LOD debug visualization: color chunks by LOD level
@@ -352,6 +356,11 @@ void AHexTerrain::BuildAllChunks(const FHexTerrainConfig& Config)
 	TSet<FIntPoint> ActiveChunkCoords;
 	Distribution.GetKeys(ActiveChunkCoords);
 
+	// Cell lookup for vertex color blending (corner-based, neighbor-aware)
+	auto CellLookup = [this](const FHexCoord& Coord) -> const FHexTerrainCellData* {
+		return GetCell(Coord);
+	};
+
 	// Create or update chunks
 	for (const auto& Pair : Distribution)
 	{
@@ -395,7 +404,7 @@ void AHexTerrain::BuildAllChunks(const FHexTerrainConfig& Config)
 		Chunk->SetCells(ChunkCells, EffectiveRadius, Gap, Config,
 			bHasLayerMats ? &LayerMatPtrs : nullptr,
 			bHasLayerMats ? TerrainMaterial.Get() : nullptr,
-			TextureTileSize);
+			TextureTileSize, CellLookup, &LayerUVScales);
 		if (bLogPerformance)
 		{
 			const double ElapsedMs = (FPlatformTime::Seconds() - BuildStart) * 1000.0;
@@ -490,6 +499,10 @@ void AHexTerrain::RebuildDirtyChunks(const TSet<FIntPoint>& DirtyChunkCoords)
 		}
 	}
 
+	auto CellLookup = [this](const FHexCoord& Coord) -> const FHexTerrainCellData* {
+		return GetCell(Coord);
+	};
+
 	// Re-group TerrainCells by chunk coord for the dirty chunks only
 	TMap<FIntPoint, TArray<FHexTerrainCellData>> DirtyDistribution;
 	for (const FHexTerrainCellData& Cell : TerrainCells)
@@ -516,7 +529,7 @@ void AHexTerrain::RebuildDirtyChunks(const TSet<FIntPoint>& DirtyChunkCoords)
 		Chunk->SetCells(ChunkCells, EffectiveRadius, Gap, CachedConfig,
 			bHasLayerMats ? &LayerMatPtrs : nullptr,
 			bHasLayerMats ? TerrainMaterial.Get() : nullptr,
-			TextureTileSize);
+			TextureTileSize, CellLookup, &LayerUVScales);
 		if (bLogPerformance)
 		{
 			const double ElapsedMs = (FPlatformTime::Seconds() - BuildStart) * 1000.0;

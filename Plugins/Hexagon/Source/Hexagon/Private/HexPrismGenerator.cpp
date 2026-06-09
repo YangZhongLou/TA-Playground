@@ -11,23 +11,59 @@ void FHexPrismGenerator::Generate(
 	int32 HeightSegments,
 	FColor BaseColor,
 	FVector WorldOffset,
-	float UVTileSize
+	float UVTileSize,
+	const FHexVertexColors* VertexColors,
+	float UVScale,
+	FVector2D UVOffset
 )
 {
 	OutData.Reset();
 
 	// Helper: compute UV — world-space planar projection when TileSize > 0,
 	// otherwise use the provided default UV.
+	// UVScale increases tiling density (1.0 = default, 2.0 = double tiling).
+	// UVOffset breaks up visible tiling patterns across adjacent cells.
 	auto MakeUV = [&](float LocalX, float LocalY, float LocalZ, const FVector2D& DefaultUV) -> FVector2D
 	{
 		if (UVTileSize > 0.0f)
 		{
+			const float EffectiveTile = UVTileSize / FMath::Max(UVScale, 0.01f);
 			return FVector2D(
-				(LocalX + WorldOffset.X) / UVTileSize,
-				(LocalY + WorldOffset.Y) / UVTileSize
+				(LocalX + WorldOffset.X) / EffectiveTile + UVOffset.X,
+				(LocalY + WorldOffset.Y) / EffectiveTile + UVOffset.Y
 			);
 		}
-		return DefaultUV;
+		return FVector2D(
+			DefaultUV.X * UVScale + UVOffset.X,
+			DefaultUV.Y * UVScale + UVOffset.Y
+		);
+	};
+
+	// Helper: triplanar-ish UV for side faces — uses world-space projection
+	// based on side normal. XY for horizontal-dominant, XZ/YZ for vertical.
+	auto MakeSideUV = [&](float WorldX, float WorldY, float WorldZ, float SideNX, float SideNY,
+		const FVector2D& DefaultUV) -> FVector2D
+	{
+		if (UVTileSize > 0.0f)
+		{
+			const float EffTile = UVTileSize / FMath::Max(UVScale, 0.01f);
+			// Use the dominant horizontal axis for U, and Z for V
+			if (FMath::Abs(SideNX) > FMath::Abs(SideNY))
+			{
+				return FVector2D(
+					(WorldY + WorldOffset.Y) / EffTile + UVOffset.X,
+					(WorldZ + WorldOffset.Z) / EffTile + UVOffset.Y
+				);
+			}
+			return FVector2D(
+				(WorldX + WorldOffset.X) / EffTile + UVOffset.X,
+				(WorldZ + WorldOffset.Z) / EffTile + UVOffset.Y
+			);
+		}
+		return FVector2D(
+			DefaultUV.X * UVScale + UVOffset.X,
+			DefaultUV.Y * UVScale + UVOffset.Y
+		);
 	};
 
 	HeightSegments = FMath::Max(1, HeightSegments);
@@ -35,11 +71,12 @@ void FHexPrismGenerator::Generate(
 	const TArray<FVector> Corners = FHexGeometry::GetHexCorners(Radius);
 
 	// --- Bottom cap: center + ring ---
+	const FColor BtmCenterColor = VertexColors ? VertexColors->Center : BaseColor;
 	const int32 BottomCenterIndex = OutData.Vertices.Num();
 	OutData.Vertices.Add(FVector(0.0f, 0.0f, -HalfHeight));
 	OutData.UVs.Add(MakeUV(0.0f, 0.0f, -HalfHeight, FVector2D(0.5f, 0.5f)));
 	OutData.Normals.Add(FVector::DownVector);
-	OutData.VertexColors.Add(BaseColor);
+	OutData.VertexColors.Add(BtmCenterColor);
 	OutData.Tangents.Add(FProcMeshTangent(1.0f, 0.0f, 0.0f));
 
 	TArray<int32> BottomCapRingIndices;
@@ -56,7 +93,7 @@ void FHexPrismGenerator::Generate(
 		);
 		OutData.UVs.Add(MakeUV(Corner.X, Corner.Y, -HalfHeight, DefaultUV));
 		OutData.Normals.Add(FVector::DownVector);
-		OutData.VertexColors.Add(BaseColor);
+		OutData.VertexColors.Add(VertexColors ? VertexColors->Corners[i] : BaseColor);
 		OutData.Tangents.Add(FProcMeshTangent(1.0f, 0.0f, 0.0f));
 	}
 
@@ -65,6 +102,8 @@ void FHexPrismGenerator::Generate(
 	{
 		const int32 NextSide = (Side + 1) % 6;
 		const FVector SideNormal = (Corners[Side] + Corners[NextSide]).GetSafeNormal();
+		const FColor LeftColor  = VertexColors ? VertexColors->Corners[Side] : BaseColor;
+		const FColor RightColor = VertexColors ? VertexColors->Corners[NextSide] : BaseColor;
 
 		for (int32 Seg = 0; Seg < HeightSegments; ++Seg)
 		{
@@ -76,37 +115,41 @@ void FHexPrismGenerator::Generate(
 			// Bottom-left
 			const int32 BL = OutData.Vertices.Num();
 			OutData.Vertices.Add(FVector(Corners[Side].X, Corners[Side].Y, BottomZ));
-			OutData.UVs.Add(MakeUV(Corners[Side].X, Corners[Side].Y, BottomZ,
+			OutData.UVs.Add(MakeSideUV(Corners[Side].X, Corners[Side].Y, BottomZ,
+				SideNormal.X, SideNormal.Y,
 				FVector2D(static_cast<float>(Side) / 6.0f, BottomAlpha)));
 			OutData.Normals.Add(SideNormal);
-			OutData.VertexColors.Add(BaseColor);
+			OutData.VertexColors.Add(LeftColor);
 			OutData.Tangents.Add(FProcMeshTangent(0.0f, 0.0f, 0.0f));
 
 			// Bottom-right
 			const int32 BR = OutData.Vertices.Num();
 			OutData.Vertices.Add(FVector(Corners[NextSide].X, Corners[NextSide].Y, BottomZ));
-			OutData.UVs.Add(MakeUV(Corners[NextSide].X, Corners[NextSide].Y, BottomZ,
+			OutData.UVs.Add(MakeSideUV(Corners[NextSide].X, Corners[NextSide].Y, BottomZ,
+				SideNormal.X, SideNormal.Y,
 				FVector2D(static_cast<float>(Side + 1) / 6.0f, BottomAlpha)));
 			OutData.Normals.Add(SideNormal);
-			OutData.VertexColors.Add(BaseColor);
+			OutData.VertexColors.Add(RightColor);
 			OutData.Tangents.Add(FProcMeshTangent(0.0f, 0.0f, 0.0f));
 
 			// Top-right
 			const int32 TR = OutData.Vertices.Num();
 			OutData.Vertices.Add(FVector(Corners[NextSide].X, Corners[NextSide].Y, TopZ));
-			OutData.UVs.Add(MakeUV(Corners[NextSide].X, Corners[NextSide].Y, TopZ,
+			OutData.UVs.Add(MakeSideUV(Corners[NextSide].X, Corners[NextSide].Y, TopZ,
+				SideNormal.X, SideNormal.Y,
 				FVector2D(static_cast<float>(Side + 1) / 6.0f, TopAlpha)));
 			OutData.Normals.Add(SideNormal);
-			OutData.VertexColors.Add(BaseColor);
+			OutData.VertexColors.Add(RightColor);
 			OutData.Tangents.Add(FProcMeshTangent(0.0f, 0.0f, 0.0f));
 
 			// Top-left
 			const int32 TL = OutData.Vertices.Num();
 			OutData.Vertices.Add(FVector(Corners[Side].X, Corners[Side].Y, TopZ));
-			OutData.UVs.Add(MakeUV(Corners[Side].X, Corners[Side].Y, TopZ,
+			OutData.UVs.Add(MakeSideUV(Corners[Side].X, Corners[Side].Y, TopZ,
+				SideNormal.X, SideNormal.Y,
 				FVector2D(static_cast<float>(Side) / 6.0f, TopAlpha)));
 			OutData.Normals.Add(SideNormal);
-			OutData.VertexColors.Add(BaseColor);
+			OutData.VertexColors.Add(LeftColor);
 			OutData.Tangents.Add(FProcMeshTangent(0.0f, 0.0f, 0.0f));
 
 			AddQuad(OutData, BL, TL, TR, BR);
@@ -114,11 +157,12 @@ void FHexPrismGenerator::Generate(
 	}
 
 	// --- Top cap: center + ring ---
+	const FColor TopCenterColor = VertexColors ? VertexColors->Center : BaseColor;
 	const int32 TopCenterIndex = OutData.Vertices.Num();
 	OutData.Vertices.Add(FVector(0.0f, 0.0f, HalfHeight));
 	OutData.UVs.Add(MakeUV(0.0f, 0.0f, HalfHeight, FVector2D(0.5f, 0.5f)));
 	OutData.Normals.Add(FVector::UpVector);
-	OutData.VertexColors.Add(BaseColor);
+	OutData.VertexColors.Add(TopCenterColor);
 	OutData.Tangents.Add(FProcMeshTangent(1.0f, 0.0f, 0.0f));
 
 	TArray<int32> TopCapRingIndices;
@@ -135,7 +179,7 @@ void FHexPrismGenerator::Generate(
 		);
 		OutData.UVs.Add(MakeUV(Corner.X, Corner.Y, HalfHeight, DefaultUV));
 		OutData.Normals.Add(FVector::UpVector);
-		OutData.VertexColors.Add(BaseColor);
+		OutData.VertexColors.Add(VertexColors ? VertexColors->Corners[i] : BaseColor);
 		OutData.Tangents.Add(FProcMeshTangent(1.0f, 0.0f, 0.0f));
 	}
 
@@ -171,19 +215,26 @@ void FHexPrismGenerator::GenerateFlatHexagon(
 	float Height,
 	FColor BaseColor,
 	FVector WorldOffset,
-	float UVTileSize
+	float UVTileSize,
+	const FHexVertexColors* VertexColors,
+	float UVScale,
+	FVector2D UVOffset
 )
 {
 	auto MakeUV = [&](float LocalX, float LocalY, float LocalZ, const FVector2D& DefaultUV) -> FVector2D
 	{
 		if (UVTileSize > 0.0f)
 		{
+			const float EffectiveTile = UVTileSize / FMath::Max(UVScale, 0.01f);
 			return FVector2D(
-				(LocalX + WorldOffset.X) / UVTileSize,
-				(LocalY + WorldOffset.Y) / UVTileSize
+				(LocalX + WorldOffset.X) / EffectiveTile + UVOffset.X,
+				(LocalY + WorldOffset.Y) / EffectiveTile + UVOffset.Y
 			);
 		}
-		return DefaultUV;
+		return FVector2D(
+			DefaultUV.X * UVScale + UVOffset.X,
+			DefaultUV.Y * UVScale + UVOffset.Y
+		);
 	};
 
 	if (Height <= KINDA_SMALL_NUMBER)
@@ -192,10 +243,11 @@ void FHexPrismGenerator::GenerateFlatHexagon(
 
 		const TArray<FVector> Corners = FHexGeometry::GetHexCorners(Radius);
 
+		const FColor FlatCenter = VertexColors ? VertexColors->Center : BaseColor;
 		OutData.Vertices.Add(FVector::ZeroVector);
 		OutData.UVs.Add(MakeUV(0.0f, 0.0f, 0.0f, FVector2D(0.5f, 0.5f)));
 		OutData.Normals.Add(FVector::UpVector);
-		OutData.VertexColors.Add(BaseColor);
+		OutData.VertexColors.Add(FlatCenter);
 		OutData.Tangents.Add(FProcMeshTangent(1.0f, 0.0f, 0.0f));
 
 		TArray<int32> RingIndices;
@@ -211,7 +263,7 @@ void FHexPrismGenerator::GenerateFlatHexagon(
 			);
 			OutData.UVs.Add(MakeUV(Corners[i].X, Corners[i].Y, 0.0f, DefaultUV));
 			OutData.Normals.Add(FVector::UpVector);
-			OutData.VertexColors.Add(BaseColor);
+			OutData.VertexColors.Add(VertexColors ? VertexColors->Corners[i] : BaseColor);
 			OutData.Tangents.Add(FProcMeshTangent(1.0f, 0.0f, 0.0f));
 		}
 
@@ -223,7 +275,7 @@ void FHexPrismGenerator::GenerateFlatHexagon(
 	}
 	else
 	{
-		Generate(OutData, Radius, Height, true, true, 1, BaseColor, WorldOffset, UVTileSize);
+		Generate(OutData, Radius, Height, true, true, 1, BaseColor, WorldOffset, UVTileSize, VertexColors, UVScale, UVOffset);
 	}
 }
 
