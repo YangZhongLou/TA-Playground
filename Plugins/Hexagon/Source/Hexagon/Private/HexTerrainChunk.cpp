@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 TA-Playground. All Rights Reserved.
+// Copyright (c) 2026 TA-Playground. All Rights Reserved.
 
 #include "HexTerrainChunk.h"
 #include "HexPrismGenerator.h"
@@ -17,9 +17,7 @@ void UHexTerrainChunk::SetCells(
 	const FHexTerrainConfig& Config,
 	const TMap<EHexTerrainType, UMaterialInterface*>* LayerMaterials,
 	UMaterialInterface* DefaultMaterial,
-	float UVTileSize,
-	FHexCellLookup CellLookup,
-	const TMap<EHexTerrainType, float>* LayerUVScales)
+	float UVTileSize)
 {
 	Cells = InCells;
 	CachedUVTileSize = UVTileSize;
@@ -38,7 +36,7 @@ void UHexTerrainChunk::SetCells(
 	// Force full rebuild — cells have changed
 	CurrentLOD = -1;
 	RebuildMeshForLOD(0, EffectiveRadius, Gap, Config,
-		LayerMaterials, DefaultMaterial, UVTileSize, CellLookup, LayerUVScales);
+		LayerMaterials, DefaultMaterial, UVTileSize);
 }
 
 void UHexTerrainChunk::RebuildMeshForLOD(
@@ -48,9 +46,7 @@ void UHexTerrainChunk::RebuildMeshForLOD(
 	const FHexTerrainConfig& Config,
 	const TMap<EHexTerrainType, UMaterialInterface*>* LayerMaterials,
 	UMaterialInterface* DefaultMaterial,
-	float UVTileSize,
-	FHexCellLookup CellLookup,
-	const TMap<EHexTerrainType, float>* LayerUVScales)
+	float UVTileSize)
 {
 	CachedUVTileSize = UVTileSize;
 
@@ -80,13 +76,7 @@ void UHexTerrainChunk::RebuildMeshForLOD(
 		for (const FHexTerrainCellData& Cell : Cells)
 		{
 			FHexPrismMeshData CellMesh;
-			float UVScale = 1.0f;
-			if (LayerUVScales)
-			{
-				const float* FS = LayerUVScales->Find(Cell.TerrainType);
-				if (FS) UVScale = *FS;
-			}
-			BuildCellMesh(CellMesh, Cell, LODLevel, EffectiveRadius, Config, CellLookup, UVScale);
+			BuildCellMesh(CellMesh, Cell, LODLevel, EffectiveRadius, Config);
 
 			FHexPrismMeshData& Target = TerrainMeshes.FindOrAdd(Cell.TerrainType);
 
@@ -153,13 +143,7 @@ void UHexTerrainChunk::RebuildMeshForLOD(
 		for (const FHexTerrainCellData& Cell : Cells)
 		{
 			FHexPrismMeshData CellMesh;
-			float UVScale = 1.0f;
-			if (LayerUVScales)
-			{
-				const float* FS = LayerUVScales->Find(Cell.TerrainType);
-				if (FS) UVScale = *FS;
-			}
-			BuildCellMesh(CellMesh, Cell, LODLevel, EffectiveRadius, Config, CellLookup, UVScale);
+			BuildCellMesh(CellMesh, Cell, LODLevel, EffectiveRadius, Config);
 
 			const int32 BaseVertex = CombinedMesh.Vertices.Num();
 			for (const FVector& V : CellMesh.Vertices)
@@ -197,59 +181,15 @@ void UHexTerrainChunk::BuildCellMesh(
 	const FHexTerrainCellData& Cell,
 	int32 LODLevel,
 	float EffectiveRadius,
-	const FHexTerrainConfig& Config,
-	FHexCellLookup CellLookup),
-	float LayerUVScale)
+	const FHexTerrainConfig& Config)
 {
 	const FColor CellColor = (DebugColor.A > 0) ? DebugColor : Cell.Color.ToFColor(true);
-
-	// Compute per-vertex blend colors from neighbor cells when a lookup is provided
-	FHexVertexColors BlendColors;
-	const bool bUseBlend = (CellLookup != nullptr) && (DebugColor.A == 0);
-	if (bUseBlend)
-	{
-		// Center vertex uses the cell's own color
-		BlendColors.Center = CellColor;
-
-		// Each corner blends the 3 cells meeting at that corner
-		for (int32 i = 0; i < 6; ++i)
-		{
-			FHexCoord SelfCoord, NeighborA, NeighborB;
-			FHexTerrainGenerator::GetCornerCells(Cell.Axial, i, SelfCoord, NeighborA, NeighborB);
-
-			FLinearColor Sum = Cell.Color;
-			int32 Count = 1;
-
-			if (const FHexTerrainCellData* DataA = (*CellLookup)(NeighborA))
-			{
-				Sum += DataA->Color;
-				++Count;
-			}
-			if (const FHexTerrainCellData* DataB = (*CellLookup)(NeighborB))
-			{
-				Sum += DataB->Color;
-				++Count;
-			}
-
-			Sum /= static_cast<float>(Count);
-			BlendColors.Corners[i] = Sum.ToFColor(true);
-		}
-	}
-
-	const FHexVertexColors* VC = bUseBlend ? &BlendColors : nullptr;
-
-	// Deterministic per-cell UV offset to break up tiling patterns
-	uint32 UVHash = static_cast<uint32>(Cell.Axial.Q * 2654435761u) ^ static_cast<uint32>(Cell.Axial.R * 0x9e3779b9u);
-	FVector2D UVOffset(
-		(static_cast<float>(UVHash & 0xFFFF) / 65535.0f - 0.5f) * 0.3f,
-		(static_cast<float>((UVHash >> 16) & 0xFFFF) / 65535.0f - 0.5f) * 0.3f
-	);
 
 	// LOD 2: flat hexagon
 	if (LODLevel >= 2)
 	{
 		FHexPrismGenerator::GenerateFlatHexagon(OutMesh, EffectiveRadius, 0.0f, CellColor,
-			Cell.WorldPos, CachedUVTileSize, VC, LayerUVScale, UVOffset);
+			Cell.WorldPos, CachedUVTileSize);
 		const float ZOffset = Cell.Height;
 		for (FVector& V : OutMesh.Vertices)
 		{
@@ -271,7 +211,7 @@ void UHexTerrainChunk::BuildCellMesh(
 		FHexPrismGenerator::Generate(
 			OutMesh, EffectiveRadius, WaterHeight,
 			true, bCapBottom, HeightSeg, CellColor,
-			Cell.WorldPos, CachedUVTileSize, VC, LayerUVScale, UVOffset
+			Cell.WorldPos, CachedUVTileSize
 		);
 
 		const float ZOffset = WaterBottom + WaterHeight * 0.5f;
@@ -285,7 +225,7 @@ void UHexTerrainChunk::BuildCellMesh(
 		FHexPrismGenerator::Generate(
 			OutMesh, EffectiveRadius, Cell.Height,
 			true, bCapBottom, HeightSeg, CellColor,
-			Cell.WorldPos, CachedUVTileSize, VC, LayerUVScale, UVOffset
+			Cell.WorldPos, CachedUVTileSize
 		);
 
 		const float ZOffset = Cell.Height * 0.5f;
@@ -304,9 +244,7 @@ bool UHexTerrainChunk::UpdateLOD(
 	const FHexTerrainConfig& Config,
 	const TMap<EHexTerrainType, UMaterialInterface*>* LayerMaterials,
 	UMaterialInterface* DefaultMaterial,
-	float UVTileSize,
-	FHexCellLookup CellLookup,
-	const TMap<EHexTerrainType, float>* LayerUVScales)
+	float UVTileSize)
 {
 	if (Cells.Num() == 0)
 	{
@@ -347,7 +285,7 @@ bool UHexTerrainChunk::UpdateLOD(
 	{
 		CachedUVTileSize = UVTileSize;
 		RebuildMeshForLOD(TargetLOD, EffectiveRadius, Gap, Config,
-			LayerMaterials, DefaultMaterial, UVTileSize, CellLookup, LayerUVScales);
+			LayerMaterials, DefaultMaterial, UVTileSize);
 		return true;
 	}
 
@@ -362,20 +300,9 @@ FVector UHexTerrainChunk::GetChunkCenter() const
 void UHexTerrainChunk::ApplySingleMaterial(UMaterialInterface* Material)
 {
 	if (!Material) return;
-
-	SectionMIDs.Empty();
-
 	for (int32 i = 0; i < GetNumSections(); ++i)
 	{
 		SetMaterial(i, Material);
-
-		// Create MID for runtime parameter changes
-		UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Material, this);
-		if (MID)
-		{
-			SetMaterial(i, MID);
-			SectionMIDs.Add(i, MID);
-		}
 	}
 }
 
@@ -383,19 +310,11 @@ void UHexTerrainChunk::ApplyLayerMaterials(
 	const TMap<EHexTerrainType, UMaterialInterface*>& LayerMaterials,
 	UMaterialInterface* DefaultMaterial)
 {
-	SectionMIDs.Empty();
-
 	if (SectionTerrainTypes.Num() == 0)
 	{
 		if (DefaultMaterial)
 		{
 			SetMaterial(0, DefaultMaterial);
-			UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(DefaultMaterial, this);
-			if (MID)
-			{
-				SetMaterial(0, MID);
-				SectionMIDs.Add(0, MID);
-			}
 		}
 		return;
 	}
@@ -405,60 +324,45 @@ void UHexTerrainChunk::ApplyLayerMaterials(
 		const int32 SectionIdx = Pair.Key;
 		const EHexTerrainType Type = Pair.Value;
 
-		UMaterialInterface* Mat = DefaultMaterial;
 		if (UMaterialInterface* const* Found = LayerMaterials.Find(Type))
 		{
-			if (*Found) Mat = *Found;
+			if (*Found) SetMaterial(SectionIdx, *Found);
 		}
-
-		if (!Mat) continue;
-
-		// Create MID so texture/scalar params can be changed at runtime
-		UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Mat, this);
-		if (MID)
+		else if (DefaultMaterial)
 		{
-			SetMaterial(SectionIdx, MID);
-			SectionMIDs.Add(SectionIdx, MID);
-		}
-		else
-		{
-			SetMaterial(SectionIdx, Mat);
+			SetMaterial(SectionIdx, DefaultMaterial);
 		}
 	}
-}
-
-int32 UHexTerrainChunk::FindSectionByType(EHexTerrainType Type) const
-{
-	for (const auto& Pair : SectionTerrainTypes)
-	{
-		if (Pair.Value == Type)
-		{
-			return Pair.Key;
-		}
-	}
-	return INDEX_NONE;
 }
 
 void UHexTerrainChunk::SetLayerTexture(EHexTerrainType Type, FName ParameterName, UTexture* Texture)
 {
-	const int32 SectionIdx = FindSectionByType(Type);
+	int32 SectionIdx = FindSectionByType(Type);
 	if (SectionIdx == INDEX_NONE) return;
 
-	UMaterialInstanceDynamic* const* Found = SectionMIDs.Find(SectionIdx);
-	if (!Found || !*Found) return;
-
-	(*Found)->SetTextureParameterValue(ParameterName, Texture);
-	MarkRenderStateDirty();
+	UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(GetMaterial(SectionIdx));
+	if (!MID)
+	{
+		MID = CreateDynamicMaterialInstance(SectionIdx, GetMaterial(SectionIdx));
+	}
+	if (MID)
+	{
+		MID->SetTextureParameterValue(ParameterName, Texture);
+	}
 }
 
 void UHexTerrainChunk::SetLayerScalarParameter(EHexTerrainType Type, FName ParameterName, float Value)
 {
-	const int32 SectionIdx = FindSectionByType(Type);
+	int32 SectionIdx = FindSectionByType(Type);
 	if (SectionIdx == INDEX_NONE) return;
 
-	UMaterialInstanceDynamic* const* Found = SectionMIDs.Find(SectionIdx);
-	if (!Found || !*Found) return;
-
-	(*Found)->SetScalarParameterValue(ParameterName, Value);
-	MarkRenderStateDirty();
+	UMaterialInstanceDynamic* MID = Cast<UMaterialInstanceDynamic>(GetMaterial(SectionIdx));
+	if (!MID)
+	{
+		MID = CreateDynamicMaterialInstance(SectionIdx, GetMaterial(SectionIdx));
+	}
+	if (MID)
+	{
+		MID->SetScalarParameterValue(ParameterName, Value);
+	}
 }

@@ -1,4 +1,4 @@
-﻿// Copyright (c) 2026 TA-Playground. All Rights Reserved.
+// Copyright (c) 2026 TA-Playground. All Rights Reserved.
 
 #include "AHexTerrain.h"
 #include "HexTerrainChunk.h"
@@ -72,9 +72,7 @@ void AHexTerrain::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedE
 		else if (Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, bManualMode) ||
 		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, TextureTileSize) ||
 		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, DefaultManualType) ||
-		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, ManualCellTypes) ||
-		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, ExtraCells) ||
-		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, RemovedCells))
+		         Name == GET_MEMBER_NAME_CHECKED(AHexTerrain, ManualCellTypes))
 		{
 			RegenerateTerrain();
 		}
@@ -222,10 +220,6 @@ void AHexTerrain::UpdateChunkLODs()
 		}
 	}
 
-	auto CellLookup = [this](const FHexCoord& Coord) -> const FHexTerrainCellData* {
-		return GetCell(Coord);
-	};
-
 	for (const auto& Pair : ChunkMap)
 	{
 		if (Pair.Value)
@@ -235,7 +229,7 @@ void AHexTerrain::UpdateChunkLODs()
 				EffectiveRadius, Gap, CachedConfig,
 				LayerMatPtrs.Num() > 0 ? &LayerMatPtrs : nullptr,
 				TerrainMaterial,
-				TextureTileSize, CellLookup, &LayerUVScales
+				TextureTileSize
 			);
 
 			// LOD debug visualization: color chunks by LOD level
@@ -270,40 +264,6 @@ void AHexTerrain::RegenerateTerrain()
 	FHexTerrainConfig Config = TerrainConfig;
 	Config.CellRadius = CellRadius;
 	TerrainCells = FHexTerrainGenerator::Generate(GridRadius, Config);
-
-	// 1a. Filter out RemovedCells
-	if (RemovedCells.Num() > 0)
-	{
-		TerrainCells.RemoveAll([this](const FHexTerrainCellData& C) {
-			return RemovedCells.Contains(C.Axial);
-		});
-	}
-
-	// 1b. Add ExtraCells (noise-sampled heights for seamless blending)
-	if (ExtraCells.Num() > 0)
-	{
-		TSet<FHexCoord> Existing;
-		for (const FHexTerrainCellData& C : TerrainCells) { Existing.Add(C.Axial); }
-
-		for (const FHexCoord& Coord : ExtraCells)
-		{
-			if (Existing.Contains(Coord)) continue;
-			Existing.Add(Coord);
-
-			FHexTerrainCellData Cell;
-			Cell.Axial = Coord;
-			Cell.WorldPos = FHexGeometry::HexToWorld(Coord, Config.CellRadius);
-			Cell.NormalizedHeight = FHexTerrainGenerator::SampleNoise(
-				static_cast<float>(Coord.Q), static_cast<float>(Coord.R),
-				Config.NoiseScale, Config.NoiseOctaves, Config.NoiseSeed,
-				Config.Lacunarity, Config.Persistence);
-			Cell.NormalizedHeight = FMath::Clamp(Cell.NormalizedHeight, 0.0f, 1.0f);
-			Cell.Height = Config.SeaLevel + Cell.NormalizedHeight * Config.HeightScale;
-			Cell.TerrainType = FHexTerrainGenerator::ClassifyTerrain(Cell.NormalizedHeight, Config);
-			Cell.Color = FHexTerrainGenerator::GetTerrainColor(Cell.TerrainType);
-			TerrainCells.Add(Cell);
-		}
-	}
 
 	// 2. Apply manual terrain type overrides
 	if (bManualMode)
@@ -356,11 +316,6 @@ void AHexTerrain::BuildAllChunks(const FHexTerrainConfig& Config)
 	TSet<FIntPoint> ActiveChunkCoords;
 	Distribution.GetKeys(ActiveChunkCoords);
 
-	// Cell lookup for vertex color blending (corner-based, neighbor-aware)
-	auto CellLookup = [this](const FHexCoord& Coord) -> const FHexTerrainCellData* {
-		return GetCell(Coord);
-	};
-
 	// Create or update chunks
 	for (const auto& Pair : Distribution)
 	{
@@ -404,7 +359,7 @@ void AHexTerrain::BuildAllChunks(const FHexTerrainConfig& Config)
 		Chunk->SetCells(ChunkCells, EffectiveRadius, Gap, Config,
 			bHasLayerMats ? &LayerMatPtrs : nullptr,
 			bHasLayerMats ? TerrainMaterial.Get() : nullptr,
-			TextureTileSize, CellLookup, &LayerUVScales);
+			TextureTileSize);
 		if (bLogPerformance)
 		{
 			const double ElapsedMs = (FPlatformTime::Seconds() - BuildStart) * 1000.0;
@@ -499,10 +454,6 @@ void AHexTerrain::RebuildDirtyChunks(const TSet<FIntPoint>& DirtyChunkCoords)
 		}
 	}
 
-	auto CellLookup = [this](const FHexCoord& Coord) -> const FHexTerrainCellData* {
-		return GetCell(Coord);
-	};
-
 	// Re-group TerrainCells by chunk coord for the dirty chunks only
 	TMap<FIntPoint, TArray<FHexTerrainCellData>> DirtyDistribution;
 	for (const FHexTerrainCellData& Cell : TerrainCells)
@@ -529,7 +480,7 @@ void AHexTerrain::RebuildDirtyChunks(const TSet<FIntPoint>& DirtyChunkCoords)
 		Chunk->SetCells(ChunkCells, EffectiveRadius, Gap, CachedConfig,
 			bHasLayerMats ? &LayerMatPtrs : nullptr,
 			bHasLayerMats ? TerrainMaterial.Get() : nullptr,
-			TextureTileSize, CellLookup, &LayerUVScales);
+			TextureTileSize);
 		if (bLogPerformance)
 		{
 			const double ElapsedMs = (FPlatformTime::Seconds() - BuildStart) * 1000.0;
@@ -566,11 +517,6 @@ const FHexTerrainCellData* AHexTerrain::GetCell(const FHexCoord& Coord) const
 		}
 	}
 	return nullptr;
-}
-
-bool AHexTerrain::HasCell(const FHexCoord& Coord) const
-{
-	return GetCell(Coord) != nullptr;
 }
 
 EHexTerrainType AHexTerrain::GetTerrainTypeAtPosition(const FVector& Pos) const

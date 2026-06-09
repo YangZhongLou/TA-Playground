@@ -7,37 +7,6 @@
 #include "ProceduralMeshComponent.h"
 
 /**
- * Per-vertex color override for a hexagonal prism.
- * Center + 6 corners (counterclockwise from east/angle-0°).
- */
-struct HEXAGON_API FHexVertexColors
-{
-	FColor Center;
-	FColor Corners[6];
-
-	FHexVertexColors()
-		: Center(FColor::White)
-	{
-		for (int32 i = 0; i < 6; ++i) Corners[i] = FColor::White;
-	}
-
-	static FHexVertexColors Uniform(FColor C)
-	{
-		FHexVertexColors VC;
-		VC.Center = C;
-		for (int32 i = 0; i < 6; ++i) VC.Corners[i] = C;
-		return VC;
-	}
-
-	bool IsUniform() const
-	{
-		for (int32 i = 0; i < 6; ++i)
-			if (Corners[i] != Center) return false;
-		return true;
-	}
-};
-
-/**
  * Generates mesh data for a hexagonal prism (pointy-topped).
  * Outputs raw vertex/triangle/UV/normal data that can be fed into any mesh component.
  */
@@ -78,14 +47,6 @@ public:
 	 * @param HeightSegments Number of vertical subdivisions per side face (>= 1).
 	 * @param BaseColor    Optional vertex color tint.
 	 */
-	/**
-	 * @param UVScale Multiplier applied to UV coordinates (1.0 = default tiling).
-	 *        Higher values = more tiling (smaller texture repeats).
-	 * @param UVOffset Random offset added to UVs to break up tiling patterns.
-	 * @param VertexColors Optional per-vertex color overrides. When provided, corner/center
-	 *        vertices use these colors instead of BaseColor. Side-face vertices blend between
-	 *        adjacent corners.
-	 */
 	static void Generate(
 		FHexPrismMeshData& OutData,
 		float Radius,
@@ -95,10 +56,7 @@ public:
 		int32 HeightSegments = 1,
 		FColor BaseColor = FColor::White,
 		FVector WorldOffset = FVector::ZeroVector,
-		float UVTileSize = 0.0f,
-		const FHexVertexColors* VertexColors = nullptr,
-		float UVScale = 1.0f,
-		FVector2D UVOffset = FVector2D::ZeroVector
+		float UVTileSize = 0.0f
 	);
 
 	/**
@@ -111,10 +69,7 @@ public:
 		float Height = 0.0f,
 		FColor BaseColor = FColor::White,
 		FVector WorldOffset = FVector::ZeroVector,
-		float UVTileSize = 0.0f,
-		const FHexVertexColors* VertexColors = nullptr,
-		float UVScale = 1.0f,
-		FVector2D UVOffset = FVector2D::ZeroVector
+		float UVTileSize = 0.0f
 	);
 
 private:

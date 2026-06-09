@@ -92,14 +92,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Manual")
 	TMap<FHexCoord, EHexTerrainType> ManualCellTypes;
 
-	/** Cells to include beyond the spiral boundary (free-form terrain expansion). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Shape")
-	TSet<FHexCoord> ExtraCells;
-
-	/** Spiral cells to exclude (free-form terrain carving). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Shape")
-	TSet<FHexCoord> RemovedCells;
-
 	/** Brush radius in hex grid units (0 = single cell, 1 = +1 ring, ...). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Brush", meta = (ClampMin = "0.0", ClampMax = "20.0"))
 	float BrushRadius = 1.0f;
@@ -117,14 +109,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Texture", meta = (ClampMin = "0.0"))
 	float TextureTileSize = 200.0f;
 
-	/**
-	 * Per-terrain-type UV scale multiplier.
-	 * 1.0 = use TextureTileSize as-is. 0.5 = double the tiling density.
-	 * Sand typically wants denser tiling than Snow.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Texture")
-	TMap<EHexTerrainType, float> LayerUVScales;
-
 public:
 	/** Regenerate terrain from current parameters. */
 	UFUNCTION(BlueprintCallable, Category = "Hexagon|Terrain")
@@ -140,15 +124,23 @@ public:
 	/** Get all generated cell data (C++ only). */
 	const TArray<FHexTerrainCellData>& GetTerrainCells() const { return TerrainCells; }
 
-	/** Check whether a cell exists at the given hex coordinate. */
-	bool HasCell(const FHexCoord& Coord) const;
-
 	/** Get number of active chunks. */
 	UFUNCTION(BlueprintCallable, Category = "Hexagon|Terrain")
 	int32 GetChunkCount() const { return ChunkMap.Num(); }
 
-	/** Get read-only reference to chunk map (for external iteration). */
+	/** Get const ref to chunk map (for external iteration). */
 	const TMap<FIntPoint, TObjectPtr<UHexTerrainChunk>>& GetChunkMapConst() const { return ChunkMap; }
+
+	/** Check if a hex cell exists at the given coordinate. */
+	bool HasCell(const FHexCoord& Coord) const { return GetCell(Coord) != nullptr; }
+
+	/** Manually removed cells (negative space, for editor mode). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Manual")
+	TSet<FHexCoord> RemovedCells;
+
+	/** Extra cells to always include (for editor mode). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Manual")
+	TSet<FHexCoord> ExtraCells;
 
 	/** When true, each chunk is tinted a distinct color to visualize chunk boundaries. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Hexagon|Debug")
