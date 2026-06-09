@@ -230,6 +230,22 @@ bool FHexTerrainEdMode::StartTracking(
 	return bIsPainting;
 }
 
+bool FHexTerrainEdMode::CapturedMouseMove(
+	FEditorViewportClient* ViewportClient,
+	FViewport* Viewport,
+	int32 X, int32 Y)
+{
+	// Continue painting while dragging
+	if (bIsPainting)
+	{
+		// Update cached position via base MouseMove hit-test
+		MouseMove(ViewportClient, Viewport, X, Y);
+		PaintAtCursor(ViewportClient, Viewport);
+		return true;
+	}
+	return false;
+}
+
 bool FHexTerrainEdMode::EndTracking(
 	FEditorViewportClient* ViewportClient,
 	FViewport* Viewport)
