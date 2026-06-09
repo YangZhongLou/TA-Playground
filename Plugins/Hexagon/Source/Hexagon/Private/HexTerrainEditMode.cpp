@@ -5,7 +5,7 @@
 #if WITH_EDITOR
 
 #include "AHexTerrain.h"
-#include "HexGeometry.h"
+#include "HexTerrainGenerator.h"
 #include "Editor.h"
 #include "EditorModeManager.h"
 #include "EditorViewportClient.h"
@@ -14,8 +14,11 @@
 
 const FEditorModeID FHexTerrainEditMode::EM_HexTerrainEdit("Hexagon.HexTerrainEdit");
 
-FHexTerrainEditMode::FHexTerrainEditMode() {}
-FHexTerrainEditMode::~FHexTerrainEditMode() {}
+// ============================================================================
+// Construction
+// ============================================================================
+FHexTerrainEditMode::FHexTerrainEditMode() = default;
+FHexTerrainEditMode::~FHexTerrainEditMode() = default;
 
 // ============================================================================
 // Enter / Exit
@@ -23,24 +26,76 @@ FHexTerrainEditMode::~FHexTerrainEditMode() {}
 void FHexTerrainEditMode::Enter()
 {
 	FEdMode::Enter();
+
+	// Find and select the terrain actor
 	if (UWorld* World = GetWorld())
+	{
 		for (TActorIterator<AHexTerrain> It(World); It; ++It)
-			{ if (GEditor) { GEditor->SelectNone(false, true); GEditor->SelectActor(*It, true, false); } break; }
-	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: Left=Select  Shift=Multi-select  Del=Delete  Esc=Exit"));
+		{
+			Terrain = *It;
+			if (GEditor)
+			{
+				GEditor->SelectNone(false, true);
+				GEditor->SelectActor(*It, true, false);
+			}
+			break;
+		}
+	}
+
+	ClearSelection();
+	State = EState::Idle;
+
+	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: Click empty=Add | Click cell=Select | Shift=Multi | Del=Delete | Esc=Exit"));
 }
 
 void FHexTerrainEditMode::Exit()
 {
-	bIsEditing = false; bCursorValid = false;
-	PreviewCells.Empty(); SelectedCells.Empty();
-	CachedTerrain.Reset(); CachedHexCoord.Reset();
+	State = EState::Idle;
+	bCursorValid = false;
+	ClearSelection();
+	Terrain.Reset();
 	FEdMode::Exit();
 }
 
 // ============================================================================
-// Box helper
+// Hit-testing
 // ============================================================================
-TArray<FHexCoord> FHexTerrainEditMode::GetCellsInBox(const FHexCoord& A, const FHexCoord& B)
+bool FHexTerrainEditMode::HitTest(
+	FEditorViewportClient* VC, int32 X, int32 Y,
+	FHexCoord& OutCoord, bool& bOutOnCell)
+{
+	bOutOnCell = false;
+
+	AHexTerrain* T = Terrain.Get();
+	if (!T || !VC) return false;
+
+	// Build scene view for deprojection
+	FSceneViewFamilyContext Family(FSceneViewFamily::ConstructionValues(
+		VC->Viewport, VC->GetScene(), VC->EngineShowFlags)
+		.SetRealtimeUpdate(VC->IsRealtime()));
+	FSceneView* View = VC->CalcSceneView(&Family);
+	if (!View) return false;
+
+	// Deproject cursor to world ray
+	FViewportCursorLocation Cursor(View, VC, X, Y);
+	const FVector Origin = Cursor.GetOrigin();
+	const FVector Dir = Cursor.GetDirection();
+	if (FMath::IsNearlyZero(Dir.Z)) return false;
+
+	// Intersect with terrain XY plane
+	const float TParam = (T->GetActorLocation().Z - Origin.Z) / Dir.Z;
+	if (TParam < 0.0f) return false;
+
+	const FVector Hit = Origin + Dir * TParam;
+	OutCoord = FHexGeometry::WorldToHex(Hit, T->CellRadius);
+	bOutOnCell = T->HasCell(OutCoord);
+	return true;
+}
+
+// ============================================================================
+// Geometry
+// ============================================================================
+TArray<FHexCoord> FHexTerrainEditMode::BoxCoords(const FHexCoord& A, const FHexCoord& B)
 {
 	TArray<FHexCoord> Out;
 	const int32 Q0 = FMath::Min(A.Q, B.Q), Q1 = FMath::Max(A.Q, B.Q);
@@ -52,168 +107,197 @@ TArray<FHexCoord> FHexTerrainEditMode::GetCellsInBox(const FHexCoord& A, const F
 }
 
 // ============================================================================
-// Cursor to hex
+// Selection
 // ============================================================================
-bool FHexTerrainEditMode::CursorToHex(
-	FEditorViewportClient* ViewportClient, int32 X, int32 Y,
-	AHexTerrain*& OutTerrain, FHexCoord& OutCoord)
+void FHexTerrainEditMode::SelectOnly(const TArray<FHexCoord>& Coords)
 {
-	OutTerrain = nullptr;
-	if (!ViewportClient) return false;
-	UWorld* World = ViewportClient->GetWorld();
-	if (!World) return false;
-	for (TActorIterator<AHexTerrain> It(World); It; ++It) { OutTerrain = *It; break; }
-	if (!OutTerrain) return false;
-
-	FSceneViewFamilyContext ViewFamily(FSceneViewFamily::ConstructionValues(
-		ViewportClient->Viewport, ViewportClient->GetScene(), ViewportClient->EngineShowFlags)
-		.SetRealtimeUpdate(ViewportClient->IsRealtime()));
-	FSceneView* View = ViewportClient->CalcSceneView(&ViewFamily);
-	if (!View) return false;
-
-	FViewportCursorLocation Cursor(View, ViewportClient, X, Y);
-	const FVector O = Cursor.GetOrigin(), D = Cursor.GetDirection();
-	if (FMath::IsNearlyZero(D.Z)) return false;
-	const float T = (OutTerrain->GetActorLocation().Z - O.Z) / D.Z;
-	if (T < 0.0f) return false;
-	OutCoord = FHexGeometry::WorldToHex(O + D * T, OutTerrain->CellRadius);
-	return true;
-}
-
-// ============================================================================
-// Delete selected
-// ============================================================================
-void FHexTerrainEditMode::DeleteSelected(AHexTerrain* Terrain)
-{
-	if (!Terrain || SelectedCells.Num() == 0) return;
-	for (const FHexCoord& Coord : SelectedCells)
+	Selected.Empty();
+	for (const FHexCoord& C : Coords)
 	{
-		if (Terrain->ExtraCells.Contains(Coord))
-			Terrain->ExtraCells.Remove(Coord);
-		else if (Terrain->HasCell(Coord))
-			Terrain->RemovedCells.Add(Coord);
+		AHexTerrain* T = Terrain.Get();
+		if (T && T->HasCell(C))
+			Selected.AddUnique(C);
 	}
-	Terrain->RegenerateTerrain();
-	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: deleted %d cells"), SelectedCells.Num());
-	SelectedCells.Empty();
+	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: %d cells selected"), Selected.Num());
+}
+
+void FHexTerrainEditMode::ToggleSelection(const TArray<FHexCoord>& Coords)
+{
+	AHexTerrain* T = Terrain.Get();
+	if (!T) return;
+
+	for (const FHexCoord& C : Coords)
+	{
+		if (!T->HasCell(C)) continue;
+		if (Selected.Contains(C))
+			Selected.Remove(C);
+		else
+			Selected.AddUnique(C);
+	}
+	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: %d cells selected"), Selected.Num());
+}
+
+void FHexTerrainEditMode::ClearSelection()
+{
+	Selected.Empty();
 }
 
 // ============================================================================
-// Input
+// Terrain mutations
+// ============================================================================
+void FHexTerrainEditMode::AddCells(const TArray<FHexCoord>& Coords)
+{
+	AHexTerrain* T = Terrain.Get();
+	if (!T || Coords.Num() == 0) return;
+
+	// Clear any "removed" flags for these cells, add to extra
+	for (const FHexCoord& C : Coords)
+	{
+		if (T->RemovedCells.Contains(C))
+			T->RemovedCells.Remove(C);
+		if (!T->HasCell(C))
+			T->ExtraCells.Add(C);
+	}
+	T->PaintCells(Coords, T->BrushTerrainType);
+	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: added %d cells"), Coords.Num());
+}
+
+void FHexTerrainEditMode::DeleteCells(const TArray<FHexCoord>& Coords)
+{
+	AHexTerrain* T = Terrain.Get();
+	if (!T || Coords.Num() == 0) return;
+
+	for (const FHexCoord& C : Coords)
+	{
+		if (T->ExtraCells.Contains(C))
+			T->ExtraCells.Remove(C);
+		else if (T->HasCell(C))
+			T->RemovedCells.Add(C);
+	}
+	T->RegenerateTerrain();
+	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: deleted %d cells"), Coords.Num());
+}
+
+// ============================================================================
+// Mouse input — state machine
 // ============================================================================
 bool FHexTerrainEditMode::MouseMove(
-	FEditorViewportClient* ViewportClient, FViewport* Viewport, int32 X, int32 Y)
+	FEditorViewportClient* VC, FViewport* VP, int32 X, int32 Y)
 {
-	if (!ViewportClient) return false;
-	AHexTerrain* Terrain = nullptr;
-	FHexCoord Coord;
-	if (CursorToHex(ViewportClient, X, Y, Terrain, Coord))
+	// Update cursor tracking regardless of state
+	if (HitTest(VC, X, Y, CursorCoord, bCursorOnCell))
 	{
 		bCursorValid = true;
-		CachedTerrain = Terrain;
-		CachedHexCoord = Coord;
-		CachedCursorWorldPos = FHexGeometry::HexToWorld(Coord, Terrain->CellRadius);
 	}
 	else
 	{
 		bCursorValid = false;
-		CachedTerrain.Reset(); CachedHexCoord.Reset();
+		bCursorOnCell = false;
 	}
 	return bCursorValid;
 }
 
 bool FHexTerrainEditMode::StartTracking(
-	FEditorViewportClient* ViewportClient, FViewport* Viewport)
+	FEditorViewportClient* VC, FViewport* VP)
 {
-	if (!Viewport->KeyState(EKeys::LeftMouseButton)) return false;
-	if (!bCursorValid || !CachedHexCoord.IsSet()) return false;
+	// Only handle left mouse button
+	if (!VP->KeyState(EKeys::LeftMouseButton)) return false;
+	if (!bCursorValid) return false;
 
-	bIsEditing = true;
-	DragStartCoord = *CachedHexCoord;
-	DragOp = EDragOp::Select;
-	PreviewCells = { DragStartCoord };
+	// Transition to drag state — decided by what's under cursor
+	if (bCursorOnCell)
+	{
+		State = EState::DraggingSelect;
+	}
+	else
+	{
+		State = EState::DraggingAdd;
+	}
+
+	DragAnchor = CursorCoord;
+	DragCells = { CursorCoord };
 	return true;
 }
 
 bool FHexTerrainEditMode::CapturedMouseMove(
-	FEditorViewportClient* ViewportClient, FViewport* Viewport, int32 X, int32 Y)
+	FEditorViewportClient* VC, FViewport* VP, int32 X, int32 Y)
 {
-	if (!bIsEditing || !ViewportClient) return false;
-	AHexTerrain* Terrain = nullptr;
+	// Only process during drag
+	if (State != EState::DraggingAdd && State != EState::DraggingSelect)
+		return false;
+
 	FHexCoord Coord;
-	if (CursorToHex(ViewportClient, X, Y, Terrain, Coord))
+	bool bDummy;
+	if (HitTest(VC, X, Y, Coord, bDummy))
 	{
-		PreviewCells = GetCellsInBox(DragStartCoord, Coord);
-		CachedHexCoord = Coord;
-		CachedCursorWorldPos = FHexGeometry::HexToWorld(Coord, Terrain->CellRadius);
+		DragCells = BoxCoords(DragAnchor, Coord);
 	}
 	return true;
 }
 
 bool FHexTerrainEditMode::EndTracking(
-	FEditorViewportClient* ViewportClient, FViewport* Viewport)
+	FEditorViewportClient* VC, FViewport* VP)
 {
-	bIsEditing = false;
-	if (PreviewCells.Num() == 0) return true;
+	if (DragCells.Num() == 0) return true;
 
-	AHexTerrain* Terrain = CachedTerrain.Get();
-	if (!Terrain) return true;
+	const bool bShift = VP->KeyState(EKeys::LeftShift) ||
+	                    VP->KeyState(EKeys::RightShift);
 
-	const bool bShift = Viewport->KeyState(EKeys::LeftShift) ||
-	                    Viewport->KeyState(EKeys::RightShift);
-
-	if (bShift)
+	switch (State)
 	{
-		// Shift+drag: toggle/add to multi-selection
-		for (const FHexCoord& Coord : PreviewCells)
-		{
-			if (Terrain->HasCell(Coord))
-			{
-				if (SelectedCells.Contains(Coord))
-					SelectedCells.Remove(Coord);
-				else
-					SelectedCells.AddUnique(Coord);
-			}
-		}
+	case EState::DraggingAdd:
+		// Creating new cells — never affected by Shift
+		AddCells(DragCells);
+		break;
+
+	case EState::DraggingSelect:
+		if (bShift)
+			ToggleSelection(DragCells);
+		else
+			SelectOnly(DragCells);
+		break;
+
+	default:
+		break;
 	}
-	else
-	{
-		// No shift: replace selection
-		SelectedCells.Empty();
-		for (const FHexCoord& Coord : PreviewCells)
-		{
-			if (Terrain->HasCell(Coord))
-				SelectedCells.AddUnique(Coord);
-		}
-	}
-	UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: %d cells selected (Del=delete, Shift=toggle)"), SelectedCells.Num());
-	PreviewCells = { *CachedHexCoord };
+
+	State = EState::Idle;
+	DragCells.Empty();
 	return true;
 }
 
+// ============================================================================
+// Keyboard input
+// ============================================================================
 bool FHexTerrainEditMode::InputKey(
-	FEditorViewportClient* ViewportClient, FViewport* Viewport,
+	FEditorViewportClient* VC, FViewport* VP,
 	FKey Key, EInputEvent Event)
 {
+	// Pass through camera controls
 	if (Key == EKeys::RightMouseButton || Key == EKeys::MiddleMouseButton ||
 	    Key == EKeys::MouseScrollUp || Key == EKeys::MouseScrollDown)
 		return false;
 
-	if (Key == EKeys::Delete && Event == IE_Pressed && SelectedCells.Num() > 0)
+	// Delete selected cells
+	if (Key == EKeys::Delete && Event == IE_Pressed && Selected.Num() > 0)
 	{
-		DeleteSelected(CachedTerrain.Get());
+		DeleteCells(Selected);
+		ClearSelection();
 		return true;
 	}
 
+	// ESC: clear selection first, then exit mode
 	if (Key == EKeys::Escape && Event == IE_Pressed)
 	{
-		if (SelectedCells.Num() > 0)
+		if (Selected.Num() > 0)
 		{
-			SelectedCells.Empty();
+			ClearSelection();
 			UE_LOG(LogTemp, Log, TEXT("HexTerrainEdit: selection cleared"));
-			return true;
 		}
-		if (GetModeManager()) GetModeManager()->ActivateDefaultMode();
+		else
+		{
+			if (GetModeManager()) GetModeManager()->ActivateDefaultMode();
+		}
 		return true;
 	}
 
@@ -221,42 +305,61 @@ bool FHexTerrainEditMode::InputKey(
 }
 
 bool FHexTerrainEditMode::InputDelta(
-	FEditorViewportClient* ViewportClient, FViewport* Viewport,
+	FEditorViewportClient* VC, FViewport* VP,
 	FVector& Drag, FRotator& Rot, FVector& Scale)
 {
-	return bIsEditing;
+	// Block camera movement while dragging
+	return (State == EState::DraggingAdd || State == EState::DraggingSelect);
 }
 
 // ============================================================================
-// Render
+// Render — visual feedback
 // ============================================================================
-void FHexTerrainEditMode::Render(
-	const FSceneView* View, FViewport* Viewport, FPrimitiveDrawInterface* PDI)
+void FHexTerrainEditMode::DrawHexOutline(
+	const FHexCoord& C, const FColor& Color, float Thickness,
+	FPrimitiveDrawInterface* PDI)
 {
-	FEdMode::Render(View, Viewport, PDI);
+	AHexTerrain* T = Terrain.Get();
+	if (!T) return;
+
+	const FVector Center = FHexGeometry::HexToWorld(C, T->CellRadius);
+	const TArray<FVector> Corners = FHexGeometry::GetHexCornersAt(Center, T->CellRadius * 0.95f);
+	for (int32 i = 0; i < Corners.Num(); ++i)
+		PDI->DrawLine(Corners[i], Corners[(i+1) % Corners.Num()], Color, SDPG_Foreground, Thickness);
+}
+
+void FHexTerrainEditMode::Render(
+	const FSceneView* View, FViewport* VP, FPrimitiveDrawInterface* PDI)
+{
+	FEdMode::Render(View, VP, PDI);
 	if (!bCursorValid) return;
 
-	AHexTerrain* Terrain = CachedTerrain.Get();
-	if (!Terrain) return;
+	// 1. Selected cells — thick yellow
+	for (const FHexCoord& C : Selected)
+		DrawHexOutline(C, FColor(255, 220, 40), 3.0f, PDI);
 
-	const float CellR = Terrain->CellRadius * 0.95f;
+	// 2. Drag preview — green (add) or blue (select)
+	if (State == EState::DraggingAdd || State == EState::DraggingSelect)
+	{
+		const FColor PreviewColor = (State == EState::DraggingAdd)
+			? FColor(80, 255, 80)   // green = adding
+			: FColor(80, 200, 255); // blue = selecting
 
-	auto DrawHex = [&](const FHexCoord& Coord, const FColor& Color, float Thickness) {
-		const FVector Center = FHexGeometry::HexToWorld(Coord, Terrain->CellRadius);
-		const TArray<FVector> C = FHexGeometry::GetHexCornersAt(Center, CellR);
-		for (int32 i = 0; i < C.Num(); ++i)
-			PDI->DrawLine(C[i], C[(i+1)%C.Num()], Color, SDPG_Foreground, Thickness);
-	};
+		for (const FHexCoord& C : DragCells)
+		{
+			if (!Selected.Contains(C))
+				DrawHexOutline(C, PreviewColor, 2.0f, PDI);
+		}
+	}
 
-	// Selected cells — yellow thick outline
-	for (const FHexCoord& Coord : SelectedCells)
-		DrawHex(Coord, FColor(255, 220, 40), 3.0f);
-
-	// Drag preview cells — light blue
-	const FColor PreviewColor(80, 200, 255);
-	for (const FHexCoord& Coord : PreviewCells)
-		if (!SelectedCells.Contains(Coord))
-			DrawHex(Coord, PreviewColor, 2.0f);
+	// 3. Cursor highlight — only when idle
+	if (State == EState::Idle && !Selected.Contains(CursorCoord))
+	{
+		const FColor CursorColor = bCursorOnCell
+			? FColor(255, 255, 100)  // yellow = on existing cell
+			: FColor(100, 255, 100); // green = empty space
+		DrawHexOutline(CursorCoord, CursorColor, 1.5f, PDI);
+	}
 }
 
 #endif // WITH_EDITOR

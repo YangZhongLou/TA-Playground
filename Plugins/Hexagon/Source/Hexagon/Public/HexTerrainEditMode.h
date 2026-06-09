@@ -12,14 +12,19 @@
 class AHexTerrain;
 
 /**
- * Editor mode for hex terrain cell editing.
+ * Hex terrain cell editor — state machine.
  *
- * Left-click/drag  = select cells (yellow outline)
- * Shift+drag       = toggle/add to multi-selection
- * Delete key       = remove selected cells
- * Esc              = clear selection (1st) / exit mode (2nd)
- *
- * To add cells: switch to "Hex Terrain Paint" mode, or use hex.PaintCell console command.
+ * ┌──────────STATE──────────┬───TRIGGER───┬───ACTION────────────────────┐
+ * │ Idle                    │ hover cell   │ show cursor outline          │
+ * │ Idle                    │ L-click cell │ select single cell           │
+ * │ Idle                    │ L-drag cell  │ box-select cells             │
+ * │ Idle                    │ L-click empty│ create single cell           │
+ * │ Idle                    │ L-drag empty │ box-fill cells               │
+ * │ ActiveSelection         │ Shift+drag   │ toggle cells in/out          │
+ * │ ActiveSelection         │ Del key      │ delete selected cells        │
+ * │ ActiveSelection         │ Esc          │ clear selection → idle       │
+ * │ Any                     │ Esc (no sel) │ exit mode                    │
+ * └─────────────────────────┴──────────────┴─────────────────────────────┘
  */
 class FHexTerrainEditMode : public FEdMode
 {
@@ -29,35 +34,63 @@ public:
 	FHexTerrainEditMode();
 	virtual ~FHexTerrainEditMode();
 
+	// --- FEdMode ---
 	virtual void Enter() override;
 	virtual void Exit() override;
-	virtual bool MouseMove(FEditorViewportClient* ViewportClient, FViewport* Viewport, int32 X, int32 Y) override;
-	virtual bool StartTracking(FEditorViewportClient* ViewportClient, FViewport* Viewport) override;
-	virtual bool EndTracking(FEditorViewportClient* ViewportClient, FViewport* Viewport) override;
-	virtual bool CapturedMouseMove(FEditorViewportClient* ViewportClient, FViewport* Viewport, int32 X, int32 Y) override;
-	virtual bool InputKey(FEditorViewportClient* ViewportClient, FViewport* Viewport, FKey Key, EInputEvent Event) override;
-	virtual bool InputDelta(FEditorViewportClient* ViewportClient, FViewport* Viewport, FVector& Drag, FRotator& Rot, FVector& Scale) override;
-	virtual void Render(const FSceneView* View, FViewport* Viewport, FPrimitiveDrawInterface* PDI) override;
+	virtual bool MouseMove(FEditorViewportClient* VC, FViewport* VP, int32 X, int32 Y) override;
+	virtual bool StartTracking(FEditorViewportClient* VC, FViewport* VP) override;
+	virtual bool EndTracking(FEditorViewportClient* VC, FViewport* VP) override;
+	virtual bool CapturedMouseMove(FEditorViewportClient* VC, FViewport* VP, int32 X, int32 Y) override;
+	virtual bool InputKey(FEditorViewportClient* VC, FViewport* VP, FKey Key, EInputEvent Event) override;
+	virtual bool InputDelta(FEditorViewportClient* VC, FViewport* VP, FVector& D, FRotator& R, FVector& S) override;
+	virtual void Render(const FSceneView* View, FViewport* VP, FPrimitiveDrawInterface* PDI) override;
 	virtual bool UsesToolkits() const override { return false; }
 
 private:
-	bool CursorToHex(FEditorViewportClient* ViewportClient, int32 X, int32 Y,
-		AHexTerrain*& OutTerrain, FHexCoord& OutCoord);
-	static TArray<FHexCoord> GetCellsInBox(const FHexCoord& A, const FHexCoord& B);
-	void DeleteSelected(AHexTerrain* Terrain);
+	// ── Hit testing ─────────────────────────────────────────────
+	/** Project viewport coords to hex grid. Returns true, fills OutCoord + bOutOnCell. */
+	bool HitTest(FEditorViewportClient* VC, int32 X, int32 Y,
+		FHexCoord& OutCoord, bool& bOutOnCell);
 
-	enum class EDragOp : uint8 { Add, Select };
-	EDragOp DragOp = EDragOp::Select;
+	// ── Geometry helpers ────────────────────────────────────────
+	static TArray<FHexCoord> BoxCoords(const FHexCoord& A, const FHexCoord& B);
 
-	bool bIsEditing = false;
-	FHexCoord DragStartCoord = FHexCoord(0, 0);
-	TArray<FHexCoord> PreviewCells;
-	TArray<FHexCoord> SelectedCells;
+	// ── Terrain mutations ───────────────────────────────────────
+	void AddCells(const TArray<FHexCoord>& Coords);
+	void DeleteCells(const TArray<FHexCoord>& Coords);
 
-	TWeakObjectPtr<AHexTerrain> CachedTerrain;
-	TOptional<FHexCoord> CachedHexCoord;
-	FVector CachedCursorWorldPos = FVector::ZeroVector;
-	bool bCursorValid = false;
+	// ── Selection ───────────────────────────────────────────────
+	void SelectOnly(const TArray<FHexCoord>& Coords);
+	void ToggleSelection(const TArray<FHexCoord>& Coords);
+	void ClearSelection();
+
+	// ── Visuals ─────────────────────────────────────────────────
+	void DrawHexOutline(const FHexCoord& C, const FColor& Color, float W, FPrimitiveDrawInterface* PDI);
+
+	// ── State ───────────────────────────────────────────────────
+	enum class EState : uint8
+	{
+		Idle,             // nothing happening, cursor may be hovering
+		DraggingAdd,      // mouse held down over empty space — adding cells
+		DraggingSelect,   // mouse held down over cell — selecting cells
+	};
+
+	EState State = EState::Idle;
+
+	// Cached terrain actor (looked up on Enter, refreshed on each hit-test)
+	TWeakObjectPtr<AHexTerrain> Terrain;
+
+	// Current cursor state
+	bool  bCursorValid = false;
+	bool  bCursorOnCell = false;
+	FHexCoord CursorCoord;
+
+	// Drag state (valid while DraggingAdd or DraggingSelect)
+	FHexCoord DragAnchor;      // where the drag started
+	TArray<FHexCoord> DragCells; // cells in the current drag box
+
+	// Persistent selection (survives between drags)
+	TArray<FHexCoord> Selected;
 };
 
 #endif // WITH_EDITOR
