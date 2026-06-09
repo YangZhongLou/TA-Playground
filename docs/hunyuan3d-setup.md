@@ -35,8 +35,11 @@ py -3.10 -m venv venv
 
 ```powershell
 .\venv\Scripts\activate
-pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124
+pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu124 --default-timeout 3600
 ```
+
+> 国内用户下载慢/超时：2.5GB wheel 文件较大，`--default-timeout` 可防止超时。
+> 如仍超时，可用阿里云镜像（将 `download.pytorch.org` 换为 `mirrors.aliyun.com/pytorch-wheels`）。
 
 验证 GPU 可用:
 ```powershell
