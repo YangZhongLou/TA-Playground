@@ -237,11 +237,17 @@ bool FHexTerrainEdMode::CapturedMouseMove(
 {
 	if (!bIsPainting) return false;
 
-	// Debounce: only paint when cursor moves to a different hex cell
+	// Update cursor position for brush preview
 	AHexTerrain* Terrain = nullptr;
 	FHexCoord NewCoord;
 	if (HitTestTerrain(ViewportClient, X, Y, Terrain, NewCoord))
 	{
+		// Always update cached position so brush preview follows cursor
+		CachedTerrain = Terrain;
+		if (Terrain)
+			CachedCursorWorldPos = FHexGeometry::HexToWorld(NewCoord, Terrain->CellRadius);
+
+		// Only repaint when cursor moves to a different hex cell
 		if (!CachedHexCoord.IsSet() || NewCoord != *CachedHexCoord)
 		{
 			CachedHexCoord = NewCoord;
