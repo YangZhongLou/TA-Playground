@@ -235,15 +235,20 @@ bool FHexTerrainEdMode::CapturedMouseMove(
 	FViewport* Viewport,
 	int32 X, int32 Y)
 {
-	// Continue painting while dragging
-	if (bIsPainting)
+	if (!bIsPainting) return false;
+
+	// Debounce: only paint when cursor moves to a different hex cell
+	AHexTerrain* Terrain = nullptr;
+	FHexCoord NewCoord;
+	if (HitTestTerrain(ViewportClient, X, Y, Terrain, NewCoord))
 	{
-		// Update cached position via base MouseMove hit-test
-		MouseMove(ViewportClient, Viewport, X, Y);
-		PaintAtCursor(ViewportClient, Viewport);
-		return true;
+		if (!CachedHexCoord.IsSet() || NewCoord != *CachedHexCoord)
+		{
+			CachedHexCoord = NewCoord;
+			PaintAtCursor(ViewportClient, Viewport);
+		}
 	}
-	return false;
+	return true;
 }
 
 bool FHexTerrainEdMode::EndTracking(
