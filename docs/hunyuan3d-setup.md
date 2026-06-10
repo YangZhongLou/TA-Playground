@@ -103,13 +103,31 @@ python -c "from huggingface_hub import login; login(token='hf_xxx')"
 
 ### 8. 下载模型权重
 
-> **已知问题**：HuggingFace CDN 国内慢，hf-mirror.com 不缓存此模型。Shape 权重 ~6.6GB，需数小时。
+> **关键**：Git Bash / MinGW **不走** Windows TUN 模式 VPN！必须用 PowerShell 或浏览器。
+
+**方法 A: BITS（推荐，支持断点续传）**
 
 ```powershell
-python download_weights.py
+# 创建目录并下载 config
+$dir = "$env:USERPROFILE\.cache\hy3dgen\tencent\Hunyuan3D-2.1\hunyuan3d-dit-v2-1"
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+
+# config.yaml（秒下）
+Invoke-WebRequest "https://huggingface.co/tencent/Hunyuan3D-2.1/resolve/main/hunyuan3d-dit-v2-1/config.yaml" -OutFile "$dir\config.yaml"
+
+# model.fp16.ckpt（~7GB，BITS 后台下载，断点续传）
+Start-BitsTransfer `
+    -Source "https://huggingface.co/tencent/Hunyuan3D-2.1/resolve/main/hunyuan3d-dit-v2-1/model.fp16.ckpt" `
+    -Destination "$dir\model.fp16.ckpt" `
+    -Asynchronous
+
+# 查看进度
+Get-BitsTransfer | Format-List JobState, BytesTransferred, BytesTotal
 ```
 
-手动备选：从 [HuggingFace](https://huggingface.co/tencent/Hunyuan3D-2.1/tree/main/hunyuan3d-dit-v2-1) 下载以下文件放到对应路径：
+**方法 B: 浏览器手动下载**
+
+从 [HuggingFace](https://huggingface.co/tencent/Hunyuan3D-2.1/tree/main/hunyuan3d-dit-v2-1) 下载，放到对应路径：
 
 | 文件 | 本地路径 |
 |------|---------|
@@ -193,7 +211,8 @@ textured.export('output.glb')
 
 ### 模型权重下载失败
 - 原因：HuggingFace CDN 国内慢，hf-mirror 不缓存该模型
-- 解决：用 `download_weights.py` 脚本（含 `resume_download`），或浏览器手动下
+- 解决：用 **BITS**（Windows 原生断点续传）或浏览器手动下
+- **Git Bash 不走 TUN VPN**：必须用 PowerShell 运行下载命令
 
 ### CUDA Out of Memory
 - `nvidia-smi` 查看占用，关掉 Chrome / Unity 等 GPU 程序
@@ -214,6 +233,11 @@ textured.export('output.glb')
 
 ### Windows GBK 编码报错
 - 脚本避免使用 emoji / Unicode 特殊字符即可
+
+### 开了 VPN 但下载不通
+- **Git Bash (MinGW) 不走 Windows TUN 模式 VPN**，必须用 PowerShell 或 CMD
+- 验证：PowerShell 跑 `Invoke-WebRequest https://huggingface.co -TimeoutSec 10` 应返回 200
+- 大文件下载用 BITS（`Start-BitsTransfer`），支持断点续传，VPN 断了自动恢复
 
 ---
 
