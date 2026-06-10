@@ -10,11 +10,11 @@ nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 
 | 项目 | 最低要求 | 当前配置 |
 |------|---------|---------|
-| GPU | RTX 3060 12GB | ✅ RTX 3060 12GB |
-| 驱动 | ≥551.78 (CUDA 12.4) | ✅ 560.94 (CUDA 12.6) |
-| 显存(Shape) | 10 GB | ✅ 12 GB |
-| 显存(Texture) | 8 GB | ✅ 12 GB (峰值分开跑，不叠加) |
-| Python | 3.10 | ✅ 不要用 3.13 |
+| GPU | RTX 3060 12GB | RTX 3060 12GB |
+| 驱动 | >=551.78 (CUDA 12.4) | 560.94 (CUDA 12.6) |
+| 显存 Shape | 10 GB | 12 GB |
+| 显存 Texture | 8 GB | 12 GB (分阶段跑不叠加) |
+| Python | 3.10 | 3.10.11 |
 | 磁盘 | ~40 GB | — |
 
 ---
@@ -28,14 +28,13 @@ nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 # https://www.python.org/downloads/release/python-31011/
 # 安装时勾选 "Add Python to PATH"
 
-# 验证
 py -3.10 --version   # Python 3.10.11
 ```
 
 ### 2. 创建虚拟环境
 
 ```powershell
-cd D:\Playground\TA-Playground
+cd <project_root>
 mkdir hunyuan
 cd hunyuan
 py -3.10 -m venv venv
@@ -43,28 +42,22 @@ py -3.10 -m venv venv
 
 ### 3. 安装 PyTorch 2.5.1 (CUDA 12.4)
 
-> ⚠️ **实测重要**：所有国内镜像（阿里云、清华、豆瓣、上交）都**不缓存** CUDA 版 PyTorch wheel。
-> 2.5GB 的 `torch-2.5.1+cu124` 必须从 `download.pytorch.org` 下载，国内速度约 300KB/s，**需 1~2 小时**。
+> **已知问题**：所有国内镜像（阿里云、清华、豆瓣、上交）都不缓存 CUDA 版 PyTorch wheel。
+> 2.5GB 的 `torch-2.5.1+cu124` 必须从 `download.pytorch.org` 下载，国内 ~300KB/s，需 1-2 小时。
 
 ```powershell
 .\venv\Scripts\activate
 
-# 官方源（推荐，cu124 无线程兼容问题）
 pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 `
     --index-url https://download.pytorch.org/whl/cu124 `
     --default-timeout 7200
-
-# 备用：清华镜像装 CPU 依赖快，但 PyTorch CUDA wheel 仍回源 pytorch.org
-pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 `
-    -i https://pypi.tuna.tsinghua.edu.cn/simple `
-    --default-timeout 3600
 ```
 
-验证:
+验证：
 ```powershell
-python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}'); print(f'GPU: {torch.cuda.get_device_name(0)}')"
-# CUDA: True
-# GPU: NVIDIA GeForce RTX 3060
+python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
+# True
+# NVIDIA GeForce RTX 3060
 ```
 
 ### 4. 克隆仓库
@@ -74,55 +67,83 @@ git clone https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1.git
 git clone https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git
 ```
 
-### 5. 安装 2.1 Shape 依赖
+### 5. 安装 Python 依赖
+
+> **版本对齐关键**：`transformers` 和 `diffusers` 必须与 `torch 2.5.1` 兼容。
 
 ```powershell
-cd Hunyuan3D-2.1/hy3dshape
-pip install -r requirements.txt
-cd ../..
+pip install ninja pybind11 einops opencv-python numpy omegaconf tqdm `
+    trimesh pymeshlab pygltflib xatlas accelerate gradio fastapi uvicorn rembg onnxruntime `
+    transformers==4.46.3 diffusers==0.31.0 `
+    -i https://pypi.tuna.tsinghua.edu.cn/simple --default-timeout 600
 ```
 
-### 6. 安装 2.0 纹理模块
+### 6. 编译 2.0 纹理渲染器
+
+> **已知问题**：需要 Visual Studio 2022（MSVC v143）。VS 2025/Insiders 版本 CUDA 不支持。
+> 多版本 VS 需显式激活 2022：
 
 ```powershell
-cd Hunyuan3D-2
-pip install -r requirements.txt
+$env:TORCH_CUDA_ARCH_LIST = "8.6"
 
-# 编译渲染器
-cd hy3dgen/texgen/custom_rasterizer
-python setup.py install
-cd ../../..
-cd hy3dgen/texgen/differentiable_renderer
-python setup.py install
-cd ../../..
+# custom_rasterizer
+cmd /c "call ""C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"" x64 && set DISTUTILS_USE_SDK=1 && cd /d Hunyuan3D-2\hy3dgen\texgen\custom_rasterizer && D:\...\hunyuan\venv\Scripts\python.exe -m pip install -e ."
+
+# differentiable_renderer
+cmd /c "call ""C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"" x64 && set DISTUTILS_USE_SDK=1 && cd /d Hunyuan3D-2\hy3dgen\texgen\differentiable_renderer && D:\...\hunyuan\venv\Scripts\python.exe setup.py install"
 ```
-
-> ⚠️ **编译坑**：需 Visual Studio **2022**（2017-2022 均可），VS 2025/Insiders 版本 CUDA 不支持。
-> 如装有多版本 VS，必须显式激活 VS 2022 环境：
-> ```powershell
-> $env:TORCH_CUDA_ARCH_LIST="8.6"
-> cmd /c "call ""C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"" x64 && set DISTUTILS_USE_SDK=1 && cd /d <path> && python -m pip install -e ."
-> ```
 
 ### 7. HuggingFace 登录
 
 ```powershell
-pip install huggingface_hub
-huggingface-cli login
+python -c "from huggingface_hub import login; login(token='hf_xxx')"
 ```
+
+去 [huggingface.co/tencent/Hunyuan3D-2.1](https://huggingface.co/tencent/Hunyuan3D-2.1) 和 [Hunyuan3D-2](https://huggingface.co/tencent/Hunyuan3D-2) 各点一次 **Agree and access**。
+
+### 8. 下载模型权重
+
+> **已知问题**：HuggingFace CDN 国内慢，hf-mirror.com 不缓存此模型。Shape 权重 ~6.6GB，需数小时。
+
+```powershell
+python download_weights.py
+```
+
+手动备选：从 [HuggingFace](https://huggingface.co/tencent/Hunyuan3D-2.1/tree/main/hunyuan3d-dit-v2-1) 下载以下文件放到对应路径：
+
+| 文件 | 本地路径 |
+|------|---------|
+| `config.yaml` | `~/.cache/hy3dgen/tencent/Hunyuan3D-2.1/hunyuan3d-dit-v2-1/config.yaml` |
+| `model.fp16.ckpt` | `~/.cache/hy3dgen/tencent/Hunyuan3D-2.1/hunyuan3d-dit-v2-1/model.fp16.ckpt` |
+
+纹理权重（2.0 Paint ~2.6GB）同理，从 `tencent/Hunyuan3D-2` 下载到 `~/.cache/hy3dgen/tencent/Hunyuan3D-2/`。
 
 ---
 
 ## 目录结构
 
 ```
-hunyuan/                       # ← gitignored
-├── venv/                      # Python 3.10 虚拟环境
-├── Hunyuan3D-2.1/             # Shape 生成 (2.1)
-│   └── hy3dshape/
-├── Hunyuan3D-2/               # 纹理生成 (2.0)
-│   └── hy3dgen/texgen/
-└── hybrid_pipeline.py         # 混合调用入口
+hunyuan/                          # gitignored
+├── venv/                         # Python 3.10 venv
+├── Hunyuan3D-2.1/                # Shape repo
+│   └── hy3dshape/                #   shape package
+├── Hunyuan3D-2/                  # Texture repo
+│   └── hy3dgen/texgen/           #   texture package
+├── hybrid_pipeline.py            # CLI entry point
+└── download_weights.py           # weight pre-downloader
+```
+
+权重缓存：
+```
+~/.cache/hy3dgen/
+└── tencent/
+    ├── Hunyuan3D-2.1/
+    │   └── hunyuan3d-dit-v2-1/
+    │       ├── config.yaml
+    │       └── model.fp16.ckpt      (~6.6 GB)
+    └── Hunyuan3D-2/
+        ├── hunyuan3d-delight-v2-0/  (~2.6 GB)
+        └── hunyuan3d-paint-v2-0/    (~2.6 GB)
 ```
 
 ---
@@ -134,82 +155,88 @@ hunyuan/                       # ← gitignored
 ```powershell
 .\venv\Scripts\activate
 
-# 完整流程：图片 → 带纹理 3D 模型
-python hybrid_pipeline.py input.png -o output.glb
-
-# 仅白模
+# 仅白模（首次验证推荐）
 python hybrid_pipeline.py input.png -o output.glb --shape-only
+
+# 完整流程：图片 -> 带纹理 3D 模型
+python hybrid_pipeline.py input.png -o output.glb
 ```
 
-### Python 调用
+### Python API
 
 ```python
 import sys, gc, torch
 
-# 路径配置
 sys.path.insert(0, 'Hunyuan3D-2.1/hy3dshape')
-sys.path.insert(0, 'Hunyuan3D-2/hy3dgen')
+sys.path.insert(0, 'Hunyuan3D-2')
 
-# ── Step 1: 几何 (2.1 Shape, 峰值 ~10GB) ──
+# Step 1: shape (peak ~10GB VRAM)
 from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
-shape_pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained('tencent/Hunyuan3D-2.1')
-mesh = shape_pipe(image='input.png')[0]
+shape = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained('tencent/Hunyuan3D-2.1')
+mesh = shape(image='input.png')[0]
+del shape; gc.collect(); torch.cuda.empty_cache()
 
-del shape_pipe; gc.collect(); torch.cuda.empty_cache()
-
-# ── Step 2: 纹理 (2.0 Paint, 峰值 ~8GB) ──
+# Step 2: texture (peak ~8GB VRAM)
 from hy3dgen.texgen import Hunyuan3DPaintPipeline
-paint_pipe = Hunyuan3DPaintPipeline.from_pretrained('tencent/Hunyuan3D-2')
-textured_mesh = paint_pipe(mesh, image='input.png')
-
-textured_mesh.export('output.glb')
+paint = Hunyuan3DPaintPipeline.from_pretrained('tencent/Hunyuan3D-2')
+textured = paint(mesh, image='input.png')
+textured.export('output.glb')
 ```
-
----
-
-## 模型权重
-
-| 阶段 | 模型 | HF Repo | 大小 |
-|------|------|---------|:---:|
-| 几何 | Hunyuan3D-Shape-v2-1 | `tencent/Hunyuan3D-2.1` | 3.3B |
-| 纹理 | Hunyuan3D-Paint-v2-0 | `tencent/Hunyuan3D-2` | 1.3B |
-
-首次运行自动下载到 `~/.cache/huggingface/`。
 
 ---
 
 ## 常见问题
 
-### PyTorch 下载超时 / 慢
-- **根本原因**：国内没有源缓存 CUDA wheel，必须从 `download.pytorch.org` 拉
-- `--default-timeout 7200` 防止 read timeout
-- 耐心等待 1-2 小时；不建议中断
+### PyTorch 下载超时 / 极慢
+- 原因：国内无镜像缓存 CUDA wheel，必须从 pytorch.org 拉
+- 解决：`--default-timeout 7200`，等 1-2 小时
+
+### 模型权重下载失败
+- 原因：HuggingFace CDN 国内慢，hf-mirror 不缓存该模型
+- 解决：用 `download_weights.py` 脚本（含 `resume_download`），或浏览器手动下
 
 ### CUDA Out of Memory
-- 关闭其他 GPU 程序（Chrome、IDE、Unity 等）
-- 检查显存占用：`nvidia-smi`
-- Shape 阶段 ~10GB，纹理阶段 ~8GB，**分阶段跑不叠加**
-- 卡住了改用 `--shape-only` 只出白模
+- `nvidia-smi` 查看占用，关掉 Chrome / Unity 等 GPU 程序
+- Shape 阶段 ~10GB，纹理阶段 ~8GB，不叠加
+- 卡住就 `--shape-only` 只出白模
 
-### Python 版本
-- 必须 Python 3.10；3.13 有大量包不兼容
-- 验证：`py -3.10 --version`
+### transformers / diffusers 版本冲突
+- 症状：`torch has no attribute float8_e8m0fnu` 或 `cannot import Dinov2WithRegistersConfig`
+- 解决：锁定 `transformers==4.46.3 diffusers==0.31.0`
 
-### 编译渲染器失败
-- 需要 Visual Studio Build Tools（MSVC v143）
-- `bash` 命令需要 Git Bash 或 WSL
+### VS 编译报错 unsupported compiler
+- 症状：`fatal error C1189: unsupported Microsoft Visual Studio version`
+- 原因：CUDA 12.5 不支持 VS 2025+
+- 解决：用 VS 2022 的 vcvarsall.bat 激活环境后编译
+
+### Python 3.13 兼容性
+- 大量 AI 库无 3.13 wheel，必须用 Python 3.10
+
+### Windows GBK 编码报错
+- 脚本避免使用 emoji / Unicode 特殊字符即可
 
 ---
 
 ## 版本兼容矩阵
 
-| 组件 | 版本 | 显存 | 12GB 能跑 | 备注 |
+| 组件 | 版本 | 显存 | RTX 3060 12GB | 备注 |
 |------|------|------|:---:|------|
-| Shape | 2.1 (3.3B) | ~10 GB | ✅ | 推荐 |
-| Shape | 2.0 (2.6B) | ~8 GB | ✅ | 备用 |
-| Paint | 2.0 (1.3B) | ~8 GB | ✅ | RGB 纹理 |
-| Paint | 2.1 (2.0B) | ~21 GB | ❌ | PBR 纹理，需 24GB+ |
+| Shape | 2.1 (3.3B) | ~10 GB | OK | 推荐，效果最好 |
+| Shape | 2.0 (2.6B) | ~8 GB | OK | 备用 |
+| Paint | 2.0 (1.3B) | ~8 GB | OK | RGB 纹理 |
+| Paint | 2.1 (2.0B) | ~21 GB | NO | PBR 纹理，需 24GB+ |
+
+### 已验证兼容的 Python 包版本
+
+| 包 | 版本 | 备注 |
+|------|------|------|
+| torch | 2.5.1+cu124 | 不可升级 |
+| transformers | 4.46.3 | 精确匹配 |
+| diffusers | 0.31.0 | 精确匹配 |
+| huggingface_hub | 0.36.2 | — |
+| trimesh | 4.12.2 | — |
 
 ---
 
-最后更新: 2026-06-09
+部署时间：2026-06-09  
+最后验证：2026-06-10
