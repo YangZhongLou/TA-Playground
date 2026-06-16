@@ -81,16 +81,26 @@ pip install ninja pybind11 einops opencv-python numpy omegaconf tqdm `
 ### 6. 编译 2.0 纹理渲染器
 
 > **已知问题**：需要 Visual Studio 2022（MSVC v143）。VS 2025/Insiders 版本 CUDA 不支持。
-> 多版本 VS 需显式激活 2022：
+> 多版本 VS 需显式激活 2022。
+> 下面 `$vs2022` 要根据本机实际安装位置修改：
 
 ```powershell
+# 根据 GPU 架构设置（RTX 30/40 系列为 8.6，其他显卡需调整）
 $env:TORCH_CUDA_ARCH_LIST = "8.6"
 
+$vs2022 = "C:\Program Files\Microsoft Visual Studio\2022\Community"
+$vcvars = "$vs2022\VC\Auxiliary\Build\vcvarsall.bat"
+$py = "$PWD\venv\Scripts\python.exe"
+
 # custom_rasterizer
-cmd /c "call ""C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"" x64 && set DISTUTILS_USE_SDK=1 && cd /d Hunyuan3D-2\hy3dgen\texgen\custom_rasterizer && D:\...\hunyuan\venv\Scripts\python.exe -m pip install -e ."
+pushd Hunyuan3D-2\hy3dgen\texgen\custom_rasterizer
+cmd /c "call `"$vcvars`" x64 && set DISTUTILS_USE_SDK=1 && `"$py`" -m pip install -e ."
+popd
 
 # differentiable_renderer
-cmd /c "call ""C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat"" x64 && set DISTUTILS_USE_SDK=1 && cd /d Hunyuan3D-2\hy3dgen\texgen\differentiable_renderer && D:\...\hunyuan\venv\Scripts\python.exe setup.py install"
+pushd Hunyuan3D-2\hy3dgen\texgen\differentiable_renderer
+cmd /c "call `"$vcvars`" x64 && set DISTUTILS_USE_SDK=1 && `"$py`" setup.py install"
+popd
 ```
 
 ### 7. HuggingFace 登录
@@ -99,13 +109,16 @@ cmd /c "call ""C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxili
 python -c "from huggingface_hub import login; login(token='hf_xxx')"
 ```
 
-去 [huggingface.co/tencent/Hunyuan3D-2.1](https://huggingface.co/tencent/Hunyuan3D-2.1) 和 [Hunyuan3D-2](https://huggingface.co/tencent/Hunyuan3D-2) 各点一次 **Agree and access**。
+去 [Hunyuan3D-2.1] 和 [Hunyuan3D-2] 模型页面，各点一次 **Agree and access**。
+
+[Hunyuan3D-2.1]: https://huggingface.co/tencent/Hunyuan3D-2.1
+[Hunyuan3D-2]: https://huggingface.co/tencent/Hunyuan3D-2
 
 ### 8. 下载模型权重
 
 > **关键**：Git Bash / MinGW **不走** Windows TUN 模式 VPN！必须用 PowerShell 或浏览器。
 
-**方法 A: BITS（推荐，支持断点续传）**
+#### 方法 A：BITS（推荐，支持断点续传）
 
 ```powershell
 # 创建目录并下载 config
@@ -125,7 +138,7 @@ Start-BitsTransfer `
 Get-BitsTransfer | Format-List JobState, BytesTransferred, BytesTotal
 ```
 
-**方法 B: 浏览器手动下载**
+#### 方法 B：浏览器手动下载
 
 从 [HuggingFace](https://huggingface.co/tencent/Hunyuan3D-2.1/tree/main/hunyuan3d-dit-v2-1) 下载，放到对应路径：
 
@@ -206,35 +219,43 @@ textured.export('output.glb')
 ## 常见问题
 
 ### PyTorch 下载超时 / 极慢
+
 - 原因：国内无镜像缓存 CUDA wheel，必须从 pytorch.org 拉
 - 解决：`--default-timeout 7200`，等 1-2 小时
 
 ### 模型权重下载失败
+
 - 原因：HuggingFace CDN 国内慢，hf-mirror 不缓存该模型
 - 解决：用 **BITS**（Windows 原生断点续传）或浏览器手动下
 - **Git Bash 不走 TUN VPN**：必须用 PowerShell 运行下载命令
 
 ### CUDA Out of Memory
+
 - `nvidia-smi` 查看占用，关掉 Chrome / Unity 等 GPU 程序
 - Shape 阶段 ~10GB，纹理阶段 ~8GB，不叠加
 - 卡住就 `--shape-only` 只出白模
 
 ### transformers / diffusers 版本冲突
+
 - 症状：`torch has no attribute float8_e8m0fnu` 或 `cannot import Dinov2WithRegistersConfig`
 - 解决：锁定 `transformers==4.46.3 diffusers==0.31.0`
 
 ### VS 编译报错 unsupported compiler
+
 - 症状：`fatal error C1189: unsupported Microsoft Visual Studio version`
 - 原因：CUDA 12.5 不支持 VS 2025+
 - 解决：用 VS 2022 的 vcvarsall.bat 激活环境后编译
 
 ### Python 3.13 兼容性
+
 - 大量 AI 库无 3.13 wheel，必须用 Python 3.10
 
 ### Windows GBK 编码报错
+
 - 脚本避免使用 emoji / Unicode 特殊字符即可
 
 ### 开了 VPN 但下载不通
+
 - **Git Bash (MinGW) 不走 Windows TUN 模式 VPN**，必须用 PowerShell 或 CMD
 - 验证：PowerShell 跑 `Invoke-WebRequest https://huggingface.co -TimeoutSec 10` 应返回 200
 - 大文件下载用 BITS（`Start-BitsTransfer`），支持断点续传，VPN 断了自动恢复
