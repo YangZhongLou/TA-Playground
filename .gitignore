@@ -30,3 +30,9 @@ __pycache__/
 Thumbs.db
 .DS_Store
 SkillHub/
+
+# Kimi hooks logs
+.kimi/hooks/*.log
+
+# Hunyuan3D — large models/venv/repos ignored by default
+hunyuan/
