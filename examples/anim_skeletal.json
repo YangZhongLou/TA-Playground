@@ -1,0 +1,31 @@
+{
+  "duration": 4.0,
+  "fps": 24,
+  "actors": [
+    {
+      "blueprint_path": "/Game/Characters/MyChar/BP_MyChar",
+      "actor_name": "AIChar_Dance_01",
+      "location": [0, 0, 0],
+      "rotation": [0, 0, 0],
+      "scale": [1, 1, 1],
+      "easing": "linear",
+      "keyframes": [
+        {"time": 0.0, "location": [-200, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1]},
+        {"time": 2.0, "location": [0, 0, 0], "rotation": [0, 90, 0], "scale": [1, 1, 1]},
+        {"time": 4.0, "location": [200, 0, 0], "rotation": [0, 180, 0], "scale": [1, 1, 1]}
+      ]
+    }
+  ],
+  "camera": {
+    "type": "viewport",
+    "easing": "ease_in_out",
+    "keyframes": [
+      {"time": 0.0, "location": [300, -300, 200], "rotation": [-10, 45, 0]},
+      {"time": 4.0, "location": [300, 300, 200], "rotation": [-10, 135, 0]}
+    ]
+  },
+  "screenshots": {
+    "enabled": true,
+    "prefix": "anim_skeletal"
+  }
+}
