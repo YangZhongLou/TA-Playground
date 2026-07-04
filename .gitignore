@@ -24,7 +24,20 @@ __pycache__/
 .venv/
 
 # Claude Code — all symlinks from SkillHub, don't track
-.claude/
+.claude/**
+!.claude/agents/
+!.claude/agents/*.md
+!.claude/commands/
+!.claude/commands/*.md
+!.claude/hooks/
+!.claude/hooks/md-lint.py
+.claude/hooks/*.log
+!.claude/settings.json
+!.claude/skills/
+!.claude/skills/*.md
+
+# SkillHub — local copy of UnrealMCP skill hub
+SkillHub/.claude/hooks/*.log
 
 # Hunyuan3D local environment
 hunyuan/
@@ -32,4 +45,9 @@ hunyuan/
 # OS
 Thumbs.db
 .DS_Store
-Plugins/Hexagon/
+
+# Kimi hooks logs
+.kimi/hooks/*.log
+
+# Hunyuan3D — large models/venv/repos ignored by default
+hunyuan/
