@@ -41,6 +41,9 @@ metadata:
 
 **MCP 操作步骤**:
 
+> 以下步骤依赖 **UnrealMCP** 服务已启用（`enabledMcpjsonServers: ["unreal"]`）。
+> 项目中也提供了辅助脚本，例如 `scripts/create_jade_material.py`，可作为程序化创建的参考。
+
 1. `spawn_actor` — 创建 StaticMeshActor，使用球体/雕塑 mesh
 2. `set_static_mesh` — 设置展示 mesh（如 SM_Sphere / SM_Teapot）
 3. `create_material_instance` — 从 M_Jade_Master 创建 MI_Jade_Green

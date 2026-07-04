@@ -1,5 +1,6 @@
 {
   "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": ["unreal"],
   "permissions": {
     "allow": [
       "Bash(*)",
@@ -42,12 +43,12 @@
           {
             "type": "command",
             "if": "Edit(*.md)",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/.claude/hooks/md-lint.py\""
+            "command": "python \"${CLAUDE_PROJECT_DIR}/Plugins/UnrealMCP/SkillHub/.claude/hooks/md-lint.py\""
           },
           {
             "type": "command",
             "if": "Write(*.md)",
-            "command": "python \"${CLAUDE_PROJECT_DIR}/.claude/hooks/md-lint.py\""
+            "command": "python \"${CLAUDE_PROJECT_DIR}/Plugins/UnrealMCP/SkillHub/.claude/hooks/md-lint.py\""
           }
         ]
       }

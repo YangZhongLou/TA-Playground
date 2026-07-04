@@ -2,6 +2,11 @@
 
 Personal skill hub. Skills in `.claude/skills/`, agents in `.claude/agents/`, commands in `.claude/commands/`.
 
+> Kimi CLI note:
+> - skills are migrated to `~/.kimi-code/skills/` with YAML frontmatter removed.
+> - markdown lint hook is migrated to `.kimi/hooks/md-lint.py` and wired via `~/.kimi-code/config.toml`.
+> - Agents and slash commands are not available; their behavior is folded into this `CLAUDE.md` and the loaded skills.
+
 ## Behavioral Guidelines
 
 > Tradeoff: bias toward caution over speed. For trivial tasks, use judgment.
@@ -32,6 +37,7 @@ Personal skill hub. Skills in `.claude/skills/`, agents in `.claude/agents/`, co
 | programmer | `/programmer` | Write code, style, language guides (TS/JS/Python/Go/Rust/Java/SQL/Shell) |
 | project-manager | `/project-manager` | Milestone-based project planning, task breakdown, progress tracking |
 | technical-artist | `/technical-artist` | UE material creation, shader development, visual effects prototyping. Dispatches to material skills. |
+| ui-designer | `/ui-designer` | UI layout design, hierarchy, spacing, and flow for UMG and general interfaces |
 
 ## Skills
 
