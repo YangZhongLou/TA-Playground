@@ -46,5 +46,8 @@ Thumbs.db
 # Kimi hooks logs
 .kimi/hooks/*.log
 
+# Downloaded AI model weights (runtime artifacts)
+weights/
+
 # Hunyuan3D — large models/venv/repos ignored by default
 hunyuan/
