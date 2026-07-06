@@ -38,6 +38,7 @@ Personal skill hub. Skills in `.claude/skills/`, agents in `.claude/agents/`, co
 | project-manager | `/project-manager` | Milestone-based project planning, task breakdown, progress tracking |
 | technical-artist | `/technical-artist` | UE material, shader, visual effects prototyping |
 | ui-designer | `/ui-designer` | UI layout design, hierarchy, spacing, and flow for UMG and general interfaces |
+| audio-asset-creator | (see `Plugins/UnrealMCP/SkillHub/.claude/agents/audio-asset-creator.md`) | Generate music/SFX/foley assets via ACE-Step / Stable Audio Open / MMAudio and self-iterate on prompt quality |
 
 ## Skills
 
