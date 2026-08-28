@@ -73,12 +73,32 @@ static void NsSpawnMover()
 	}
 }
 
+static void NsDropRateCmd(const TArray<FString>& Args)
+{
+	float Drop = 0.1f;
+	int32 Count = 2000;
+	if (Args.Num() >= 1)
+	{
+		Drop = FCString::Atof(*Args[0]);
+	}
+	if (Args.Num() >= 2)
+	{
+		Count = FCString::Atoi(*Args[1]);
+	}
+	NsLogFakeNetDropRate(Drop, Count);
+}
+
 void FNetworkSyncModule::StartupModule()
 {
 	SelfTestCmd = IConsoleManager::Get().RegisterConsoleCommand(
 		TEXT("ns.SelfTest"),
 		TEXT("Run NetworkSync lockstep / state-sync / rollback fake-net tests"),
 		FConsoleCommandDelegate::CreateStatic(&NsRunSelfTestAndLog),
+		ECVF_Default);
+	DropRateCmd = IConsoleManager::Get().RegisterConsoleCommand(
+		TEXT("ns.DropRate"),
+		TEXT("Measure FakeNet drop rate. Usage: ns.DropRate [0-1] [count]"),
+		FConsoleCommandWithArgsDelegate::CreateStatic(&NsDropRateCmd),
 		ECVF_Default);
 	SpawnCmd = IConsoleManager::Get().RegisterConsoleCommand(
 		TEXT("ns.SpawnDemo"),
@@ -90,7 +110,8 @@ void FNetworkSyncModule::StartupModule()
 		TEXT("Spawn ANsMoverPawn and possess (WASD + Space, Mover not CMC)"),
 		FConsoleCommandDelegate::CreateStatic(&NsSpawnMover),
 		ECVF_Default);
-	UE_LOG(LogNetworkSyncModule, Log, TEXT("NetworkSync started. Console: ns.SelfTest, ns.SpawnDemo, ns.SpawnMover"));
+	UE_LOG(LogNetworkSyncModule, Log,
+		TEXT("NetworkSync started. Console: ns.SelfTest, ns.DropRate, ns.SpawnDemo, ns.SpawnMover"));
 }
 
 void FNetworkSyncModule::ShutdownModule()
@@ -99,6 +120,11 @@ void FNetworkSyncModule::ShutdownModule()
 	{
 		IConsoleManager::Get().UnregisterConsoleObject(SelfTestCmd);
 		SelfTestCmd = nullptr;
+	}
+	if (DropRateCmd)
+	{
+		IConsoleManager::Get().UnregisterConsoleObject(DropRateCmd);
+		DropRateCmd = nullptr;
 	}
 	if (SpawnCmd)
 	{

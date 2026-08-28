@@ -40,11 +40,12 @@
 插件已写入 `TA-Playground.uproject`。编译后：
 
 1. 控制台 `ns.SelfTest` — 单元 + 三套协议 + UDP + 压力长跑，日志 `NetworkSync self-test OK`。
-2. 自动化：`TA.NetworkSync.*`（Session Frontend）。
-3. PIE 控制台 `ns.SpawnDemo` — 生成 `ANsNetManager`。A/D 控玩家 0，方向键控玩家 1。
-4. 在 Actor 上改 `Scheme`：Lockstep / StateSync / Rollback / Replication。
-5. 勾选 `bUseUdp`：`LocalMesh` 本机三端口；`Host`/`Client` 填 `UdpRemoteHost` 做两进程。
-6. Replication：Listen Server 下按 `E` 增加 `Counter`，按 `F` 开关门。
-7. `ns.SpawnMover` — `ANsMoverPawn`（Mover，非 CMC）。WASD 移动，空格跳。
+2. `ns.DropRate [0-1] [count]` — 测量假网络实际丢包率（默认 0.1 / 2000 包）。
+3. 自动化：`TA.NetworkSync.*`（Session Frontend）。
+4. PIE 控制台 `ns.SpawnDemo` — 生成 `ANsNetManager`。A/D 控玩家 0，方向键控玩家 1。
+5. 在 Actor 上改 `Scheme`：Lockstep / StateSync / Rollback / Replication。
+6. 勾选 `bUseUdp`：`LocalMesh` 本机三端口；`Host`/`Client` 填 `UdpRemoteHost` 做两进程。
+7. Replication：Listen Server 下按 `E` 增加 `Counter`，按 `F` 开关门。
+8. `ns.SpawnMover` — `ANsMoverPawn`（Mover，非 CMC）。WASD 移动，空格跳。
 
 源码根目录：`Plugins/NetworkSync/Source/NetworkSync/`。

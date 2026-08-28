@@ -93,3 +93,5 @@ void OnRecvSeq(int32 S)
 - 序号窗口按 **(接收端, 发送端)** 记账，两个客户端发往服务器的 seq=1 互不打架。
 - 发出的每个 UDP 数据报 ≤ 1200 字节。超长必须先 `NsSplitForMtu`，禁止靠 IP 分片。
 - 玩法层用 `Src` 认玩家，不信任 payload `player_id`。
+- `NsMeasureFakeNetDrop` / `ns.DropRate`：配置的 `Drop` 与实测丢包率在 0/1 时精确，中间档偏差 ≤ 0.03（2000 包）。
+  自动化：`TA.NetworkSync.FakeNet.DropRate`。

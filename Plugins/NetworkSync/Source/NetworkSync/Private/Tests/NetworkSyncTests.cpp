@@ -14,6 +14,7 @@
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "MoverDataModelTypes.h"
 #include "MoverSimulationTypes.h"
 #include "UObject/Package.h"
 
@@ -233,16 +234,23 @@ NS_WRAP(FNsCodec_Contract, "TA.NetworkSync.Codec.Contract", NsRunCodecContractSe
 NS_WRAP(FNsCodec_Mtu, "TA.NetworkSync.Codec.Mtu", NsRunMtuSelfTest, NsAutoFlags)
 NS_WRAP(FNsSeqWindow_Dup, "TA.NetworkSync.FakeNet.SeqWindow", NsRunSeqWindowSelfTest, NsAutoFlags)
 NS_WRAP(FNsFakeNet_DropDelay, "TA.NetworkSync.FakeNet.DropDelay", NsRunFakeNetContractSelfTest, NsAutoFlags)
+NS_WRAP(FNsFakeNet_DropRate, "TA.NetworkSync.FakeNet.DropRate", NsRunFakeNetDropRateSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_Clean, "TA.NetworkSync.Lockstep.Clean", NsRunLockstepCleanSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_HighDrop, "TA.NetworkSync.Lockstep.HighDrop", NsRunLockstepHighDropSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_LateJoin, "TA.NetworkSync.Lockstep.LateJoin", NsRunLockstepLateJoinSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_NoSkip, "TA.NetworkSync.Lockstep.NoSkip", NsRunLockstepNoSkipSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_JoinFrag, "TA.NetworkSync.Lockstep.JoinFrag", NsRunLockstepJoinFragSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_Desync, "TA.NetworkSync.Lockstep.Desync", NsRunLockstepDesyncSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_Clean, "TA.NetworkSync.StateSync.Clean", NsRunStateSyncCleanSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_Rewind, "TA.NetworkSync.StateSync.Rewind", NsRunStateSyncRewindSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_Nack, "TA.NetworkSync.StateSync.Nack", NsRunStateSyncNackSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_InboxHole, "TA.NetworkSync.StateSync.InboxHole", NsRunStateSyncInboxHoleSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_OldSnap, "TA.NetworkSync.StateSync.OldSnap", NsRunStateSyncOldSnapSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_Spoof, "TA.NetworkSync.StateSync.Spoof", NsRunStateSyncSpoofSelfTest, NsAutoFlags)
 NS_WRAP(FNsRollback_Clean, "TA.NetworkSync.Rollback.Clean", NsRunRollbackCleanSelfTest, NsAutoFlags)
 NS_WRAP(FNsRollback_Wait, "TA.NetworkSync.Rollback.Wait", NsRunRollbackWaitSelfTest, NsAutoFlags)
 NS_WRAP(FNsRollback_Hole, "TA.NetworkSync.Rollback.Hole", NsRunRollbackHoleSelfTest, NsAutoFlags)
+NS_WRAP(FNsRollback_MidHole, "TA.NetworkSync.Rollback.MidHole", NsRunRollbackMidHoleSelfTest, NsAutoFlags)
 NS_WRAP(FNsUdp_Burst, "TA.NetworkSync.Udp.Burst", NsRunUdpBurstSelfTest, NsAutoFlags)
 
 NS_WRAP(FNsWorld_Stress, "TA.NetworkSync.Stress.World", NsRunWorldStressSelfTest, NsAutoFlags)
@@ -285,8 +293,21 @@ bool FNsActors_Cdo::RunTest(const FString& Parameters)
 
 	FMoverInputCmdContext Cmd;
 	Pawn->ProduceInput_Implementation(16, Cmd);
+	const FCharacterDefaultInputs* Inputs = Cmd.InputCollection.FindDataByType<FCharacterDefaultInputs>();
+	TestNotNull(TEXT("mover inputs"), Inputs);
+	if (Inputs)
+	{
+		TestFalse(TEXT("jump not pressed"), Inputs->bIsJumpPressed);
+		TestFalse(TEXT("jump not just pressed"), Inputs->bIsJumpJustPressed);
+	}
 	FMoverInputCmdContext Again;
 	Pawn->ProduceInput_Implementation(16, Again);
+	const FCharacterDefaultInputs* AgainInputs = Again.InputCollection.FindDataByType<FCharacterDefaultInputs>();
+	TestNotNull(TEXT("mover inputs again"), AgainInputs);
+	if (AgainInputs)
+	{
+		TestFalse(TEXT("jump still not pressed"), AgainInputs->bIsJumpPressed);
+	}
 	return true;
 }
 

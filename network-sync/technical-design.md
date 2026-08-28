@@ -225,25 +225,26 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 控制台：
 
 1. `ns.SelfTest` — 假网络三套协议、编解码、UDP、压力长跑；日志含 `NetworkSync self-test OK`。
-2. `ns.SpawnDemo` — 生成 Manager；改 `Scheme`，可勾选 `bUseUdp` 与 `UdpRole`。
-3. `ns.SpawnMover` — 生成 `ANsMoverPawn` 并 Possess。
-4. Session Frontend：`TA.NetworkSync.*`。
+2. `ns.DropRate [0-1] [count]` — 标定假网络丢包率。
+3. `ns.SpawnDemo` — 生成 Manager；改 `Scheme`，可勾选 `bUseUdp` 与 `UdpRole`。
+4. `ns.SpawnMover` — 生成 `ANsMoverPawn` 并 Possess。
+5. Session Frontend：`TA.NetworkSync.*`。
 
 引擎：UE 5.8。`TA-Playground.uproject` 的 `EngineAssociation=5.8`。
 
 ## 测试金字塔
 
-自动化过滤器 `TA.NetworkSync`（35 项）。`ns.SelfTest` 跑同一批自测函数。RNG 种子为 1。
+自动化过滤器 `TA.NetworkSync`。`ns.SelfTest` 跑同一批自测函数。RNG 种子为 1。
 
 | 层 | 前缀 | 覆盖 |
 | --- | --- | --- |
 | 内核 | `World.*` | 确定性、clamp、Reset |
-| 编解码 | `Codec.*` | 往返、拒收、MTU 拆包 |
-| 传输 | `FakeNet.*`、`Udp.*` | 序号窗、丢包延迟、环回、对等、分进程、突发 |
-| 锁步 | `Lockstep.*` | 干净、Drop=0.1/0.15、Join、LateJoin、分叉 |
-| 状态同步 | `StateSync.*` | 和解、倒带、nack 全量 |
-| 回滚 | `Rollback.*` | 干净、WAIT、Confirmed 不跳空洞 |
-| 复制 | `Actors.Cdo` | Door / Counter RPC；Mover 关移动复制 |
+| 编解码 | `Codec.*` | 往返（含 Frame/Checksum/JoinSnap）、拒收、MTU 拆包（S2C/Join/C2S/P2P） |
+| 传输 | `FakeNet.*`、`Udp.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程、突发 |
+| 锁步 | `Lockstep.*` | 干净、Drop=0.1/0.15、Join、LateJoin、空洞不跳帧、Join 分片不擦未来 Buf、分叉 |
+| 状态同步 | `StateSync.*` | 和解、倒带、nack 全量、Inbox 空洞、旧快照忽略、Src 身份 |
+| 回滚 | `Rollback.*` | 干净、WAIT、Confirmed 不跳空洞（前缀/中间） |
+| 复制 | `Actors.Cdo` | Door / Counter RPC；Mover 关移动复制；ProduceInput 无控制器不跳 |
 | 压力 | `Stress.*` | 长跑限时（World / Codec / FakeNet / 三套协议） |
 
 改 `Drop` 后若偶发失败，先看冷却循环是否排空在途包。
