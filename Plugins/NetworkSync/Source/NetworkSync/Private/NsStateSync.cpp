@@ -8,18 +8,22 @@ void FNsStateSyncServer::OnInput(int32 PlayerId, int32 Seq, int8 Dx)
 	{
 		return;
 	}
-	if (!bHasPending[PlayerId] || Seq > PendingSeq[PlayerId])
+	if (Seq <= Pawns[PlayerId].LastSeq)
 	{
-		PendingSeq[PlayerId] = Seq;
-		PendingDx[PlayerId] = NsClampDx(Dx);
-		bHasPending[PlayerId] = true;
+		return;
 	}
+	Inbox[PlayerId].Add(Seq, NsClampDx(Dx));
 }
 
 void FNsStateSyncServer::OnAck(int32 PlayerId, int32 AckTick)
 {
 	if (PlayerId < 0 || PlayerId >= Ns::PlayerCount)
 	{
+		return;
+	}
+	if (AckTick <= 0)
+	{
+		LastAck[PlayerId] = 0;
 		return;
 	}
 	if (AckTick > LastAck[PlayerId])
@@ -77,12 +81,18 @@ void FNsStateSyncServer::Sim(INsNet& Net)
 	++Tick;
 	for (int32 i = 0; i < Ns::PlayerCount; ++i)
 	{
-		if (bHasPending[i] && PendingSeq[i] > Pawns[i].LastSeq)
+		for (;;)
 		{
-			Pawns[i].X += static_cast<int32>(PendingDx[i]) * Ns::StateSpeed;
-			Pawns[i].LastSeq = PendingSeq[i];
+			const int32 Next = Pawns[i].LastSeq + 1;
+			const int8* Found = Inbox[i].Find(Next);
+			if (!Found)
+			{
+				break;
+			}
+			Pawns[i].X += static_cast<int32>(*Found) * Ns::StateSpeed;
+			Pawns[i].LastSeq = Next;
+			Inbox[i].Remove(Next);
 		}
-		bHasPending[i] = false;
 		HistX[i][Tick % Ns::HistoryTicks] = Pawns[i].X;
 	}
 	if (Tick % Ns::SendEvery == 0)
@@ -129,6 +139,10 @@ void FNsStateSyncClient::LocalTick(INsNet& Net, int8 Dx)
 
 void FNsStateSyncClient::OnSnap(INsNet& Net, const FNsPacket& P)
 {
+	if (LastAckedTick > 0 && P.Tick <= LastAckedTick)
+	{
+		return;
+	}
 	int32 Xs[Ns::PlayerCount];
 	if (P.BaseTick == 0)
 	{
@@ -141,6 +155,12 @@ void FNsStateSyncClient::OnSnap(INsNet& Net, const FNsPacket& P)
 		const int32* B1 = Store1.Find(P.BaseTick);
 		if (!B0 || !B1)
 		{
+			FNsPacket Nack;
+			Nack.Type = ENsMsg::C2SSnapAck;
+			Nack.PlayerId = PlayerId;
+			Nack.Tick = 0;
+			Net.Send(Addr, ENsAddr::Sv, Nack);
+			Net.Send(Addr, ENsAddr::Sv, Nack);
 			return;
 		}
 		Xs[0] = *B0 + P.SnapX[0];
@@ -149,6 +169,24 @@ void FNsStateSyncClient::OnSnap(INsNet& Net, const FNsPacket& P)
 	}
 	Store0.Add(P.Tick, Xs[0]);
 	Store1.Add(P.Tick, Xs[1]);
+	auto TrimStore = [](TMap<int32, int32>& Store)
+	{
+		while (Store.Num() > Ns::HistoryTicks)
+		{
+			int32 MinK = MAX_int32;
+			for (const TPair<int32, int32>& Kv : Store)
+			{
+				MinK = FMath::Min(MinK, Kv.Key);
+			}
+			if (MinK == MAX_int32)
+			{
+				break;
+			}
+			Store.Remove(MinK);
+		}
+	};
+	TrimStore(Store0);
+	TrimStore(Store1);
 	SnapTick.Add(P.Tick);
 	SnapX0.Add(Xs[0]);
 	SnapX1.Add(Xs[1]);

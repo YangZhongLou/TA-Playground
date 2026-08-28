@@ -17,9 +17,7 @@ class NETWORKSYNC_API FNsStateSyncServer
 public:
 	int32 Tick = 0;
 	FNsPawn Pawns[Ns::PlayerCount];
-	int32 PendingSeq[Ns::PlayerCount] = {0, 0};
-	int8 PendingDx[Ns::PlayerCount] = {0, 0};
-	bool bHasPending[Ns::PlayerCount] = {false, false};
+	TMap<int32, int8> Inbox[Ns::PlayerCount];
 	int32 LastAck[Ns::PlayerCount] = {0, 0};
 	int32 HistX[Ns::PlayerCount][Ns::HistoryTicks] = {};
 	int32 DeltaSent = 0;

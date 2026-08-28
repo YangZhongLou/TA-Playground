@@ -269,9 +269,14 @@ void ANsNetManager::TickLockstep()
 			Wire().Drain(ENsAddr::Sv, ToSv);
 			for (const FNsPacket& P : ToSv)
 			{
+				const int32 Id = NsPlayerIdFromAddr(P.Src);
+				if (Id < 0)
+				{
+					continue;
+				}
 				if (P.Type == ENsMsg::C2SInput)
 				{
-					LsSv.OnInput(P.PlayerId, P.Dx);
+					LsSv.OnInput(Id, P.Dx);
 				}
 				else if (P.Type == ENsMsg::C2SChecksum)
 				{
@@ -331,16 +336,21 @@ void ANsNetManager::TickStateSync()
 			Wire().Drain(ENsAddr::Sv, ToSv);
 			for (const FNsPacket& P : ToSv)
 			{
+				const int32 Id = NsPlayerIdFromAddr(P.Src);
+				if (Id < 0)
+				{
+					continue;
+				}
 				if (P.Type == ENsMsg::C2SInput)
 				{
 					for (int32 i = 0; i < P.SeqWindow.Num(); ++i)
 					{
-						SsSv.OnInput(P.PlayerId, P.SeqWindow[i], P.DxWindow[i]);
+						SsSv.OnInput(Id, P.SeqWindow[i], P.DxWindow[i]);
 					}
 				}
 				else if (P.Type == ENsMsg::C2SSnapAck)
 				{
-					SsSv.OnAck(P.PlayerId, P.Tick);
+					SsSv.OnAck(Id, P.Tick);
 				}
 			}
 			SsSv.Sim(Wire());
@@ -429,12 +439,11 @@ void ANsNetManager::DrawPawns() const
 void ANsNetManager::SpawnReplicatedDemo()
 {
 	UWorld* World = GetWorld();
-	if (!World || RepActor.IsValid())
+	if (!HasAuthority() || !World || RepActor.IsValid())
 	{
 		return;
 	}
 	FActorSpawnParameters Params;
-	Params.Owner = World->GetFirstPlayerController();
 	ANsReplicatedActor* Spawned = World->SpawnActor<ANsReplicatedActor>(
 		GetActorLocation() + FVector(0.f, 0.f, 40.f),
 		FRotator::ZeroRotator,

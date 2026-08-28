@@ -85,7 +85,11 @@ static void PumpLockstepServer(INsNet& Net, FNsLockstepServer& Sv, bool bWait = 
 	{
 		if (P.Type == ENsMsg::C2SInput)
 		{
-			Sv.OnInput(P.PlayerId, P.Dx);
+			const int32 Id = NsPlayerIdFromAddr(P.Src);
+			if (Id >= 0)
+			{
+				Sv.OnInput(Id, P.Dx);
+			}
 		}
 		else if (P.Type == ENsMsg::C2SChecksum)
 		{
@@ -121,14 +125,22 @@ static void PumpStateServer(INsNet& Net, FNsStateSyncServer& Sv)
 	{
 		if (P.Type == ENsMsg::C2SInput)
 		{
-			for (int32 i = 0; i < P.SeqWindow.Num(); ++i)
+			const int32 Id = NsPlayerIdFromAddr(P.Src);
+			if (Id >= 0)
 			{
-				Sv.OnInput(P.PlayerId, P.SeqWindow[i], P.DxWindow[i]);
+				for (int32 i = 0; i < P.SeqWindow.Num(); ++i)
+				{
+					Sv.OnInput(Id, P.SeqWindow[i], P.DxWindow[i]);
+				}
 			}
 		}
 		else if (P.Type == ENsMsg::C2SSnapAck)
 		{
-			Sv.OnAck(P.PlayerId, P.Tick);
+			const int32 Id = NsPlayerIdFromAddr(P.Src);
+			if (Id >= 0)
+			{
+				Sv.OnAck(Id, P.Tick);
+			}
 		}
 	}
 	Sv.Sim(Net);
@@ -303,6 +315,69 @@ FNsSelfTestResult NsRunLockstepJoinSelfTest()
 	Ok.Detail = FString::Printf(TEXT("lockstep-join snap=%d exec=%d x=(%d,%d)"),
 		Sv.SnapFrame, C1.ExecFrame, C1.World.X[0], C1.World.X[1]);
 	return Ok;
+}
+
+FNsSelfTestResult NsRunLockstepLateJoinSelfTest()
+{
+	FNsFakeNet Net;
+	Net.RttMs = 0.f;
+	Net.Drop = 0.f;
+	Net.JitterMs = 0.f;
+	Net.Rng.Initialize(1);
+
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	C0.PlayerId = 0;
+	C0.Addr = ENsAddr::C0;
+	FNsLockstepClient C1;
+	C1.PlayerId = 1;
+	C1.Addr = ENsAddr::C1;
+
+	for (int32 i = 0; i < 24; ++i)
+	{
+		C0.SendInput(Net, 1);
+		PumpLockstepServer(Net, Sv);
+		PumpLockstepClient(Net, C0);
+		TArray<FNsPacket> Dropped;
+		Net.Drain(ENsAddr::C1, Dropped);
+		Net.Advance(Ns::LogicDtMs);
+	}
+	if (C1.ExecFrame != 0)
+	{
+		return Fail(TEXT("lockstep-late: silent client moved"));
+	}
+
+	FNsPacket Spoof;
+	Spoof.Type = ENsMsg::C2SInput;
+	Spoof.PlayerId = 0;
+	Spoof.Dx = -1;
+	Net.Send(ENsAddr::C1, ENsAddr::Sv, Spoof);
+	Net.Advance(1.0);
+	const int8 Before0 = Sv.Latest.Dx[0];
+	PumpLockstepServer(Net, Sv);
+	if (Sv.Latest.Dx[0] != Before0 || Sv.Latest.Dx[1] != -1)
+	{
+		return Fail(TEXT("lockstep-late: PlayerId spoof applied"));
+	}
+
+	for (int32 i = 0; i < 40; ++i)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, 0);
+		PumpLockstepServer(Net, Sv);
+		PumpLockstepClient(Net, C0);
+		PumpLockstepClient(Net, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+	if (C1.ExecFrame <= 8)
+	{
+		return FailStr(FString::Printf(TEXT("lockstep-late: still stuck exec=%d"), C1.ExecFrame));
+	}
+	if (!C0.World.Equals(C1.World))
+	{
+		return Fail(TEXT("lockstep-late: worlds diverged"));
+	}
+	return OkStr(FString::Printf(TEXT("lockstep-late exec=%d"), C1.ExecFrame));
 }
 
 FNsSelfTestResult NsRunStateSyncSelfTest()
@@ -628,6 +703,13 @@ static FNsSelfTestResult RunFakeLockstep(float RttMs, float Drop, float JitterMs
 		PumpLockstepClient(Net, C1);
 		Net.Advance(Ns::LogicDtMs);
 	}
+	for (int32 i = 0; i < 48 && C0.ExecFrame != C1.ExecFrame; ++i)
+	{
+		PumpLockstepServer(Net, Sv);
+		PumpLockstepClient(Net, C0);
+		PumpLockstepClient(Net, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
 
 	if (C0.ExecFrame <= Frames / 3)
 	{
@@ -636,6 +718,10 @@ static FNsSelfTestResult RunFakeLockstep(float RttMs, float Drop, float JitterMs
 	if (FMath::Abs(C0.ExecFrame - C1.ExecFrame) > 20)
 	{
 		return FailStr(FString::Printf(TEXT("%s: exec mismatch %d vs %d"), Tag, C0.ExecFrame, C1.ExecFrame));
+	}
+	if (C0.ExecFrame != C1.ExecFrame)
+	{
+		return FailStr(FString::Printf(TEXT("%s: exec not aligned %d vs %d"), Tag, C0.ExecFrame, C1.ExecFrame));
 	}
 	if (!C0.World.Equals(C1.World))
 	{
@@ -949,7 +1035,19 @@ FNsSelfTestResult NsRunSeqWindowSelfTest()
 	{
 		return Fail(TEXT("seq: stamp second"));
 	}
-	return OkStr(TEXT("seq window dup+stamp"));
+	if (!W.Accept(ENsAddr::Sv, ENsAddr::C0, 4) || !W.Accept(ENsAddr::Sv, ENsAddr::C0, 3))
+	{
+		return Fail(TEXT("seq: out-of-order hole fill"));
+	}
+	if (W.Accept(ENsAddr::Sv, ENsAddr::C0, 3))
+	{
+		return Fail(TEXT("seq: filled hole must stay dup"));
+	}
+	if (W.Accept(ENsAddr::Sv, ENsAddr::C0, 4 - 32))
+	{
+		return Fail(TEXT("seq: too old must reject"));
+	}
+	return OkStr(TEXT("seq window dup+stamp+hole"));
 }
 
 FNsSelfTestResult NsRunFakeNetContractSelfTest()
@@ -969,6 +1067,15 @@ FNsSelfTestResult NsRunFakeNetContractSelfTest()
 		if (Got.Num() != 0)
 		{
 			return Fail(TEXT("fakenet: drop=1 leaked"));
+		}
+		Net.Drop = 0.f;
+		Net.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
+		Net.Advance(1.0);
+		TArray<FNsPacket> After;
+		Net.Drain(ENsAddr::Sv, After);
+		if (After.Num() != 1 || After[0].Seq != 2)
+		{
+			return Fail(TEXT("fakenet: drop must still consume seq"));
 		}
 	}
 	{
@@ -1088,6 +1195,48 @@ FNsSelfTestResult NsRunStateSyncRewindSelfTest()
 	return OkStr(FString::Printf(TEXT("rewind current=%d past=%d"), Cap, Past));
 }
 
+FNsSelfTestResult NsRunStateSyncNackSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsStateSyncServer Sv;
+	FNsStateSyncClient C0;
+	C0.PlayerId = 0;
+	C0.Addr = ENsAddr::C0;
+	for (int32 S = 0; S < 24; ++S)
+	{
+		C0.LocalTick(Net, 1);
+		PumpStateServer(Net, Sv);
+		PumpStateClient(Net, C0);
+		Net.Advance(Ns::SimDtMs);
+	}
+	if (Sv.LastAck[0] <= 0)
+	{
+		return Fail(TEXT("state-nack: no first ack"));
+	}
+	C0.Store0.Reset();
+	C0.Store1.Reset();
+	C0.LastAckedTick = 0;
+	for (int32 i = 0; i < 12; ++i)
+	{
+		C0.LocalTick(Net, 1);
+		PumpStateServer(Net, Sv);
+		PumpStateClient(Net, C0);
+		Net.Advance(Ns::SimDtMs);
+	}
+	if (C0.Store0.Num() == 0)
+	{
+		return Fail(TEXT("state-nack: never recovered full snap"));
+	}
+	if (C0.PredX != Sv.Pawns[0].X)
+	{
+		return FailStr(FString::Printf(TEXT("state-nack: pred=%d sv=%d"), C0.PredX, Sv.Pawns[0].X));
+	}
+	return OkStr(TEXT("state-nack recovered"));
+}
+
 FNsSelfTestResult NsRunStateSyncStressSelfTest()
 {
 	const double T0 = FPlatformTime::Seconds();
@@ -1145,6 +1294,28 @@ FNsSelfTestResult NsRunRollbackWaitSelfTest()
 	return OkStr(FString::Printf(TEXT("rollback-wait count=%d frame=%d"), A.WaitCount, A.Frame));
 }
 
+FNsSelfTestResult NsRunRollbackHoleSelfTest()
+{
+	FNsRollbackPeer A;
+	A.PlayerId = 0;
+	A.Addr = ENsAddr::C0;
+	TMap<int32, int8> Packed;
+	for (int32 i = 0; i < 6; ++i)
+	{
+		A.AdvanceLocal(1, Packed);
+	}
+	TMap<int32, int8> Remote;
+	Remote.Add(2, 1);
+	Remote.Add(3, 1);
+	Remote.Add(4, 1);
+	A.OnRemote(Remote);
+	if (A.Confirmed >= 1)
+	{
+		return FailStr(FString::Printf(TEXT("rollback-hole: skipped missing frame confirmed=%d"), A.Confirmed));
+	}
+	return OkStr(FString::Printf(TEXT("rollback-hole confirmed=%d"), A.Confirmed));
+}
+
 FNsSelfTestResult NsRunRollbackStressSelfTest()
 {
 	const double T0 = FPlatformTime::Seconds();
@@ -1200,6 +1371,10 @@ FNsSelfTestResult NsRunUdpBurstSelfTest()
 	for (const FNsPacket& P : Got)
 	{
 		Sum += P.DxWindow.Num() > 0 ? P.DxWindow[0] : 0;
+	}
+	if (Sum != 0)
+	{
+		return FailStr(FString::Printf(TEXT("udp-burst: dx sum %d"), Sum));
 	}
 	return OkStr(FString::Printf(TEXT("udp-burst n=%d sum=%d"), Got.Num(), Sum));
 }
@@ -1454,13 +1629,16 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunLockstepCleanSelfTest,
 		&NsRunLockstepHighDropSelfTest,
 		&NsRunLockstepJoinSelfTest,
+		&NsRunLockstepLateJoinSelfTest,
 		&NsRunLockstepDesyncSelfTest,
 		&NsRunStateSyncSelfTest,
 		&NsRunStateSyncCleanSelfTest,
 		&NsRunStateSyncRewindSelfTest,
+		&NsRunStateSyncNackSelfTest,
 		&NsRunRollbackSelfTest,
 		&NsRunRollbackCleanSelfTest,
 		&NsRunRollbackWaitSelfTest,
+		&NsRunRollbackHoleSelfTest,
 		&NsRunUdpLoopbackSelfTest,
 		&NsRunUdpLockstepSelfTest,
 		&NsRunUdpPeersSelfTest,

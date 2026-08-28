@@ -72,8 +72,11 @@ void OnRecvSeq(int32 S)
 
 ## 假网络（开发期）
 
-`FNsFakeNet::Send` 会填 `Seq` / `Ack` / `AckBits`，再 `NsEncodePacket` / `NsDecodePacket`。
-`FNsUdpNet::Bind` 只开本端数据报；`SetPeer` 登记对端主机和端口。`BindLoopback` 仍为三人各开一端口。
+`FNsFakeNet::Send` 先 `Stamp` 再按 `Drop` 丢弃：丢掉的包仍消耗 seq。
+再 `NsEncodePacket` / `NsDecodePacket`。`FNsUdpNet::Bind` 只开本端数据报；`SetPeer` 登记对端主机和端口。
+已有 `PeerPorts[i] > 0` 时 Bind 不得把 peer 改成自己。
+`MakeDest` 解析失败返回 false，禁止回落到 loopback。
+`FindPeer`：空 host 视为未设置，不当通配。`BindLoopback` 仍为三人各开一端口。
 `Drain` 用来源 IP:port 反查 `ENsAddr`。假网络乱序用 jitter；真 UDP 由内核排队。
 
 两份编辑器：都勾 `bUseUdp`，一份 `Host`、一份 `Client`，同一 `UdpBasePort`（如 27000），
@@ -89,3 +92,4 @@ void OnRecvSeq(int32 S)
 - 未知 `type` 丢弃，不要断连接（版本滚动时有用）。
 - 序号窗口按 **(接收端, 发送端)** 记账，两个客户端发往服务器的 seq=1 互不打架。
 - 发出的每个 UDP 数据报 ≤ 1200 字节。超长必须先 `NsSplitForMtu`，禁止靠 IP 分片。
+- 玩法层用 `Src` 认玩家，不信任 payload `player_id`。

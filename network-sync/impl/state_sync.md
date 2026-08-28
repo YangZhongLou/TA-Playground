@@ -28,7 +28,8 @@ class FNsStateSyncServer
 {
     int32 Tick = 0;
     FNsPawn Pawns[Ns::PlayerCount];
-    // PendingSeq / PendingDx / bHasPending：本拍该玩家最新输入
+    TMap<int32, int8> Inbox[Ns::PlayerCount];  // seq -> dx，按 LastSeq+1 顺序消费
+    int32 LastAck[Ns::PlayerCount] = {};
 };
 ```
 
@@ -41,7 +42,7 @@ class FNsStateSyncServer
 ### `C2SInput`
 
 standalone `dx` 字节写 0。真输入在窗口：最多 8 个未确认 `(seq, dx)`。
-服务器只处理 `seq > LastSeq` 的最新一条。
+服务器把 `seq > LastSeq` 的条目放进 Inbox；模拟时只应用 `LastSeq+1`，禁止跳号 latest-wins。
 
 ### `S2CSnapshot`
 
@@ -58,31 +59,41 @@ standalone `dx` 字节写 0。真输入在窗口：最多 8 个未确认 `(seq, 
 见 `FNsStateSyncServer::Sim`。
 
 ```cpp
-void Sim(FNsFakeNet& Net)
+void Sim(INsNet& Net)
 {
     ++Tick;
     for (int32 i = 0; i < Ns::PlayerCount; ++i)
     {
-        if (bHasPending[i] && PendingSeq[i] > Pawns[i].LastSeq)
+        for (;;)
         {
-            Pawns[i].X += static_cast<int32>(PendingDx[i]) * Ns::StateSpeed;
-            Pawns[i].LastSeq = PendingSeq[i];
+            const int32 Next = Pawns[i].LastSeq + 1;
+            const int8* Found = Inbox[i].Find(Next);
+            if (!Found)
+            {
+                break;
+            }
+            Pawns[i].X += static_cast<int32>(*Found) * Ns::StateSpeed;
+            Pawns[i].LastSeq = Next;
+            Inbox[i].Remove(Next);
         }
-        bHasPending[i] = false;
+        HistX[i][Tick % Ns::HistoryTicks] = Pawns[i].X;
     }
     if (Tick % Ns::SendEvery == 0)
     {
-        // broadcast SnapX / SnapSeq
+        // 按 LastAck 发全量或增量；AckTick<=0 视为请求全量
     }
 }
 ```
 
-同一 `seq` 处理两次：第二次 `seq > LastSeq` 为假，忽略。这是幂等。
+`OnInput`：`seq <= LastSeq` 直接忽略。同号再来则覆盖 Inbox。模拟只走 `LastSeq+1`，因此跳号不会被「最新一条」吞掉。
+缺 `LastSeq+1` 时该玩家本拍不加位移，直到缺号到达。
 
 ## 客户端：别人怎么画
 
 见 `FNsStateSyncClient::OnSnap` / `UpdateRemoteDraw`。
-收到快照后发 `C2SSnapAck`。服务器按 ACK 基发增量（`BaseTick != 0` 时 `SnapX` 是差）。
+`P.Tick <= LastAckedTick` 的旧快照直接忽略。
+收到可用快照后发 `C2SSnapAck`（连发两次）。服务器按 ACK 基发增量。
+解不出 `BaseTick`：连发 `C2SSnapAck Tick=0`，等下一份全量。不要静默死等。
 远程按墙钟：`t_show = now - InterpDelayMs`，两份快照之间 lerp，不外推。
 
 ```cpp
@@ -100,7 +111,7 @@ void OnSnap(int32 Tick, const int32 Xs[2], const int32 LastSeqs[2])
 ## 客户端：自己怎么预测
 
 ```cpp
-void LocalTick(FNsFakeNet& Net, int8 Dx)
+void LocalTick(INsNet& Net, int8 Dx)
 {
     ++Seq;
     UnackedSeq.Add(Seq);
@@ -139,5 +150,5 @@ void OnSnap(...)
 ns.SelfTest
 ```
 
-日志必须含 `state-sync tick=`。自动化：`TA.NetworkSync.StateSync.Drop05`。
-含义：远端插值有值、本地预测在快照到达后与服务器 x 和解一致。
+日志必须含 `state-sync tick=`。自动化：`TA.NetworkSync.StateSync.Drop05`、`.Clean`、`.Rewind`、`.Nack`。
+含义：远端插值有值、本地预测在快照到达后与服务器 x 和解一致；丢掉增量基后 nack 0 能恢复全量。

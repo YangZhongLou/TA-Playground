@@ -30,7 +30,7 @@ public:
 private:
 	FNsInputs Pair(int32 F) const;
 	int8 RemoteOrPred(int32 F) const;
-	void RollbackFrom(int32 F);
+	bool RollbackFrom(int32 F);
 	void Trim();
 	void RaiseConfirmed();
 	void CollectPacked(int32 EndF, TMap<int32, int8>& Out) const;

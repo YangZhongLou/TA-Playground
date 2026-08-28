@@ -52,6 +52,7 @@ void FNsLockstepServer::Tick(INsNet& Net)
 			for (int32 K : Dead)
 			{
 				Hist.Remove(K);
+				Checksums.Remove(K);
 			}
 		}
 		TMap<int32, FNsInputs> Packed;
@@ -68,6 +69,11 @@ void FNsLockstepServer::Tick(INsNet& Net)
 		Pkt.Frames = Packed;
 		Net.Send(ENsAddr::Sv, ENsAddr::C0, Pkt);
 		Net.Send(ENsAddr::Sv, ENsAddr::C1, Pkt);
+		if (Frame > 0 && (Frame % (Ns::RedundantFrames + 1)) == 0)
+		{
+			SendJoin(Net, ENsAddr::C0);
+			SendJoin(Net, ENsAddr::C1);
+		}
 		++Frame;
 		NextMs += Ns::LogicDtMs;
 	}
@@ -130,7 +136,18 @@ void FNsLockstepClient::ApplyJoin(const FNsPacket& Packet)
 		PrevX[0] = World.X[0];
 		PrevX[1] = World.X[1];
 		ExecFrame = Packet.Tick;
-		Buf.Reset();
+		TArray<int32> Dead;
+		for (const TPair<int32, FNsInputs>& Kv : Buf)
+		{
+			if (Kv.Key < ExecFrame)
+			{
+				Dead.Add(Kv.Key);
+			}
+		}
+		for (int32 K : Dead)
+		{
+			Buf.Remove(K);
+		}
 	}
 	OnS2C(Packet.Frames);
 }

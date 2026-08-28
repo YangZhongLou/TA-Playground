@@ -46,7 +46,8 @@ struct FNsWorld
 
 ### `C2SInput`
 
-客户端尽快发。服务器只保留每玩家「最新尚未编入帧的输入」。`win` 固定为 0。
+客户端尽快发。服务器按 **UDP 源地址** 认玩家：`OnInput(NsPlayerIdFromAddr(Src), dx)`。
+payload 的 `player_id` 不参与结算。`win` 固定为 0。
 
 | 字段 | 含义 |
 | --- | --- |
@@ -77,13 +78,28 @@ void OnInput(int32 PlayerId, int8 Dx)
     Latest.Dx[PlayerId] = NsClampDx(Dx);
 }
 
-void Tick(FNsFakeNet& Net)
+void Tick(INsNet& Net)
 {
     while (Net.Now >= NextMs)
     {
         Hist.Add(Frame, Latest);
         World.Step(Latest.Dx, Ns::LockstepSpeed);
-        // pack Frame .. Frame-RedundantFrames，广播给 C0/C1
+        if (Frame % Ns::ChecksumEvery == 0)
+        {
+            Checksums.Add(Frame, World.Checksum());
+        }
+        if (Frame > 0 && (Frame % Ns::JoinSnapEvery) == 0)
+        {
+            SnapFrame = Frame;
+            SnapWorld = World;
+            // 丢掉 < SnapFrame-RedundantFrames 的 Hist / Checksums
+        }
+        // pack Frame .. Frame-RedundantFrames，广播 S2CFrame
+        if (Frame > 0 && (Frame % (Ns::RedundantFrames + 1)) == 0)
+        {
+            SendJoin(Net, ENsAddr::C0);
+            SendJoin(Net, ENsAddr::C1);
+        }
         ++Frame;
         NextMs += Ns::LogicDtMs;
     }
@@ -108,10 +124,16 @@ FNsWorld World;
 
 void OnS2C(const TMap<int32, FNsInputs>& Frames)
 {
-    Buf.Append(Frames);
+    for (const TPair<int32, FNsInputs>& Kv : Frames)
+    {
+        if (Kv.Key >= ExecFrame)
+        {
+            Buf.Add(Kv.Key, Kv.Value);
+        }
+    }
 }
 
-void Logic(FNsFakeNet& Net)
+void Logic(INsNet& Net)
 {
     while (const FNsInputs* Found = Buf.Find(ExecFrame))
     {
@@ -141,6 +163,7 @@ void Logic(FNsFakeNet& Net)
 服务器在完成的 `Frame > 0 && Frame % JoinSnapEvery == 0` 时复制 `SnapWorld`，并丢掉更早的 `Hist`
 （保留 `RedundantFrames` 给在线客户端）。`SendJoin` 发两次 `S2CJoinSnap` 抗丢包。
 内容超过 1200 字节时，`NsSplitForMtu` 切成多个 JoinSnap 数据报，快照字段重复。
+服务器每 `RedundantFrames+1` 拍向 C0/C1 各发一次 Join，晚加入的 UDP Client 不必等 75 拍快照。
 
 | 字段 | 含义 |
 | --- | --- |
@@ -167,5 +190,6 @@ void Logic(FNsFakeNet& Net)
 ns.SelfTest
 ```
 
-日志必须含 `lockstep frames=`。自动化：`TA.NetworkSync.Lockstep.Drop10`、`TA.NetworkSync.Lockstep.Join`。
+日志必须含 `lockstep frames=`。自动化：`TA.NetworkSync.Lockstep.Drop10`、`.Join`、`.LateJoin`。
 自测已开 `Drop=0.1` 与冗余。Join 自测 `Drop=0`，避免加入包本身被丢掉。
+LateJoin：丢掉 C1 早期包后靠周期 Join 追上；伪造 payload `player_id` 不得改错槽。

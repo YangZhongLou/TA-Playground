@@ -12,6 +12,19 @@ enum class ENsAddr : uint8
 	C1 = 2,
 };
 
+inline int32 NsPlayerIdFromAddr(ENsAddr Addr)
+{
+	if (Addr == ENsAddr::C0)
+	{
+		return 0;
+	}
+	if (Addr == ENsAddr::C1)
+	{
+		return 1;
+	}
+	return -1;
+}
+
 enum class ENsMsg : uint8
 {
 	C2SInput = 1,

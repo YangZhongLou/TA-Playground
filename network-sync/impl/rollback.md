@@ -59,21 +59,32 @@ void AdvanceLocal(int8 Dx, TMap<int32, int8>& OutPacked)
 ```cpp
 void OnRemote(const TMap<int32, int8>& Packed)
 {
+    bool bConfirm = true;
     for (const TPair<int32, int8>& Kv : Packed)
     {
         RealRemote.Add(Kv.Key, NsClampDx(Kv.Value));
         if (Pred 里该帧猜的远程输入 != 真输入 && Kv.Key < Frame)
         {
-            RollbackFrom(Kv.Key);
+            if (!RollbackFrom(Kv.Key))
+            {
+                bConfirm = false;
+            }
         }
+    }
+    if (bConfirm)
+    {
+        RaiseConfirmed();
     }
 }
 ```
 
-`RollbackFrom(F)`：`World = Saves[F]`，再对 `K in [F, Frame)` 用「有真用真，否则保持当时的猜」重演。
-重演过程**不要渲染、不要播声音**。渲染只在本轮 `AdvanceLocal` 结束后做一次。
+`RollbackFrom(F)`：若 `Frame-F > MaxRollback` 或没有 `Saves[F]`，置 `bWaiting` 并返回 false，调用方不得抬 `Confirmed`。
+成功则 `World = Saves[F]`，再对 `K in [F, Frame)` 用「有真用真，否则保持当时的猜」重演。
+重演过程不要渲染、不要播声音。渲染只在本轮 `AdvanceLocal` / `OnRemote` 结束后做一次。
 
-若 `Frame - F > MaxRollback`：不要继续猜，停住等输入（减速），或断开。
+`RaiseConfirmed`：从 `max(Confirmed, InputDelay-1)` 起向后走，遇到缺的 `RealRemote` 就停。禁止用「窗口里最小帧」跳过空洞。
+
+若 `Frame - Confirmed > MaxRollback`：不要继续猜，停住等输入（减速），或断开。
 
 ## 包
 
@@ -96,5 +107,5 @@ void OnRemote(const TMap<int32, int8>& Packed)
 ns.SelfTest
 ```
 
-日志必须含 `rollback frame=`。自动化：`TA.NetworkSync.Rollback.Drop05`。
-含义：故意错猜若干拍后，两端最终 `X[0],X[1],Rng` 一致。
+日志必须含 `rollback frame=`。自动化：`TA.NetworkSync.Rollback.Drop05`、`.Clean`、`.Wait`、`.Hole`。
+含义：故意错猜若干拍后，两端最终 `X[0],X[1],Rng` 一致；缺前缀帧时 Confirmed 不跳空洞。

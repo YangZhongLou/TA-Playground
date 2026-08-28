@@ -123,8 +123,11 @@ bool FNsUdpNet::Bind(ENsAddr Addr, int32 Port, bool bAnyAddress)
 	}
 	Socks[i] = Sock;
 	LocalPorts[i] = BoundPortValue;
-	PeerHosts[i] = TEXT("127.0.0.1");
-	PeerPorts[i] = BoundPortValue;
+	if (PeerPorts[i] <= 0)
+	{
+		PeerHosts[i] = TEXT("127.0.0.1");
+		PeerPorts[i] = BoundPortValue;
+	}
 	return true;
 }
 
@@ -183,7 +186,7 @@ bool FNsUdpNet::MakeDest(ENsAddr Dst, TSharedRef<FInternetAddr>& Out) const
 		}
 		if (!bOk)
 		{
-			Resolved->SetLoopbackAddress();
+			return false;
 		}
 	}
 	Resolved->SetPort(PeerPorts[Di]);
@@ -203,8 +206,11 @@ bool FNsUdpNet::FindPeer(const FInternetAddr& From, ENsAddr& OutAddr) const
 			continue;
 		}
 		const FString& Peer = PeerHosts[i];
-		const bool bHostOk = Peer.IsEmpty()
-			|| FromHost.Equals(Peer, ESearchCase::IgnoreCase)
+		if (Peer.IsEmpty())
+		{
+			continue;
+		}
+		const bool bHostOk = FromHost.Equals(Peer, ESearchCase::IgnoreCase)
 			|| (NsIsLoopbackHost(Peer) && NsIsLoopbackHost(FromHost));
 		if (!bHostOk)
 		{

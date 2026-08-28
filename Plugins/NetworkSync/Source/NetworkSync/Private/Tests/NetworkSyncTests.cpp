@@ -235,11 +235,14 @@ NS_WRAP(FNsSeqWindow_Dup, "TA.NetworkSync.FakeNet.SeqWindow", NsRunSeqWindowSelf
 NS_WRAP(FNsFakeNet_DropDelay, "TA.NetworkSync.FakeNet.DropDelay", NsRunFakeNetContractSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_Clean, "TA.NetworkSync.Lockstep.Clean", NsRunLockstepCleanSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_HighDrop, "TA.NetworkSync.Lockstep.HighDrop", NsRunLockstepHighDropSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_LateJoin, "TA.NetworkSync.Lockstep.LateJoin", NsRunLockstepLateJoinSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_Desync, "TA.NetworkSync.Lockstep.Desync", NsRunLockstepDesyncSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_Clean, "TA.NetworkSync.StateSync.Clean", NsRunStateSyncCleanSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_Rewind, "TA.NetworkSync.StateSync.Rewind", NsRunStateSyncRewindSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_Nack, "TA.NetworkSync.StateSync.Nack", NsRunStateSyncNackSelfTest, NsAutoFlags)
 NS_WRAP(FNsRollback_Clean, "TA.NetworkSync.Rollback.Clean", NsRunRollbackCleanSelfTest, NsAutoFlags)
 NS_WRAP(FNsRollback_Wait, "TA.NetworkSync.Rollback.Wait", NsRunRollbackWaitSelfTest, NsAutoFlags)
+NS_WRAP(FNsRollback_Hole, "TA.NetworkSync.Rollback.Hole", NsRunRollbackHoleSelfTest, NsAutoFlags)
 NS_WRAP(FNsUdp_Burst, "TA.NetworkSync.Udp.Burst", NsRunUdpBurstSelfTest, NsAutoFlags)
 
 NS_WRAP(FNsWorld_Stress, "TA.NetworkSync.Stress.World", NsRunWorldStressSelfTest, NsAutoFlags)
@@ -282,6 +285,8 @@ bool FNsActors_Cdo::RunTest(const FString& Parameters)
 
 	FMoverInputCmdContext Cmd;
 	Pawn->ProduceInput_Implementation(16, Cmd);
+	FMoverInputCmdContext Again;
+	Pawn->ProduceInput_Implementation(16, Again);
 	return true;
 }
 

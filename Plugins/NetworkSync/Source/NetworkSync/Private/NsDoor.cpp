@@ -14,18 +14,6 @@ ANsDoor::ANsDoor()
 	bAlwaysRelevant = true;
 }
 
-void ANsDoor::BeginPlay()
-{
-	Super::BeginPlay();
-	if (HasAuthority())
-	{
-		if (APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
-		{
-			SetOwner(PC);
-		}
-	}
-}
-
 void ANsDoor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);

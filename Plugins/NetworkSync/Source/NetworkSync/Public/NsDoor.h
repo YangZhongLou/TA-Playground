@@ -14,7 +14,6 @@ class NETWORKSYNC_API ANsDoor : public AActor
 public:
 	ANsDoor();
 
-	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 

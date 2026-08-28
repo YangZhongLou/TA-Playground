@@ -2,30 +2,32 @@
 
 游戏联网的核心问题：在延迟、丢包、带宽上限和作弊风险下，让多台机器对同一份模拟达成可玩的一致。
 
-方案研究在本目录。总设计见 [technical-design.md](technical-design.md)。
+方案研究在本目录。框架见 [technical-design.md](technical-design.md)。
 可运行实现是 UE 插件 `Plugins/NetworkSync`，入口 [impl/README.md](impl/README.md)。
 引擎自带复制见 [unreal.md](unreal.md)。
 
 ## 怎么读
 
-1. [technical-design.md](technical-design.md) — 技术方案总览（架构、四套协议、插件落地）。
+按层读，不要在概念文里找类名，也不要在规格里找品类对比。
+
+1. [technical-design.md](technical-design.md) — 框架：决策、分层、模块边界、不变量、验收范围。
 2. [overview.md](overview.md) — 问题空间、权威模型、拓扑。
-3. `schemes/` — 四类主流方案的协议细则（节拍、丢包、变体、失败模式）。
-4. `impl/` — 可直接开写的实现规格；线上字节见 [impl/packet-format.md](impl/packet-format.md)；代码在 `Plugins/NetworkSync`。
-5. [techniques.md](techniques.md) — 预测、插值、补偿、兴趣管理等配套技术。
-6. [comparison.md](comparison.md) — 四套方案的优劣机理与品类对照。
-7. `cases/` — 守望先锋、Dota 2、王者荣耀的公开方案对照。
+3. `schemes/` — 四类方案的协议细则（节拍、丢包、变体、失败模式）。
+4. `impl/` — 可编码规格；线上字节见 [impl/packet-format.md](impl/packet-format.md)；代码在 `Plugins/NetworkSync`。
+5. [techniques.md](techniques.md) — 预测、插值、补偿、兴趣管理。
+6. [comparison.md](comparison.md) — 优劣机理与品类对照。
+7. `cases/` — 守望先锋、Dota 2、王者荣耀。
 8. [unreal.md](unreal.md) — 本仓库对应的 UE5 复制模型。
 9. [references.md](references.md) — 论文、演讲、官方文档。
 
-建议先读技术方案，再按 [schemes/README.md](schemes/README.md) 进四篇细则。
-要改代码从 [impl/README.md](impl/README.md) 进。横向取舍看 comparison。
+先读框架，再按 [schemes/README.md](schemes/README.md) 进细则。
+改代码从 [impl/README.md](impl/README.md) 进。横向取舍看 comparison。
 
 ## 目录
 
 | 文件 | 内容 |
 | --- | --- |
-| [technical-design.md](technical-design.md) | 技术方案：架构、协议、插件、验收、后续 |
+| [technical-design.md](technical-design.md) | 框架：分层、模块、不变量、测试金字塔 |
 | [overview.md](overview.md) | 同步要解决什么，三层模型（拓扑 / 权威 / 协议） |
 | [schemes/README.md](schemes/README.md) | 四篇主线怎么读、和案例如何对应 |
 | [schemes/lockstep.md](schemes/lockstep.md) | 帧同步：节拍变体、确定性、可靠有序、不同步 |

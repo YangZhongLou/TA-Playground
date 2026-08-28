@@ -14,7 +14,6 @@ class NETWORKSYNC_API ANsReplicatedActor : public AActor
 public:
 	ANsReplicatedActor();
 
-	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 

@@ -1,7 +1,8 @@
 # 实现规格
 
-概念看 `schemes/`。总设计看 [../technical-design.md](../technical-design.md)。
-这里写到可以直接开写：常量、结构体、主循环、包布局、验收。
+概念看 `schemes/`。框架看 [../technical-design.md](../technical-design.md)。
+这里写到可以直接开写：常量、结构体、主循环、包语义、验收。
+线上逐字节只以 [packet-format.md](packet-format.md) 为准。
 
 实现落在 UE 插件 `Plugins/NetworkSync`。逻辑用整数和固定步长，假网络自测不依赖 PIE 联机。
 
@@ -14,7 +15,8 @@
 | 格斗 | [rollback.md](rollback.md) | `NsRollback.h` / `NsRollback.cpp` |
 | UE 联机原型 | [replication_ue.md](replication_ue.md) | `NsReplicatedActor` / `NsDoor` / `ANsMoverPawn` |
 
-公共传输：[transport.md](transport.md)、[packet-format.md](packet-format.md)、`NsFakeNet.h`、`NsCodec.h`。共享世界：`NsTypes.h`（`FNsWorld::Step` / `Checksum`）。
+公共传输：[transport.md](transport.md)、[packet-format.md](packet-format.md)、`NsFakeNet.h`、`NsCodec.h`。
+共享世界：`NsTypes.h`（`FNsWorld::Step` / `Checksum`）。
 
 ## 硬规则（所有方案共用）
 

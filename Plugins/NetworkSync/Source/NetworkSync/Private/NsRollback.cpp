@@ -36,7 +36,7 @@ int8 FNsRollbackPeer::RemoteOrPred(int32 F) const
 void FNsRollbackPeer::CollectPacked(int32 EndF, TMap<int32, int8>& Out) const
 {
 	Out.Reset();
-	const int32 First = FMath::Max(0, EndF - 3);
+	const int32 First = FMath::Max(0, EndF - Ns::RedundantFrames);
 	for (int32 i = First; i <= EndF; ++i)
 	{
 		if (const int8* Found = Local.Find(i))
@@ -48,18 +48,12 @@ void FNsRollbackPeer::CollectPacked(int32 EndF, TMap<int32, int8>& Out) const
 
 void FNsRollbackPeer::RaiseConfirmed()
 {
-	int32 Start = Ns::InputDelay - 1;
-	int32 MinKept = MAX_int32;
-	for (const TPair<int32, int8>& Kv : RealRemote)
+	int32 C = Confirmed;
+	if (C < Ns::InputDelay - 1)
 	{
-		MinKept = FMath::Min(MinKept, Kv.Key);
+		C = Ns::InputDelay - 1;
 	}
-	if (MinKept != MAX_int32)
-	{
-		Start = FMath::Max(Start, MinKept - 1);
-	}
-	int32 C = Start;
-	for (int32 F = Start + 1; F < Frame; ++F)
+	for (int32 F = C + 1; F < Frame; ++F)
 	{
 		if (!RealRemote.Contains(F))
 		{
@@ -108,6 +102,7 @@ void FNsRollbackPeer::Advance(INsNet& Net, int8 Dx)
 
 void FNsRollbackPeer::OnRemote(const TMap<int32, int8>& Packed)
 {
+	bool bConfirm = true;
 	for (const TPair<int32, int8>& PairIt : Packed)
 	{
 		const int32 F = PairIt.Key;
@@ -118,22 +113,30 @@ void FNsRollbackPeer::OnRemote(const TMap<int32, int8>& Packed)
 			const int8 Guessed = (PlayerId == 0) ? Guess->Dx[1] : Guess->Dx[0];
 			if (Guessed != Dx && F < Frame)
 			{
-				RollbackFrom(F);
+				if (!RollbackFrom(F))
+				{
+					bConfirm = false;
+				}
 			}
 		}
 	}
-	RaiseConfirmed();
+	if (bConfirm)
+	{
+		RaiseConfirmed();
+	}
 }
 
-void FNsRollbackPeer::RollbackFrom(int32 F)
+bool FNsRollbackPeer::RollbackFrom(int32 F)
 {
 	if (Frame - F > Ns::MaxRollback)
 	{
-		return;
+		bWaiting = true;
+		return false;
 	}
 	if (!Saves.Contains(F))
 	{
-		return;
+		bWaiting = true;
+		return false;
 	}
 	bInRollback = true;
 	World = Saves[F];
@@ -159,6 +162,7 @@ void FNsRollbackPeer::RollbackFrom(int32 F)
 		World.Step(In.Dx, Ns::RollbackSpeed);
 	}
 	bInRollback = false;
+	return true;
 }
 
 void FNsRollbackPeer::Trim()

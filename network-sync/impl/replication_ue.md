@@ -23,8 +23,8 @@ MaxClientRate=15000
 MaxInternetClientRate=10000
 ```
 
-3. 地图：`GameMode` 设成你的 `AMyGameMode`（只服务器跑规则）。
-4. 运行：第一份编辑器 `Play as Listen Server`，第二份 `Play as Client`。
+地图：`GameMode` 设成你的 `AMyGameMode`（只服务器跑规则）。
+运行：第一份编辑器 `Play as Listen Server`，第二份 `Play as Client`。
 
 ## 第一步：复制一个整数
 
@@ -78,10 +78,10 @@ void AMyReplicatedActor::ServerBump_Implementation()
 }
 ```
 
-客户端按键：只允许 Owner 调 `ServerBump()`。非 Owner 调 Server RPC 会被丢。
-把该 Actor 的 Owner 设成发起操作的 `PlayerController`。
+客户端按键：引擎只允许 Owner 调 `ServerBump()`。非 Owner 调 Server RPC 会被丢。
+本插件 **不** `SetOwner`。Listen 主机本地按 `E`/`F` 走 authority 实现；远端客户端按键可能被丢，用主机操作验收复制。
 
-验收：Listen 上按键，Client 的 `Counter` 变；Client 上按键，若 Owner 正确，Listen 也变。
+验收：Listen 上按键，Client 的 `Counter` 变。
 
 ## 第二步：门用属性，不用每帧 RPC
 
@@ -103,12 +103,14 @@ void AMyDoor::ServerSetOpen_Implementation(bool bNewOpen)
 ## 第三步：角色移动
 
 不要自己复制 `SetActorLocation`，也不要接 `ACharacter` + CMC。
-本插件的 `ANsMoverPawn` 是 `APawn` + `UCharacterMoverComponent`。关 Actor 级移动复制，
-由 Network Prediction liaison 管预测和纠正。控制台 `ns.SpawnMover`。
+本插件的 `ANsMoverPawn` 是 `APawn` + `UCharacterMoverComponent`。
+`SetReplicatingMovement(false)`，`ProduceInput` 采样 WASD / 空格。
+插件 `Build.cs` 不依赖 `NetworkPrediction` 模块（UHT 在 5.8 会崩）。
+控制台 `ns.SpawnMover`，或 Replication 方案在 authority 上一并生成。
 
-建议项目设置：Network Prediction 用 Fixed tick，Simulated Proxy LOD 用 Interpolated，打开 Fixed Tick Smoothing。
+建议项目设置：若启用 Network Prediction 插件，用 Fixed tick，Simulated Proxy LOD 用 Interpolated。
 
-验收：Client 走路跟手；Listen 窗口能看见 Client 的 pawn 在动。
+验收：Possess 后 WASD 能动；Listen+Client 下观察端能看见 Mover 姿态（引擎 Mover 同步，非本插件字节）。
 
 ## 第四步：谁复制给谁
 
@@ -127,7 +129,7 @@ void AMyDoor::ServerSetOpen_Implementation(bool bNewOpen)
 1. Listen + Client 进同一张图，打 `log LogNet Verbose`。
 2. 复制 `int32` + Server RPC。
 3. 门的 bool。
-4. Mover pawn 移动。
+4. Mover pawn 移动（authority spawn，不 SetOwner）。
 5. 再谈休眠、频率、Replication Graph。人数 < 8 不要上 Graph。
 
 ## 验收清单

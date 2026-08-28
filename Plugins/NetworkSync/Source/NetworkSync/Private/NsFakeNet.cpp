@@ -53,15 +53,15 @@ void FNsFakeNet::Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet)
 	NsSplitForMtu(Packet, Parts);
 	for (const FNsPacket& Part : Parts)
 	{
-		if (Rng.FRand() < Drop)
-		{
-			continue;
-		}
 		FNsPacket Copy = Part;
 		Copy.Src = Src;
 		Copy.Dst = Dst;
 		Seq.Stamp(Src, Copy);
 		Copy.DeliverAt = Now + RttMs * 0.5 + Rng.FRandRange(0.f, JitterMs);
+		if (Rng.FRand() < Drop)
+		{
+			continue;
+		}
 
 		TArray<uint8> Bytes;
 		if (!NsEncodePacket(Copy, Bytes))

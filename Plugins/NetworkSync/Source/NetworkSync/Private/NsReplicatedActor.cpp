@@ -14,18 +14,6 @@ ANsReplicatedActor::ANsReplicatedActor()
 	bAlwaysRelevant = true;
 }
 
-void ANsReplicatedActor::BeginPlay()
-{
-	Super::BeginPlay();
-	if (HasAuthority())
-	{
-		if (APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
-		{
-			SetOwner(PC);
-		}
-	}
-}
-
 void ANsReplicatedActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
