@@ -122,13 +122,16 @@ void FNsLockstepClient::OnS2C(const TMap<int32, FNsInputs>& Frames)
 
 void FNsLockstepClient::ApplyJoin(const FNsPacket& Packet)
 {
-	World.X[0] = Packet.SnapX[0];
-	World.X[1] = Packet.SnapX[1];
-	World.Rng = Packet.SnapRng;
-	PrevX[0] = World.X[0];
-	PrevX[1] = World.X[1];
-	ExecFrame = Packet.Tick;
-	Buf.Reset();
+	if (Packet.Tick > ExecFrame)
+	{
+		World.X[0] = Packet.SnapX[0];
+		World.X[1] = Packet.SnapX[1];
+		World.Rng = Packet.SnapRng;
+		PrevX[0] = World.X[0];
+		PrevX[1] = World.X[1];
+		ExecFrame = Packet.Tick;
+		Buf.Reset();
+	}
 	OnS2C(Packet.Frames);
 }
 

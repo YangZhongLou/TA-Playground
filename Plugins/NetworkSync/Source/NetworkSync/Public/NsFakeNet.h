@@ -49,11 +49,11 @@ struct FNsPacket
 struct NETWORKSYNC_API FNsSeqWindow
 {
 	int32 NextSeq[3] = {1, 1, 1};
-	int32 RecvMax[3] = {0, 0, 0};
-	uint32 RecvBits[3] = {0, 0, 0};
+	int32 RecvMax[3][3] = {};
+	uint32 RecvBits[3][3] = {};
 
 	void Stamp(ENsAddr Src, FNsPacket& Packet);
-	bool Accept(ENsAddr Dst, int32 Seq);
+	bool Accept(ENsAddr Dst, ENsAddr Src, int32 Seq);
 };
 
 class NETWORKSYNC_API INsNet

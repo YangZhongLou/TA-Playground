@@ -7,6 +7,15 @@
 #include "NsTypes.h"
 #include "NsFakeNet.h"
 #include "NsCodec.h"
+#include "NsDoor.h"
+#include "NsReplicatedActor.h"
+#include "NsMoverPawn.h"
+#include "DefaultMovementSet/CharacterMoverComponent.h"
+#include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "MoverSimulationTypes.h"
+#include "UObject/Package.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsWorld_Determinism, "TA.NetworkSync.World.Determinism",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -26,7 +35,7 @@ bool FNsWorld_Determinism::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_Lockstep, "TA.NetworkSync.Lockstep",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_Lockstep, "TA.NetworkSync.Lockstep.Drop10",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsSelfTest_Lockstep::RunTest(const FString& Parameters)
@@ -46,7 +55,7 @@ bool FNsSelfTest_LockstepJoin::RunTest(const FString& Parameters)
 	return R.bOk;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_StateSync, "TA.NetworkSync.StateSync",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_StateSync, "TA.NetworkSync.StateSync.Drop05",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsSelfTest_StateSync::RunTest(const FString& Parameters)
@@ -56,7 +65,7 @@ bool FNsSelfTest_StateSync::RunTest(const FString& Parameters)
 	return R.bOk;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_Rollback, "TA.NetworkSync.Rollback",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_Rollback, "TA.NetworkSync.Rollback.Drop05",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsSelfTest_Rollback::RunTest(const FString& Parameters)
@@ -187,5 +196,95 @@ bool FNsSelfTest_UdpLockstep::RunTest(const FString& Parameters)
 	TestTrue(R.Detail, R.bOk);
 	return R.bOk;
 }
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_UdpPeers, "TA.NetworkSync.Udp.Peers",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FNsSelfTest_UdpPeers::RunTest(const FString& Parameters)
+{
+	const FNsSelfTestResult R = NsRunUdpPeersSelfTest();
+	TestTrue(R.Detail, R.bOk);
+	return R.bOk;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_UdpSplit, "TA.NetworkSync.Udp.Split",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FNsSelfTest_UdpSplit::RunTest(const FString& Parameters)
+{
+	const FNsSelfTestResult R = NsRunUdpSplitLockstepSelfTest();
+	TestTrue(R.Detail, R.bOk);
+	return R.bOk;
+}
+
+static constexpr EAutomationTestFlags NsAutoFlags = EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter;
+
+#define NS_WRAP(ClassName, TestPath, Fn, Flags) \
+	IMPLEMENT_SIMPLE_AUTOMATION_TEST(ClassName, TestPath, Flags) \
+	bool ClassName::RunTest(const FString& Parameters) \
+	{ \
+		const FNsSelfTestResult R = Fn(); \
+		TestTrue(R.Detail, R.bOk); \
+		return R.bOk; \
+	}
+
+NS_WRAP(FNsWorld_Contract, "TA.NetworkSync.World.Contract", NsRunWorldContractSelfTest, NsAutoFlags)
+NS_WRAP(FNsCodec_Contract, "TA.NetworkSync.Codec.Contract", NsRunCodecContractSelfTest, NsAutoFlags)
+NS_WRAP(FNsCodec_Mtu, "TA.NetworkSync.Codec.Mtu", NsRunMtuSelfTest, NsAutoFlags)
+NS_WRAP(FNsSeqWindow_Dup, "TA.NetworkSync.FakeNet.SeqWindow", NsRunSeqWindowSelfTest, NsAutoFlags)
+NS_WRAP(FNsFakeNet_DropDelay, "TA.NetworkSync.FakeNet.DropDelay", NsRunFakeNetContractSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_Clean, "TA.NetworkSync.Lockstep.Clean", NsRunLockstepCleanSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_HighDrop, "TA.NetworkSync.Lockstep.HighDrop", NsRunLockstepHighDropSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_Desync, "TA.NetworkSync.Lockstep.Desync", NsRunLockstepDesyncSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_Clean, "TA.NetworkSync.StateSync.Clean", NsRunStateSyncCleanSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_Rewind, "TA.NetworkSync.StateSync.Rewind", NsRunStateSyncRewindSelfTest, NsAutoFlags)
+NS_WRAP(FNsRollback_Clean, "TA.NetworkSync.Rollback.Clean", NsRunRollbackCleanSelfTest, NsAutoFlags)
+NS_WRAP(FNsRollback_Wait, "TA.NetworkSync.Rollback.Wait", NsRunRollbackWaitSelfTest, NsAutoFlags)
+NS_WRAP(FNsUdp_Burst, "TA.NetworkSync.Udp.Burst", NsRunUdpBurstSelfTest, NsAutoFlags)
+
+NS_WRAP(FNsWorld_Stress, "TA.NetworkSync.Stress.World", NsRunWorldStressSelfTest, NsAutoFlags)
+NS_WRAP(FNsCodec_Stress, "TA.NetworkSync.Stress.Codec", NsRunCodecStressSelfTest, NsAutoFlags)
+NS_WRAP(FNsFakeNet_Stress, "TA.NetworkSync.Stress.FakeNet", NsRunFakeNetStressSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_Stress, "TA.NetworkSync.Stress.Lockstep", NsRunLockstepStressSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_Stress, "TA.NetworkSync.Stress.StateSync", NsRunStateSyncStressSelfTest, NsAutoFlags)
+NS_WRAP(FNsRollback_Stress, "TA.NetworkSync.Stress.Rollback", NsRunRollbackStressSelfTest, NsAutoFlags)
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsActors_Cdo, "TA.NetworkSync.Actors.Cdo", NsAutoFlags)
+
+bool FNsActors_Cdo::RunTest(const FString& Parameters)
+{
+	UPackage* Pkg = GetTransientPackage();
+	ANsDoor* Door = NewObject<ANsDoor>(Pkg);
+	TestNotNull(TEXT("door"), Door);
+	TestTrue(TEXT("door replicates"), Door->GetIsReplicated());
+	Door->ServerSetOpen_Implementation(true);
+	TestTrue(TEXT("door open"), Door->bOpen);
+	Door->ServerSetOpen_Implementation(false);
+	TestFalse(TEXT("door closed"), Door->bOpen);
+
+	ANsReplicatedActor* Counter = NewObject<ANsReplicatedActor>(Pkg);
+	TestNotNull(TEXT("counter"), Counter);
+	TestTrue(TEXT("counter replicates"), Counter->GetIsReplicated());
+	TestEqual(TEXT("counter start"), Counter->Counter, 0);
+	Counter->ServerBump_Implementation();
+	Counter->ServerBump_Implementation();
+	TestEqual(TEXT("counter bump"), Counter->Counter, 2);
+
+	ANsMoverPawn* Pawn = NewObject<ANsMoverPawn>(Pkg);
+	TestNotNull(TEXT("mover"), Pawn);
+	TestTrue(TEXT("mover replicates"), Pawn->GetIsReplicated());
+	TestFalse(TEXT("mover no actor move repl"), Pawn->IsReplicatingMovement());
+	TestNotNull(TEXT("capsule"), Pawn->FindComponentByClass<UCapsuleComponent>());
+	TestNotNull(TEXT("spring"), Pawn->FindComponentByClass<USpringArmComponent>());
+	TestNotNull(TEXT("camera"), Pawn->FindComponentByClass<UCameraComponent>());
+	TestNotNull(TEXT("mover comp"), Pawn->FindComponentByClass<UCharacterMoverComponent>());
+	TestTrue(TEXT("implements producer"), Pawn->GetClass()->ImplementsInterface(UMoverInputProducerInterface::StaticClass()));
+
+	FMoverInputCmdContext Cmd;
+	Pawn->ProduceInput_Implementation(16, Cmd);
+	return true;
+}
+
+#undef NS_WRAP
 
 #endif

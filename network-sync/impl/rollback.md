@@ -77,15 +77,10 @@ void OnRemote(const TMap<int32, int8>& Packed)
 
 ## 包
 
-`P2P_INPUT` payload：
+字节级布局见 [packet-format.md](packet-format.md)。
 
-| 字段 | 类型 | 含义 |
-| --- | --- | --- |
-| frame | u32 | |
-| dx | i8 | |
-| 再附带前 3 拍的 (frame, dx) | 冗余 | |
-
-乱序：按 `frame` 填 `RealRemote`，不要按到达顺序 `Step`。
+`P2PInput`：`count` 条 `(frame, dx)`，本拍加前 3 拍。只带自己的摇杆。
+乱序按 `frame` 填 `RealRemote`，不要按到达顺序 `Step`。
 
 ## 实现顺序
 
@@ -101,5 +96,5 @@ void OnRemote(const TMap<int32, int8>& Packed)
 ns.SelfTest
 ```
 
-日志必须含 `rollback frame=`。自动化：`TA.NetworkSync.Rollback`。
+日志必须含 `rollback frame=`。自动化：`TA.NetworkSync.Rollback.Drop05`。
 含义：故意错猜若干拍后，两端最终 `X[0],X[1],Rng` 一致。

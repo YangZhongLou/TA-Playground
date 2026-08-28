@@ -48,8 +48,18 @@ void FNsRollbackPeer::CollectPacked(int32 EndF, TMap<int32, int8>& Out) const
 
 void FNsRollbackPeer::RaiseConfirmed()
 {
-	int32 C = -1;
-	for (int32 F = 0; F < Frame; ++F)
+	int32 Start = Ns::InputDelay - 1;
+	int32 MinKept = MAX_int32;
+	for (const TPair<int32, int8>& Kv : RealRemote)
+	{
+		MinKept = FMath::Min(MinKept, Kv.Key);
+	}
+	if (MinKept != MAX_int32)
+	{
+		Start = FMath::Max(Start, MinKept - 1);
+	}
+	int32 C = Start;
+	for (int32 F = Start + 1; F < Frame; ++F)
 	{
 		if (!RealRemote.Contains(F))
 		{
@@ -153,7 +163,7 @@ void FNsRollbackPeer::RollbackFrom(int32 F)
 
 void FNsRollbackPeer::Trim()
 {
-	const int32 Keep = Frame - Ns::MaxRollback - Ns::InputDelay - 2;
+	const int32 Keep = FMath::Min(Confirmed, Frame - Ns::MaxRollback - Ns::InputDelay - 2);
 	auto TrimMap = [Keep](auto& Map)
 	{
 		TArray<int32> Dead;

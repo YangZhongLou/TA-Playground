@@ -15,4 +15,5 @@ public:
 private:
 	IConsoleCommand* SelfTestCmd = nullptr;
 	IConsoleCommand* SpawnCmd = nullptr;
+	IConsoleCommand* SpawnMoverCmd = nullptr;
 };

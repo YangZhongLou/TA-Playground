@@ -36,35 +36,22 @@ class FNsStateSyncServer
 
 ## 包 payload
 
-### `C2S_INPUT`
+字节级布局见 [packet-format.md](packet-format.md)。快照带权威 x。
 
-| 字段 | 类型 | 含义 |
-| --- | --- | --- |
-| player_id | u8 | |
-| seq | u32 | 单调，重传可重复同一 seq |
-| dx | i8 | |
+### `C2SInput`
 
-客户端每个模拟拍最多发 1 次。丢包：重复发「尚未被快照确认的 seq 起」的窗口（最多 8 个 Input）。
-实现里一次打包 `SeqWindow` + `DxWindow`。
+standalone `dx` 字节写 0。真输入在窗口：最多 8 个未确认 `(seq, dx)`。
+服务器只处理 `seq > LastSeq` 的最新一条。
 
-### `S2C_SNAPSHOT`
+### `S2CSnapshot`
 
-第一版发全量，不做增量。增量在两端全量跑通后再加。
+每 3 个模拟拍发一次。`base_tick=0` 为全量 x；否则 x 是相对已 ACK 快照的差。
+每人还带 `last_processed_seq`，客户端用来丢掉已确认预测。
 
-| 字段 | 类型 | 含义 |
-| --- | --- | --- |
-| tick | u32 | 服务器模拟拍号 |
-| base_tick | u32 | 增量基；全量填 0 |
-| player_count | u8 | |
-| 每玩家：x, last_processed_seq | i32, u32 | |
+### `C2SSnapAck`
 
-### `C2S_SNAP_ACK`
-
-| 字段 | 类型 | 含义 |
-| --- | --- | --- |
-| tick | u32 | 已收到并应用的最大快照 tick |
-
-服务器按连接记住 `last_ack_tick`。第二版增量：只发 `x` 与基快照的差。基必须是 ACK 过的 tick，不是「上次发出的 tick」。
+`player_id` + 已应用的快照 tick。连发两次。
+基必须是 ACK 过的 tick，不是「上次发出的 tick」。
 
 ## 服务器循环
 
@@ -152,5 +139,5 @@ void OnSnap(...)
 ns.SelfTest
 ```
 
-日志必须含 `state-sync tick=`。自动化：`TA.NetworkSync.StateSync`。
+日志必须含 `state-sync tick=`。自动化：`TA.NetworkSync.StateSync.Drop05`。
 含义：远端插值有值、本地预测在快照到达后与服务器 x 和解一致。

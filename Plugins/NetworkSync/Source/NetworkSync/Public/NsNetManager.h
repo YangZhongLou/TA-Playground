@@ -12,6 +12,14 @@
 #include "NsNetManager.generated.h"
 
 UENUM(BlueprintType)
+enum class ENsUdpRole : uint8
+{
+	LocalMesh UMETA(DisplayName = "Local Mesh"),
+	Host      UMETA(DisplayName = "Host Sv+C0"),
+	Client    UMETA(DisplayName = "Client C1"),
+};
+
+UENUM(BlueprintType)
 enum class ENsScheme : uint8
 {
 	Lockstep     UMETA(DisplayName = "Lockstep"),
@@ -43,6 +51,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync", meta = (EditCondition = "bUseUdp"))
 	int32 UdpBasePort = 0;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync", meta = (EditCondition = "bUseUdp"))
+	ENsUdpRole UdpRole = ENsUdpRole::LocalMesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync", meta = (EditCondition = "bUseUdp"))
+	FString UdpRemoteHost = TEXT("127.0.0.1");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync", meta = (EditCondition = "bUseUdp"))
+	int32 UdpRemoteBasePort = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync", meta = (EditCondition = "bUseUdp"))
+	bool bUdpLan = false;
+
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UFUNCTION(BlueprintPure, Category = "NetworkSync")
@@ -56,6 +76,10 @@ private:
 	void DrawPawns() const;
 	void SpawnReplicatedDemo();
 	INsNet& Wire();
+	bool RunsServer() const;
+	bool RunsC0() const;
+	bool RunsC1() const;
+	bool BindUdp();
 
 	FNsFakeNet Fake;
 	FNsUdpNet Udp;

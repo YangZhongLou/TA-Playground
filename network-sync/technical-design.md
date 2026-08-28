@@ -117,8 +117,11 @@ struct FNsWorld {
 | `S2CJoinSnap` | 服务器 → 客户端 | 锁步重连：世界快照 + 快照之后的输入 |
 
 `FNsFakeNet::Send` 会把 `FNsPacket` 编成字节再解回，Src/Dst 仍由地址表提供。
-`FNsUdpNet` 把同一字节发到本机三个端口（`BindLoopback`）。`ANsNetManager` 勾选 `bUseUdp` 即走真 socket。
-协议自测默认仍用假网络，好控制丢包；环回与锁步另有 UDP 自测。
+逐字节布局见 [impl/packet-format.md](impl/packet-format.md)。
+单数据报不超过 1200 字节（IPv6 最小 MTU 下也不触发 IP 分片）；超长由 `NsSplitForMtu` 拆成多个完整包，各自独立丢包。
+`FNsUdpNet` 把同一字节发到对端 `SetPeer` 的 IP:port。`BindLoopback` 仍是单进程三端口。
+`ANsNetManager` 勾选 `bUseUdp`：`LocalMesh` 走三端口；`Host` / `Client` 只绑本端，对端填 `UdpRemoteHost`。
+`UdpBasePort=0` 时 Host/Client 默认 27000、27001、27002。`bUdpLan` 绑 `0.0.0.0`。
 
 地址：`Sv` / `C0` / `C1`。两人局足够验证协议，不在本阶段做 AOI。
 
@@ -213,6 +216,7 @@ OnRemote: 填 RealRemote；与 Pred 不一致且 F<Frame 则 RollbackFrom(F)
 | --- | --- | --- |
 | `ANsReplicatedActor` | `Counter`，`OnRep_Counter` | 按 `E` → `ServerBump` |
 | `ANsDoor` | `bOpen`，`OnRep_Open` | 按 `F` → `ServerSetOpen` |
+| `ANsMoverPawn` | Mover 同步状态 | WASD / 方向键移动，空格跳 |
 
 构造：`bReplicates=true`，`bAlwaysRelevant=true`。
 `GetLifetimeReplicatedProps` 里 `DOREPLIFETIME`。
@@ -221,7 +225,8 @@ Listen 主机改属性时 **OnRep 不会跑**，权威端要自己改表现（�
 Server RPC 只能由 Owner 客户端调用。演示把 Owner 设成 Listen 的 FirstPlayerController。
 远端客户端按键可能被丢，这是引擎规则，不是 bug。验证复制：主机按 `E`/`F`，客户端看到值变。
 
-角色移动不要手写 `SetActorLocation`。下一步才是 `ACharacter` + `UCharacterMovementComponent`，需要 GameMode 与 Possess，尚未做。
+角色移动走 `ANsMoverPawn`（`APawn` + `UCharacterMoverComponent`），不接 CMC，不手写 `SetActorLocation`。
+`SetReplicatingMovement(false)`，由 Network Prediction 驱动。控制台 `ns.SpawnMover`，或 Replication 方案里一并生成。
 
 规格：[impl/replication_ue.md](impl/replication_ue.md)。
 
@@ -234,13 +239,14 @@ Server RPC 只能由 Owner 客户端调用。演示把 Owner 设成 Listen 的 F
 | Lockstep | A / D | 方向键 | 两球，锁步 lerp |
 | StateSync | A / D | 方向键 | 自己 PredX，别人插值 |
 | Rollback | A / D | 方向键 | 回滚结束后的 World |
-| Replication | E / F | （观察复制） | 绿球 Counter + 门 |
+| Replication | E / F | （观察复制） | 绿球 Counter + 门；并 Possess Mover pawn |
 
 控制台：
 
-1. `ns.SelfTest` — 假网络三套协议 + 本机 UDP，日志 `NetworkSync self-test OK`。
-2. `ns.SpawnDemo` — 生成 Manager；在细节面板改 `Scheme`，可勾选 `bUseUdp`。
-3. Session Frontend：`TA.NetworkSync.*`。
+1. 控制台 `ns.SelfTest` — 假网络三套协议、编解码、UDP、压力长跑，日志 `NetworkSync self-test OK`。
+2. `ns.SpawnDemo` — 生成 Manager；改 `Scheme`，可勾选 `bUseUdp` 与 `UdpRole`。
+3. `ns.SpawnMover` — 生成 `ANsMoverPawn` 并 Possess。WASD 移动，空格跳。
+4. Session Frontend：`TA.NetworkSync.*`。
 
 引擎：UE 5.8。关联 `TA-Playground.uproject` 的 `EngineAssociation=5.8`。
 
@@ -249,30 +255,52 @@ Server RPC 只能由 Owner 客户端调用。演示把 Owner 设成 Listen 的 F
 | 测试 | 断言 |
 | --- | --- |
 | `TA.NetworkSync.World.Determinism` | 200 拍两份 World checksum 相同 |
-| `TA.NetworkSync.Lockstep` | 帧数足够、两端相等、checksum 有成功比对 |
-| `TA.NetworkSync.StateSync` | 预测与服务器 x 一致、有远程插值、ACK 与增量发生 |
-| `TA.NetworkSync.Rollback` | 冷却后两端相等、不再 WAIT |
-| `TA.NetworkSync.FakeNet.Seq` | 连续发送序号递增 |
+| `TA.NetworkSync.World.Contract` | clamp、1000 拍、不同输入分叉、Reset |
+| `TA.NetworkSync.Lockstep.Drop10` | Drop=0.1，帧数足够、两端相等、checksum 有成功比对 |
+| `TA.NetworkSync.Lockstep.Clean` | Drop=0，两端对齐且有 checksum |
+| `TA.NetworkSync.Lockstep.HighDrop` | Drop=0.15，冷却后仍追上、不卡超过约 1 秒 |
 | `TA.NetworkSync.Lockstep.Join` | 抹掉一端后 `SendJoin`，ExecFrame 与 World 追上 |
+| `TA.NetworkSync.Lockstep.Desync` | checksum 对不上则 `bDesync` |
+| `TA.NetworkSync.StateSync.Drop05` | 预测与服务器 x 一致、有远程插值、ACK 与增量发生 |
+| `TA.NetworkSync.StateSync.Clean` | Drop=0 和解 |
+| `TA.NetworkSync.StateSync.Rewind` | `RewindX` 回看；超时 RTT 返回当前 x |
+| `TA.NetworkSync.Rollback.Drop05` | 冷却后两端相等、不再 WAIT |
+| `TA.NetworkSync.Rollback.Clean` | Drop=0 两端相等 |
+| `TA.NetworkSync.Rollback.Wait` | 对端缺失超过 `MaxRollback` 进入 WAIT，补包后恢复 |
+| `TA.NetworkSync.FakeNet.Seq` | 连续发送序号递增 |
+| `TA.NetworkSync.FakeNet.SeqWindow` | 同一 seq 第二次拒绝；Stamp 递增 |
+| `TA.NetworkSync.FakeNet.DropDelay` | Drop=1 全丢；半 RTT 前不到、到点必到 |
 | `TA.NetworkSync.Codec.RoundTrip` | 帧包与加入包编解码后字段一致 |
+| `TA.NetworkSync.Codec.RejectsBad` | 坏 magic / 未知 type / 长度不符丢弃 |
+| `TA.NetworkSync.Codec.Contract` | 其余消息类型往返；空包、截断、256 帧、尾随字节拒绝 |
+| `TA.NetworkSync.Codec.Mtu` | 典型包长；超 1200 拆成多个 ≤1200 的数据报；Join 切片仍为 JoinSnap |
 | `TA.NetworkSync.Udp.Loopback` | 本机 UDP 发出 `C2SInput` 后能解出同一 payload |
 | `TA.NetworkSync.Udp.Lockstep` | 三端口 UDP 上锁步两端 World 一致 |
+| `TA.NetworkSync.Udp.Peers` | 两个 `FNsUdpNet` 用地址表互发 |
+| `TA.NetworkSync.Udp.Split` | Host 绑 Sv+C0、Client 绑 C1，锁步 World 一致 |
+| `TA.NetworkSync.Udp.Burst` | 环回连续 48 个数据报全部收到 |
+| `TA.NetworkSync.Actors.Cdo` | Door / Counter RPC 实现改状态；Mover 复制关、有胶囊与组件 |
+| `TA.NetworkSync.Stress.World` | 10000 拍确定性，限时 250ms |
+| `TA.NetworkSync.Stress.Codec` | 10000 次编解码，限时 1500ms |
+| `TA.NetworkSync.Stress.FakeNet` | 2500 包 Drop=0 全送达，限时 2000ms |
+| `TA.NetworkSync.Stress.Lockstep` | 600 帧 Drop=0.1，限时 3000ms |
+| `TA.NetworkSync.Stress.StateSync` | 800 tick Drop=0.05，限时 3000ms |
+| `TA.NetworkSync.Stress.Rollback` | 400 帧 Drop=0.05，限时 3000ms |
 
 自测 RNG 种子为 1，结果应稳定。改 `Drop` 后若偶发失败，先看冷却循环是否排空在途包。
 
 ## 已知边界与后续
 
-已闭环：两人整数世界、假网络字节头、本机 UDP socket、三套协议主循环、checksum、增量快照、回滚延迟与 WAIT、
-锁步重连快照、复制整数与门。
+已闭环：两人整数世界、假网络字节头、本机与分进程 UDP、三套协议主循环、checksum、增量快照、回滚延迟与 WAIT、
+锁步重连快照、复制整数与门、Mover pawn（非 CMC）。
 
 | 未做 | 原因与影响 |
 | --- | --- |
-| 跨机 UDP | `FNsUdpNet` 只绑 loopback，没有公网地址表 |
-| CharacterMovement | 需要 Possess；复制移动应走 CMC |
+| NAT / STUN | 地址表是手工填 IP:port，没有打洞 |
 | 多人 / AOI | 地址写死三人（含服务器） |
 | 开火命中 | `RewindX` 已有，未接武器 |
 
-后续优先顺序：跨机地址表，或射击倒带；关卡原型继续复制 + CMC，不要把锁步塞进 Character。
+后续优先顺序：Listen+Client 验收 Mover 跟手，或射击倒带；跨机先填 `UdpRemoteHost`。
 
 ## 文档与代码索引
 
@@ -282,6 +310,7 @@ Server RPC 只能由 Owner 客户端调用。演示把 Owner 设成 Listen 的 F
 | [comparison.md](comparison.md) | 优劣与品类 |
 | [schemes/README.md](schemes/README.md) | 四篇协议细则入口 |
 | [impl/README.md](impl/README.md) | 实现规格与如何运行 |
+| [impl/packet-format.md](impl/packet-format.md) | 帧字节格式 |
 | [cases/compare-three.md](cases/compare-three.md) | 守望先锋 / Dota 2 / 王者 |
 | `Plugins/NetworkSync/` | UE 插件源码 |
 
@@ -299,3 +328,4 @@ Server RPC 只能由 Owner 客户端调用。演示把 Owner 设成 Listen 的 F
 | `ANsNetManager` | `Public/NsNetManager.h` |
 | `ANsReplicatedActor` | `Public/NsReplicatedActor.h` |
 | `ANsDoor` | `Public/NsDoor.h` |
+| `ANsMoverPawn` | `Public/NsMoverPawn.h` |

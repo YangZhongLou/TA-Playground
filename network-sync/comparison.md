@@ -183,7 +183,8 @@ Rocket League 用了回滚思想修载具物理，但对局仍有服务器权威
 
 ### 引擎复制赢在哪
 
-交货快。角色、血量、门开关用复制属性；开火、拾取用 RPC。UE 的 `CharacterMovement`、GAS Prediction Key 把最难的「自己人怎么动」做成现成件。
+交货快。角色、血量、门开关用复制属性；开火、拾取用 RPC。
+UE 现在用 **Mover** + Network Prediction 做「自己人怎么动」；CMC 是旧的 `ACharacter` 路径。GAS Prediction Key 仍是技能那本账。
 
 对象级调控开箱：OwnerOnly、SkipOwner、休眠、更新频率、优先级。手写快照要自己做分块和订阅，复制模型把这些挂到对象上。
 

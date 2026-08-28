@@ -7,7 +7,10 @@
 #include "NsLockstep.h"
 #include "NsStateSync.h"
 #include "NsRollback.h"
+#include "NsCodec.h"
 #include "HAL/PlatformProcess.h"
+#include "HAL/PlatformTime.h"
+#include "Containers/Set.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogNetworkSync, Log, All);
 
@@ -17,6 +20,32 @@ static FNsSelfTestResult Fail(const TCHAR* Msg)
 	R.bOk = false;
 	R.Detail = Msg;
 	return R;
+}
+
+static FNsSelfTestResult FailStr(const FString& Msg)
+{
+	FNsSelfTestResult R;
+	R.bOk = false;
+	R.Detail = Msg;
+	return R;
+}
+
+static FNsSelfTestResult OkStr(const FString& Msg)
+{
+	FNsSelfTestResult R;
+	R.bOk = true;
+	R.Detail = Msg;
+	return R;
+}
+
+static bool RoundTripPacket(const FNsPacket& Src, FNsPacket& Out)
+{
+	TArray<uint8> Bytes;
+	if (!NsEncodePacket(Src, Bytes))
+	{
+		return false;
+	}
+	return NsDecodePacket(Bytes, Out);
 }
 
 static void DrainMaybeWait(INsNet& Net, ENsAddr Dst, TArray<FNsPacket>& Out, bool bWait)
@@ -364,8 +393,10 @@ FNsSelfTestResult NsRunRollbackSelfTest()
 		Net.Advance(Ns::RollbackDtMs);
 	}
 
-	for (int32 i = 0; i < 40; ++i)
+	for (int32 i = 0; i < 80; ++i)
 	{
+		A.Advance(Net, 0);
+		B.Advance(Net, 0);
 		PumpRollback(Net, A, B);
 		Net.Advance(Ns::RollbackDtMs);
 	}
@@ -376,7 +407,9 @@ FNsSelfTestResult NsRunRollbackSelfTest()
 	}
 	if (A.bWaiting || B.bWaiting)
 	{
-		return Fail(TEXT("rollback: still waiting after cooldown"));
+		return FailStr(FString::Printf(
+			TEXT("rollback: still waiting after cooldown a(frame=%d conf=%d wait=%d) b(frame=%d conf=%d wait=%d)"),
+			A.Frame, A.Confirmed, A.WaitCount, B.Frame, B.Confirmed, B.WaitCount));
 	}
 	FNsSelfTestResult Ok;
 	Ok.bOk = true;
@@ -469,42 +502,990 @@ FNsSelfTestResult NsRunUdpLockstepSelfTest()
 	return Ok;
 }
 
-FNsSelfTestResult NsRunAllSelfTests()
+FNsSelfTestResult NsRunUdpPeersSelfTest()
 {
-	const FNsSelfTestResult A = NsRunLockstepSelfTest();
-	if (!A.bOk)
+	FNsUdpNet A;
+	FNsUdpNet B;
+	if (!A.Bind(ENsAddr::C0, 0, false) || !B.Bind(ENsAddr::Sv, 0, false))
 	{
-		return A;
+		return Fail(TEXT("udp-peers: bind failed"));
 	}
-	const FNsSelfTestResult Join = NsRunLockstepJoinSelfTest();
-	if (!Join.bOk)
+	if (!A.SetPeer(ENsAddr::Sv, TEXT("127.0.0.1"), B.BoundPort(ENsAddr::Sv))
+		|| !B.SetPeer(ENsAddr::C0, TEXT("127.0.0.1"), A.BoundPort(ENsAddr::C0)))
 	{
-		return Join;
+		return Fail(TEXT("udp-peers: set peer failed"));
 	}
-	const FNsSelfTestResult B = NsRunStateSyncSelfTest();
-	if (!B.bOk)
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SInput;
+	Pkt.PlayerId = 0;
+	Pkt.Dx = 1;
+	A.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
+	TArray<FNsPacket> Got;
+	DrainMaybeWait(B, ENsAddr::Sv, Got, true);
+	if (Got.Num() != 1 || Got[0].Dx != 1 || Got[0].Src != ENsAddr::C0)
 	{
-		return B;
-	}
-	const FNsSelfTestResult C = NsRunRollbackSelfTest();
-	if (!C.bOk)
-	{
-		return C;
-	}
-	const FNsSelfTestResult U = NsRunUdpLoopbackSelfTest();
-	if (!U.bOk)
-	{
-		return U;
-	}
-	const FNsSelfTestResult Ul = NsRunUdpLockstepSelfTest();
-	if (!Ul.bOk)
-	{
-		return Ul;
+		return Fail(TEXT("udp-peers: datagram mismatch"));
 	}
 	FNsSelfTestResult Ok;
 	Ok.bOk = true;
-	Ok.Detail = A.Detail + TEXT(" | ") + Join.Detail + TEXT(" | ") + B.Detail + TEXT(" | ") + C.Detail
-		+ TEXT(" | ") + U.Detail + TEXT(" | ") + Ul.Detail;
+	Ok.Detail = FString::Printf(TEXT("udp-peers c0=%d sv=%d"),
+		A.BoundPort(ENsAddr::C0), B.BoundPort(ENsAddr::Sv));
+	return Ok;
+}
+
+FNsSelfTestResult NsRunUdpSplitLockstepSelfTest()
+{
+	FNsUdpNet Host;
+	FNsUdpNet Client;
+	if (!Host.Bind(ENsAddr::Sv, 0, false) || !Host.Bind(ENsAddr::C0, 0, false)
+		|| !Client.Bind(ENsAddr::C1, 0, false))
+	{
+		return Fail(TEXT("udp-split: bind failed"));
+	}
+	if (!Host.SetPeer(ENsAddr::C1, TEXT("127.0.0.1"), Client.BoundPort(ENsAddr::C1))
+		|| !Client.SetPeer(ENsAddr::Sv, TEXT("127.0.0.1"), Host.BoundPort(ENsAddr::Sv))
+		|| !Client.SetPeer(ENsAddr::C0, TEXT("127.0.0.1"), Host.BoundPort(ENsAddr::C0)))
+	{
+		return Fail(TEXT("udp-split: set peer failed"));
+	}
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	C0.PlayerId = 0;
+	C0.Addr = ENsAddr::C0;
+	FNsLockstepClient C1;
+	C1.PlayerId = 1;
+	C1.Addr = ENsAddr::C1;
+	const int8 Script[][2] = {{1, 0}, {1, -1}, {0, -1}, {-1, 1}};
+	for (int32 S = 0; S < 45; ++S)
+	{
+		const int8* Pair = Script[S % 4];
+		C0.SendInput(Host, Pair[0]);
+		C1.SendInput(Client, Pair[1]);
+		PumpLockstepServer(Host, Sv, true);
+		PumpLockstepClient(Host, C0, true);
+		PumpLockstepClient(Client, C1, true);
+		Host.Advance(Ns::LogicDtMs);
+		Client.Advance(Ns::LogicDtMs);
+	}
+	for (int32 i = 0; i < 20; ++i)
+	{
+		PumpLockstepServer(Host, Sv, true);
+		PumpLockstepClient(Host, C0, true);
+		PumpLockstepClient(Client, C1, true);
+		Host.Advance(Ns::LogicDtMs);
+		Client.Advance(Ns::LogicDtMs);
+	}
+	if (C0.ExecFrame <= 10 || C1.ExecFrame <= 10)
+	{
+		return Fail(TEXT("udp-split: too few frames"));
+	}
+	if (!C0.World.Equals(C1.World))
+	{
+		return Fail(TEXT("udp-split: worlds diverged"));
+	}
+	FNsSelfTestResult Ok;
+	Ok.bOk = true;
+	Ok.Detail = FString::Printf(TEXT("udp-split frames=%d x=(%d,%d)"),
+		C0.ExecFrame, C0.World.X[0], C0.World.X[1]);
+	return Ok;
+}
+
+static FNsSelfTestResult RunFakeLockstep(float RttMs, float Drop, float JitterMs, int32 Frames, uint32 Seed,
+	int32 Cooldown, const TCHAR* Tag)
+{
+	FNsFakeNet Net;
+	Net.RttMs = RttMs;
+	Net.Drop = Drop;
+	Net.JitterMs = JitterMs;
+	Net.Rng.Initialize(Seed);
+
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	C0.PlayerId = 0;
+	C0.Addr = ENsAddr::C0;
+	FNsLockstepClient C1;
+	C1.PlayerId = 1;
+	C1.Addr = ENsAddr::C1;
+
+	const int8 Script[][2] = {{1, 0}, {1, -1}, {0, -1}, {-1, 1}};
+	const double End = static_cast<double>(Frames) * Ns::LogicDtMs;
+	while (Net.Now < End)
+	{
+		const int32 Step = static_cast<int32>(Net.Now / Ns::LogicDtMs);
+		const int8* Pair = Script[Step % 4];
+		C0.SendInput(Net, Pair[0]);
+		C1.SendInput(Net, Pair[1]);
+		PumpLockstepServer(Net, Sv);
+		PumpLockstepClient(Net, C0);
+		PumpLockstepClient(Net, C1);
+		Net.Advance(1.0);
+	}
+
+	for (int32 i = 0; i < Cooldown; ++i)
+	{
+		PumpLockstepServer(Net, Sv);
+		PumpLockstepClient(Net, C0);
+		PumpLockstepClient(Net, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+
+	if (C0.ExecFrame <= Frames / 3)
+	{
+		return FailStr(FString::Printf(TEXT("%s: too few frames %d"), Tag, C0.ExecFrame));
+	}
+	if (FMath::Abs(C0.ExecFrame - C1.ExecFrame) > 20)
+	{
+		return FailStr(FString::Printf(TEXT("%s: exec mismatch %d vs %d"), Tag, C0.ExecFrame, C1.ExecFrame));
+	}
+	if (!C0.World.Equals(C1.World))
+	{
+		return FailStr(FString::Printf(TEXT("%s: worlds diverged"), Tag));
+	}
+	if (Sv.bDesync)
+	{
+		return FailStr(FString::Printf(TEXT("%s: checksum desync"), Tag));
+	}
+	if (Sv.Frame - C0.ExecFrame > 20)
+	{
+		return FailStr(FString::Printf(TEXT("%s: stalled exec=%d sv=%d"), Tag, C0.ExecFrame, Sv.Frame));
+	}
+	if (Drop <= 0.f && Sv.ChecksumOk <= 0)
+	{
+		return FailStr(FString::Printf(TEXT("%s: no checksum ack"), Tag));
+	}
+	return OkStr(FString::Printf(TEXT("%s frames=%d checksums=%d x=(%d,%d)"),
+		Tag, C0.ExecFrame, Sv.ChecksumOk, C0.World.X[0], C0.World.X[1]));
+}
+
+static FNsSelfTestResult RunFakeStateSync(float RttMs, float Drop, float JitterMs, int32 Ticks, uint32 Seed,
+	int32 Cooldown, const TCHAR* Tag)
+{
+	FNsFakeNet Net;
+	Net.RttMs = RttMs;
+	Net.Drop = Drop;
+	Net.JitterMs = JitterMs;
+	Net.Rng.Initialize(Seed);
+
+	FNsStateSyncServer Sv;
+	FNsStateSyncClient C0;
+	C0.PlayerId = 0;
+	C0.Addr = ENsAddr::C0;
+	FNsStateSyncClient C1;
+	C1.PlayerId = 1;
+	C1.Addr = ENsAddr::C1;
+
+	const int8 Script[] = {1, 1, 0, -1, -1, 0};
+	for (int32 S = 0; S < Ticks; ++S)
+	{
+		C0.LocalTick(Net, Script[S % 6]);
+		C1.LocalTick(Net, Script[(S + 3) % 6]);
+		PumpStateServer(Net, Sv);
+		PumpStateClient(Net, C0);
+		PumpStateClient(Net, C1);
+		Net.Advance(Ns::SimDtMs);
+	}
+	for (int32 i = 0; i < Cooldown; ++i)
+	{
+		PumpStateServer(Net, Sv);
+		PumpStateClient(Net, C0);
+		PumpStateClient(Net, C1);
+		Net.Advance(Ns::SimDtMs);
+	}
+
+	if (C0.PredX != Sv.Pawns[0].X || C1.PredX != Sv.Pawns[1].X)
+	{
+		return FailStr(FString::Printf(TEXT("%s: prediction mismatch pred=(%d,%d) sv=(%d,%d) tick=%d ack=(%d,%d)"),
+			Tag, C0.PredX, C1.PredX, Sv.Pawns[0].X, Sv.Pawns[1].X, Sv.Tick, Sv.LastAck[0], Sv.LastAck[1]));
+	}
+	if (!C0.bHasRemote || !C1.bHasRemote)
+	{
+		return FailStr(FString::Printf(TEXT("%s: no remote lerp"), Tag));
+	}
+	if (Sv.LastAck[0] <= 0 || Sv.LastAck[1] <= 0)
+	{
+		return FailStr(FString::Printf(TEXT("%s: missing snap ack"), Tag));
+	}
+	return OkStr(FString::Printf(TEXT("%s tick=%d delta=%d ack=%d x=(%d,%d)"),
+		Tag, Sv.Tick, Sv.DeltaSent, Sv.LastAck[0], Sv.Pawns[0].X, Sv.Pawns[1].X));
+}
+
+static FNsSelfTestResult RunFakeRollback(float RttMs, float Drop, float JitterMs, int32 Steps, uint32 Seed,
+	int32 Cooldown, const TCHAR* Tag)
+{
+	FNsFakeNet Net;
+	Net.RttMs = RttMs;
+	Net.Drop = Drop;
+	Net.JitterMs = JitterMs;
+	Net.Rng.Initialize(Seed);
+
+	FNsRollbackPeer A;
+	A.PlayerId = 0;
+	A.Addr = ENsAddr::C0;
+	A.Other = ENsAddr::C1;
+	FNsRollbackPeer B;
+	B.PlayerId = 1;
+	B.Addr = ENsAddr::C1;
+	B.Other = ENsAddr::C0;
+
+	const int8 S0[] = {1, 1, 1, 0, -1, -1, 0, 1};
+	const int8 S1[] = {0, -1, -1, 1, 1, 0, 0, -1};
+	for (int32 S = 0; S < Steps; ++S)
+	{
+		A.Advance(Net, S0[S % 8]);
+		B.Advance(Net, S1[S % 8]);
+		PumpRollback(Net, A, B);
+		Net.Advance(Ns::RollbackDtMs);
+	}
+	for (int32 i = 0; i < Cooldown; ++i)
+	{
+		A.Advance(Net, 0);
+		B.Advance(Net, 0);
+		PumpRollback(Net, A, B);
+		Net.Advance(Ns::RollbackDtMs);
+	}
+
+	if (!A.World.Equals(B.World))
+	{
+		return FailStr(FString::Printf(TEXT("%s: peers diverged"), Tag));
+	}
+	if (A.bWaiting || B.bWaiting)
+	{
+		return FailStr(FString::Printf(
+			TEXT("%s: still waiting a(frame=%d conf=%d wait=%d) b(frame=%d conf=%d wait=%d)"),
+			Tag, A.Frame, A.Confirmed, A.WaitCount, B.Frame, B.Confirmed, B.WaitCount));
+	}
+	return OkStr(FString::Printf(TEXT("%s frame=%d wait=%d x=(%d,%d)"),
+		Tag, A.Frame, A.WaitCount + B.WaitCount, A.World.X[0], A.World.X[1]));
+}
+
+FNsSelfTestResult NsRunWorldContractSelfTest()
+{
+	if (NsClampDx(-9) != -1 || NsClampDx(9) != 1 || NsClampDx(0) != 0)
+	{
+		return Fail(TEXT("world: clamp"));
+	}
+
+	FNsWorld A;
+	FNsWorld B;
+	const int8 Same[] = {1, -1};
+	for (int32 i = 0; i < 1000; ++i)
+	{
+		A.Step(Same, Ns::LockstepSpeed);
+		B.Step(Same, Ns::LockstepSpeed);
+	}
+	if (!A.Equals(B) || A.Checksum() != B.Checksum())
+	{
+		return Fail(TEXT("world: 1000-step mismatch"));
+	}
+
+	FNsWorld C;
+	const int8 Other[] = {-1, 1};
+	C.Step(Other, Ns::LockstepSpeed);
+	if (C.Equals(A) || C.Checksum() == A.Checksum())
+	{
+		return Fail(TEXT("world: different input must diverge"));
+	}
+
+	A.Reset();
+	if (A.X[0] != 0 || A.X[1] != 0 || A.Rng != 1)
+	{
+		return Fail(TEXT("world: reset"));
+	}
+	return OkStr(TEXT("world clamp+1000+diverge+reset"));
+}
+
+FNsSelfTestResult NsRunCodecContractSelfTest()
+{
+	auto Check = [](const TCHAR* Name, const FNsPacket& Src, auto&& Pred) -> FNsSelfTestResult
+	{
+		FNsPacket Dst;
+		if (!RoundTripPacket(Src, Dst))
+		{
+			return FailStr(FString::Printf(TEXT("codec: %s roundtrip failed"), Name));
+		}
+		if (!Pred(Dst))
+		{
+			return FailStr(FString::Printf(TEXT("codec: %s fields"), Name));
+		}
+		return FNsSelfTestResult();
+	};
+
+	{
+		FNsPacket Src;
+		Src.Type = ENsMsg::C2SInput;
+		Src.Seq = 3;
+		Src.Ack = 1;
+		Src.AckBits = 7;
+		Src.PlayerId = 1;
+		Src.Dx = -1;
+		Src.SeqWindow = {10, 11, 12};
+		Src.DxWindow = {1, 0, -1};
+		const FNsSelfTestResult R = Check(TEXT("c2s"), Src, [](const FNsPacket& D)
+		{
+			return D.Type == ENsMsg::C2SInput && D.Seq == 3 && D.Ack == 1 && D.AckBits == 7
+				&& D.PlayerId == 1 && D.Dx == -1 && D.SeqWindow.Num() == 3 && D.DxWindow[2] == -1;
+		});
+		if (!R.Detail.IsEmpty())
+		{
+			return R;
+		}
+	}
+	{
+		FNsPacket Src;
+		Src.Type = ENsMsg::S2CSnapshot;
+		Src.Tick = 30;
+		Src.BaseTick = 12;
+		Src.SnapX[0] = -4;
+		Src.SnapX[1] = 9;
+		Src.SnapSeq[0] = 8;
+		Src.SnapSeq[1] = 7;
+		const FNsSelfTestResult R = Check(TEXT("snap"), Src, [](const FNsPacket& D)
+		{
+			return D.Tick == 30 && D.BaseTick == 12 && D.SnapX[0] == -4 && D.SnapX[1] == 9
+				&& D.SnapSeq[0] == 8 && D.SnapSeq[1] == 7;
+		});
+		if (!R.Detail.IsEmpty())
+		{
+			return R;
+		}
+	}
+	{
+		FNsPacket Src;
+		Src.Type = ENsMsg::C2SSnapAck;
+		Src.PlayerId = 0;
+		Src.Tick = 44;
+		const FNsSelfTestResult R = Check(TEXT("ack"), Src, [](const FNsPacket& D)
+		{
+			return D.PlayerId == 0 && D.Tick == 44;
+		});
+		if (!R.Detail.IsEmpty())
+		{
+			return R;
+		}
+	}
+	{
+		FNsPacket Src;
+		Src.Type = ENsMsg::P2PInput;
+		Src.RemoteDx.Add(4, 1);
+		Src.RemoteDx.Add(5, -1);
+		const FNsSelfTestResult R = Check(TEXT("p2p"), Src, [](const FNsPacket& D)
+		{
+			const int8* A = D.RemoteDx.Find(4);
+			const int8* B = D.RemoteDx.Find(5);
+			return A && B && *A == 1 && *B == -1;
+		});
+		if (!R.Detail.IsEmpty())
+		{
+			return R;
+		}
+	}
+
+	FNsPacket Empty;
+	TArray<uint8> None;
+	if (NsDecodePacket(None, Empty))
+	{
+		return Fail(TEXT("codec: empty must fail"));
+	}
+	TArray<uint8> Tiny;
+	Tiny.AddZeroed(Ns::HeaderBytes - 1);
+	if (NsDecodePacket(Tiny, Empty))
+	{
+		return Fail(TEXT("codec: truncated header must fail"));
+	}
+
+	FNsPacket Huge;
+	Huge.Type = ENsMsg::S2CFrame;
+	for (int32 i = 0; i < 256; ++i)
+	{
+		FNsInputs In;
+		Huge.Frames.Add(i, In);
+	}
+	TArray<uint8> HugeBytes;
+	if (NsEncodePacket(Huge, HugeBytes))
+	{
+		return Fail(TEXT("codec: 256 frames must fail"));
+	}
+
+	FNsPacket One;
+	One.Type = ENsMsg::C2SSnapAck;
+	One.Tick = 1;
+	TArray<uint8> Bytes;
+	if (!NsEncodePacket(One, Bytes))
+	{
+		return Fail(TEXT("codec: encode ack"));
+	}
+	Bytes.Add(0);
+	if (NsDecodePacket(Bytes, Empty))
+	{
+		return Fail(TEXT("codec: trailing byte must fail"));
+	}
+	return OkStr(TEXT("codec all-types+reject"));
+}
+
+FNsSelfTestResult NsRunSeqWindowSelfTest()
+{
+	FNsSeqWindow W;
+	if (!W.Accept(ENsAddr::Sv, ENsAddr::C0, 1) || W.Accept(ENsAddr::Sv, ENsAddr::C0, 1))
+	{
+		return Fail(TEXT("seq: dup 1"));
+	}
+	if (!W.Accept(ENsAddr::Sv, ENsAddr::C0, 2) || W.Accept(ENsAddr::Sv, ENsAddr::C0, 2))
+	{
+		return Fail(TEXT("seq: dup 2"));
+	}
+	if (!W.Accept(ENsAddr::Sv, ENsAddr::C1, 1))
+	{
+		return Fail(TEXT("seq: other src same seq"));
+	}
+	FNsPacket P;
+	P.Dst = ENsAddr::Sv;
+	W.Stamp(ENsAddr::C0, P);
+	if (P.Seq != 1)
+	{
+		return Fail(TEXT("seq: stamp first"));
+	}
+	W.Stamp(ENsAddr::C0, P);
+	if (P.Seq != 2)
+	{
+		return Fail(TEXT("seq: stamp second"));
+	}
+	return OkStr(TEXT("seq window dup+stamp"));
+}
+
+FNsSelfTestResult NsRunFakeNetContractSelfTest()
+{
+	{
+		FNsFakeNet Net;
+		Net.Drop = 1.f;
+		Net.RttMs = 0.f;
+		Net.JitterMs = 0.f;
+		Net.Rng.Initialize(1);
+		FNsPacket Pkt;
+		Pkt.Type = ENsMsg::C2SInput;
+		Net.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
+		Net.Advance(1000.0);
+		TArray<FNsPacket> Got;
+		Net.Drain(ENsAddr::Sv, Got);
+		if (Got.Num() != 0)
+		{
+			return Fail(TEXT("fakenet: drop=1 leaked"));
+		}
+	}
+	{
+		FNsFakeNet Net;
+		Net.Drop = 0.f;
+		Net.RttMs = 80.f;
+		Net.JitterMs = 0.f;
+		Net.Rng.Initialize(1);
+		FNsPacket Pkt;
+		Pkt.Type = ENsMsg::C2SInput;
+		Pkt.Dx = 1;
+		Net.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
+		Net.Advance(39.0);
+		TArray<FNsPacket> Early;
+		Net.Drain(ENsAddr::Sv, Early);
+		if (Early.Num() != 0)
+		{
+			return Fail(TEXT("fakenet: delivered before half-rtt"));
+		}
+		Net.Advance(1.0);
+		TArray<FNsPacket> OnTime;
+		Net.Drain(ENsAddr::Sv, OnTime);
+		if (OnTime.Num() != 1 || OnTime[0].Dx != 1)
+		{
+			return Fail(TEXT("fakenet: missing at half-rtt"));
+		}
+	}
+	return OkStr(TEXT("fakenet drop+delay"));
+}
+
+FNsSelfTestResult NsRunLockstepCleanSelfTest()
+{
+	return RunFakeLockstep(80.f, 0.f, 0.f, 90, 1, 80, TEXT("lockstep-clean"));
+}
+
+FNsSelfTestResult NsRunLockstepHighDropSelfTest()
+{
+	return RunFakeLockstep(80.f, 0.15f, 8.f, 120, 1, 800, TEXT("lockstep-drop15"));
+}
+
+FNsSelfTestResult NsRunLockstepDesyncSelfTest()
+{
+	FNsLockstepServer Sv;
+	Sv.Checksums.Add(15, 42u);
+	Sv.OnChecksum(15, 99u);
+	if (!Sv.bDesync)
+	{
+		return Fail(TEXT("lockstep-desync: mismatch not flagged"));
+	}
+	Sv.OnChecksum(15, 42u);
+	if (Sv.ChecksumOk <= 0)
+	{
+		return Fail(TEXT("lockstep-desync: matching hash ignored"));
+	}
+	Sv.OnChecksum(99, 1u);
+	return OkStr(TEXT("lockstep-desync flagged"));
+}
+
+FNsSelfTestResult NsRunLockstepStressSelfTest()
+{
+	const double T0 = FPlatformTime::Seconds();
+	FNsSelfTestResult R = RunFakeLockstep(80.f, 0.1f, 8.f, 600, 1, 400, TEXT("lockstep-stress"));
+	const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0;
+	if (!R.bOk)
+	{
+		return R;
+	}
+	if (Ms > 3000.0)
+	{
+		return FailStr(FString::Printf(TEXT("lockstep-stress: slow %.0fms"), Ms));
+	}
+	R.Detail += FString::Printf(TEXT(" %.0fms"), Ms);
+	return R;
+}
+
+FNsSelfTestResult NsRunStateSyncCleanSelfTest()
+{
+	FNsSelfTestResult R = RunFakeStateSync(80.f, 0.f, 0.f, 240, 1, 40, TEXT("state-clean"));
+	if (!R.bOk)
+	{
+		return R;
+	}
+	return R;
+}
+
+FNsSelfTestResult NsRunStateSyncRewindSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsStateSyncServer Sv;
+	for (int32 S = 0; S < 80; ++S)
+	{
+		Sv.OnInput(0, S + 1, 1);
+		Sv.Sim(Net);
+		Net.Advance(Ns::SimDtMs);
+	}
+	if (Sv.Pawns[0].X != 80 * Ns::StateSpeed)
+	{
+		return FailStr(FString::Printf(TEXT("rewind: x=%d"), Sv.Pawns[0].X));
+	}
+	const int32 Cap = Sv.RewindX(0, 500);
+	if (Cap != Sv.Pawns[0].X)
+	{
+		return Fail(TEXT("rewind: lag cap should return current x"));
+	}
+	const int32 Past = Sv.RewindX(0, 80);
+	if (Past == Sv.Pawns[0].X)
+	{
+		return Fail(TEXT("rewind: ping 80 should look back"));
+	}
+	if (Sv.RewindX(-1, 80) != 0 || Sv.RewindX(2, 80) != 0)
+	{
+		return Fail(TEXT("rewind: bad player"));
+	}
+	return OkStr(FString::Printf(TEXT("rewind current=%d past=%d"), Cap, Past));
+}
+
+FNsSelfTestResult NsRunStateSyncStressSelfTest()
+{
+	const double T0 = FPlatformTime::Seconds();
+	FNsSelfTestResult R = RunFakeStateSync(80.f, 0.05f, 4.f, 800, 1, 120, TEXT("state-stress"));
+	const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0;
+	if (!R.bOk)
+	{
+		return R;
+	}
+	if (Ms > 3000.0)
+	{
+		return FailStr(FString::Printf(TEXT("state-stress: slow %.0fms"), Ms));
+	}
+	R.Detail += FString::Printf(TEXT(" %.0fms"), Ms);
+	return R;
+}
+
+FNsSelfTestResult NsRunRollbackCleanSelfTest()
+{
+	return RunFakeRollback(80.f, 0.f, 0.f, 120, 1, 80, TEXT("rollback-clean"));
+}
+
+FNsSelfTestResult NsRunRollbackWaitSelfTest()
+{
+	FNsRollbackPeer A;
+	A.PlayerId = 0;
+	A.Addr = ENsAddr::C0;
+	A.Other = ENsAddr::C1;
+	TMap<int32, int8> Packed;
+	bool bHitWait = false;
+	for (int32 i = 0; i < 20; ++i)
+	{
+		A.AdvanceLocal(1, Packed);
+		if (A.bWaiting)
+		{
+			bHitWait = true;
+			break;
+		}
+	}
+	if (!bHitWait || A.WaitCount <= 0)
+	{
+		return Fail(TEXT("rollback-wait: never waited"));
+	}
+	TMap<int32, int8> Remote;
+	for (int32 F = 0; F < A.Frame; ++F)
+	{
+		Remote.Add(F, 0);
+	}
+	A.OnRemote(Remote);
+	A.AdvanceLocal(1, Packed);
+	if (A.bWaiting)
+	{
+		return Fail(TEXT("rollback-wait: still waiting after remote fill"));
+	}
+	return OkStr(FString::Printf(TEXT("rollback-wait count=%d frame=%d"), A.WaitCount, A.Frame));
+}
+
+FNsSelfTestResult NsRunRollbackStressSelfTest()
+{
+	const double T0 = FPlatformTime::Seconds();
+	FNsSelfTestResult R = RunFakeRollback(80.f, 0.05f, 6.f, 400, 1, 200, TEXT("rollback-stress"));
+	const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0;
+	if (!R.bOk)
+	{
+		return R;
+	}
+	if (Ms > 3000.0)
+	{
+		return FailStr(FString::Printf(TEXT("rollback-stress: slow %.0fms"), Ms));
+	}
+	R.Detail += FString::Printf(TEXT(" %.0fms"), Ms);
+	return R;
+}
+
+FNsSelfTestResult NsRunUdpBurstSelfTest()
+{
+	FNsUdpNet Net;
+	if (!Net.BindLoopback())
+	{
+		return Fail(TEXT("udp-burst: bind failed"));
+	}
+	const int32 Count = 48;
+	for (int32 i = 0; i < Count; ++i)
+	{
+		FNsPacket Pkt;
+		Pkt.Type = ENsMsg::C2SInput;
+		Pkt.PlayerId = 0;
+		Pkt.Dx = static_cast<int8>((i % 3) - 1);
+		Pkt.SeqWindow.Add(i + 1);
+		Pkt.DxWindow.Add(Pkt.Dx);
+		Net.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
+	}
+	TArray<FNsPacket> Got;
+	for (int32 Try = 0; Try < 80; ++Try)
+	{
+		TArray<FNsPacket> Batch;
+		Net.Drain(ENsAddr::Sv, Batch);
+		Got.Append(Batch);
+		if (Got.Num() >= Count)
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (Got.Num() != Count)
+	{
+		return FailStr(FString::Printf(TEXT("udp-burst: got %d want %d"), Got.Num(), Count));
+	}
+	int32 Sum = 0;
+	for (const FNsPacket& P : Got)
+	{
+		Sum += P.DxWindow.Num() > 0 ? P.DxWindow[0] : 0;
+	}
+	return OkStr(FString::Printf(TEXT("udp-burst n=%d sum=%d"), Got.Num(), Sum));
+}
+
+FNsSelfTestResult NsRunCodecStressSelfTest()
+{
+	const double T0 = FPlatformTime::Seconds();
+	FNsPacket Src;
+	Src.Type = ENsMsg::S2CFrame;
+	FNsInputs In;
+	In.Dx[0] = 1;
+	In.Dx[1] = -1;
+	Src.Frames.Add(1, In);
+	Src.Frames.Add(2, In);
+	Src.Frames.Add(3, In);
+	Src.Frames.Add(4, In);
+	for (int32 i = 0; i < 10000; ++i)
+	{
+		Src.Seq = i;
+		Src.Ack = i / 2;
+		FNsPacket Dst;
+		if (!RoundTripPacket(Src, Dst) || Dst.Seq != i || Dst.Frames.Num() != 4)
+		{
+			return FailStr(FString::Printf(TEXT("codec-stress: fail at %d"), i));
+		}
+	}
+	const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0;
+	if (Ms > 1500.0)
+	{
+		return FailStr(FString::Printf(TEXT("codec-stress: slow %.0fms"), Ms));
+	}
+	return OkStr(FString::Printf(TEXT("codec-stress 10000 %.0fms"), Ms));
+}
+
+FNsSelfTestResult NsRunFakeNetStressSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	Net.Rng.Initialize(1);
+	const double T0 = FPlatformTime::Seconds();
+	const int32 Count = 2500;
+	TArray<FNsPacket> Got;
+	for (int32 i = 0; i < Count; ++i)
+	{
+		FNsPacket Pkt;
+		Pkt.Type = ENsMsg::C2SInput;
+		Pkt.Dx = static_cast<int8>((i % 3) - 1);
+		Net.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
+		if ((i % 8) == 7)
+		{
+			Net.Advance(1.0);
+			TArray<FNsPacket> Batch;
+			Net.Drain(ENsAddr::Sv, Batch);
+			Got.Append(Batch);
+		}
+	}
+	Net.Advance(1.0);
+	TArray<FNsPacket> Tail;
+	Net.Drain(ENsAddr::Sv, Tail);
+	Got.Append(Tail);
+	if (Got.Num() != Count)
+	{
+		return FailStr(FString::Printf(TEXT("fakenet-stress: got %d"), Got.Num()));
+	}
+	const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0;
+	if (Ms > 2000.0)
+	{
+		return FailStr(FString::Printf(TEXT("fakenet-stress: slow %.0fms"), Ms));
+	}
+	return OkStr(FString::Printf(TEXT("fakenet-stress n=%d %.0fms"), Count, Ms));
+}
+
+FNsSelfTestResult NsRunWorldStressSelfTest()
+{
+	FNsWorld A;
+	FNsWorld B;
+	const int8 Script[][2] = {{1, 0}, {1, -1}, {0, -1}, {-1, 1}, {0, 0}, {-1, 0}};
+	const int32 Steps = 10000;
+	const double T0 = FPlatformTime::Seconds();
+	for (int32 i = 0; i < Steps; ++i)
+	{
+		A.Step(Script[i % 6], Ns::LockstepSpeed);
+		B.Step(Script[i % 6], Ns::RollbackSpeed);
+	}
+	FNsWorld C;
+	for (int32 i = 0; i < Steps; ++i)
+	{
+		C.Step(Script[i % 6], Ns::LockstepSpeed);
+	}
+	if (!A.Equals(C))
+	{
+		return Fail(TEXT("world-stress: lockstep speed not deterministic"));
+	}
+	if (A.Equals(B))
+	{
+		return Fail(TEXT("world-stress: different speed must diverge"));
+	}
+	const double Ms = (FPlatformTime::Seconds() - T0) * 1000.0;
+	if (Ms > 250.0)
+	{
+		return FailStr(FString::Printf(TEXT("world-stress: slow %.0fms"), Ms));
+	}
+	return OkStr(FString::Printf(TEXT("world-stress 10000 %.0fms x=%d"), Ms, A.X[0]));
+}
+
+FNsSelfTestResult NsRunMtuSelfTest()
+{
+	if (Ns::MaxPacketBytes + Ns::Ipv6UdpOverheadBytes > Ns::MinPathMtuBytes)
+	{
+		return Fail(TEXT("mtu: ipv6 min path would fragment"));
+	}
+
+	FNsPacket Frame;
+	Frame.Type = ENsMsg::S2CFrame;
+	FNsInputs In;
+	In.Dx[0] = 1;
+	In.Dx[1] = -1;
+	for (int32 i = 0; i < Ns::RedundantFrames + 1; ++i)
+	{
+		Frame.Frames.Add(i + 1, In);
+	}
+	const int32 Typical = NsWireBytes(Frame);
+	if (Typical != 49)
+	{
+		return FailStr(FString::Printf(TEXT("mtu: typical S2CFrame %d"), Typical));
+	}
+	TArray<uint8> TypicalBytes;
+	if (!NsEncodePacket(Frame, TypicalBytes) || TypicalBytes.Num() != Typical)
+	{
+		return Fail(TEXT("mtu: encode size != NsWireBytes"));
+	}
+
+	FNsPacket Snap;
+	Snap.Type = ENsMsg::S2CSnapshot;
+	if (NsWireBytes(Snap) != 41)
+	{
+		return Fail(TEXT("mtu: snapshot size"));
+	}
+
+	FNsPacket Join;
+	Join.Type = ENsMsg::S2CJoinSnap;
+	Join.Tick = 76;
+	for (int32 i = 0; i < Ns::JoinSnapEvery; ++i)
+	{
+		Join.Frames.Add(76 + i, In);
+	}
+	const int32 JoinWire = NsWireBytes(Join);
+	if (JoinWire != 20 + 17 + 6 * Ns::JoinSnapEvery || JoinWire > Ns::MaxPacketBytes)
+	{
+		return FailStr(FString::Printf(TEXT("mtu: join %d"), JoinWire));
+	}
+
+	FNsPacket Huge;
+	Huge.Type = ENsMsg::S2CFrame;
+	const int32 HugeCount = Ns::MaxS2CFrameEntries + 40;
+	for (int32 i = 0; i < HugeCount; ++i)
+	{
+		Huge.Frames.Add(i, In);
+	}
+	if (NsFitsMtu(Huge) || NsEncodePacket(Huge, TypicalBytes))
+	{
+		return Fail(TEXT("mtu: oversized single packet must not encode"));
+	}
+	TArray<FNsPacket> Parts;
+	NsSplitForMtu(Huge, Parts);
+	if (Parts.Num() < 2)
+	{
+		return Fail(TEXT("mtu: split produced one datagram"));
+	}
+	TSet<int32> Keys;
+	for (const FNsPacket& Part : Parts)
+	{
+		TArray<uint8> Bytes;
+		if (!NsEncodePacket(Part, Bytes) || Bytes.Num() > Ns::MaxPacketBytes)
+		{
+			return Fail(TEXT("mtu: split part over MTU"));
+		}
+		for (const TPair<int32, FNsInputs>& Kv : Part.Frames)
+		{
+			Keys.Add(Kv.Key);
+		}
+	}
+	if (Keys.Num() != HugeCount)
+	{
+		return FailStr(FString::Printf(TEXT("mtu: split lost keys %d"), Keys.Num()));
+	}
+
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	Net.Rng.Initialize(1);
+	Net.Send(ENsAddr::Sv, ENsAddr::C0, Huge);
+	Net.Advance(1.0);
+	TArray<FNsPacket> Got;
+	Net.Drain(ENsAddr::C0, Got);
+	TSet<int32> Wired;
+	for (const FNsPacket& P : Got)
+	{
+		if (NsWireBytes(P) > Ns::MaxPacketBytes)
+		{
+			return Fail(TEXT("mtu: fakenet delivered oversize"));
+		}
+		for (const TPair<int32, FNsInputs>& Kv : P.Frames)
+		{
+			Wired.Add(Kv.Key);
+		}
+	}
+	if (Got.Num() < 2 || Wired.Num() != HugeCount)
+	{
+		return FailStr(FString::Printf(TEXT("mtu: fakenet parts=%d keys=%d"), Got.Num(), Wired.Num()));
+	}
+
+	FNsPacket JoinHuge = Join;
+	for (int32 i = Ns::JoinSnapEvery; i < HugeCount; ++i)
+	{
+		JoinHuge.Frames.Add(76 + i, In);
+	}
+	NsSplitForMtu(JoinHuge, Parts);
+	if (Parts.Num() < 2)
+	{
+		return Fail(TEXT("mtu: join split"));
+	}
+	for (const FNsPacket& Part : Parts)
+	{
+		if (Part.Type != ENsMsg::S2CJoinSnap || !NsFitsMtu(Part) || Part.Tick != 76)
+		{
+			return Fail(TEXT("mtu: join fragment must stay JoinSnap and fit"));
+		}
+	}
+
+	return OkStr(FString::Printf(TEXT("mtu typical=%d split=%d join-split=%d"), Typical, Got.Num(), Parts.Num()));
+}
+
+static FNsSelfTestResult RunOrStop(const FNsSelfTestResult& R)
+{
+	return R;
+}
+
+FNsSelfTestResult NsRunAllSelfTests()
+{
+	using FFn = FNsSelfTestResult(*)();
+	const FFn Fns[] = {
+		&NsRunWorldContractSelfTest,
+		&NsRunCodecContractSelfTest,
+		&NsRunSeqWindowSelfTest,
+		&NsRunFakeNetContractSelfTest,
+		&NsRunMtuSelfTest,
+		&NsRunLockstepSelfTest,
+		&NsRunLockstepCleanSelfTest,
+		&NsRunLockstepHighDropSelfTest,
+		&NsRunLockstepJoinSelfTest,
+		&NsRunLockstepDesyncSelfTest,
+		&NsRunStateSyncSelfTest,
+		&NsRunStateSyncCleanSelfTest,
+		&NsRunStateSyncRewindSelfTest,
+		&NsRunRollbackSelfTest,
+		&NsRunRollbackCleanSelfTest,
+		&NsRunRollbackWaitSelfTest,
+		&NsRunUdpLoopbackSelfTest,
+		&NsRunUdpLockstepSelfTest,
+		&NsRunUdpPeersSelfTest,
+		&NsRunUdpSplitLockstepSelfTest,
+		&NsRunUdpBurstSelfTest,
+		&NsRunWorldStressSelfTest,
+		&NsRunCodecStressSelfTest,
+		&NsRunFakeNetStressSelfTest,
+		&NsRunLockstepStressSelfTest,
+		&NsRunStateSyncStressSelfTest,
+		&NsRunRollbackStressSelfTest,
+	};
+	TArray<FString> Parts;
+	for (FFn Fn : Fns)
+	{
+		const FNsSelfTestResult R = RunOrStop(Fn());
+		if (!R.bOk)
+		{
+			return R;
+		}
+		Parts.Add(R.Detail);
+	}
+	FNsSelfTestResult Ok;
+	Ok.bOk = true;
+	Ok.Detail = FString::Join(Parts, TEXT(" | "));
 	return Ok;
 }
 

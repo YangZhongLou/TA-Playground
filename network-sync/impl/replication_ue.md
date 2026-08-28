@@ -102,10 +102,13 @@ void AMyDoor::ServerSetOpen_Implementation(bool bNewOpen)
 
 ## 第三步：角色移动
 
-不要自己复制 `SetActorLocation`。用 `ACharacter` + `UCharacterMovementComponent`。
-默认会预测 Owner、复制位置给 SimulatedProxy。
+不要自己复制 `SetActorLocation`，也不要接 `ACharacter` + CMC。
+本插件的 `ANsMoverPawn` 是 `APawn` + `UCharacterMoverComponent`。关 Actor 级移动复制，
+由 Network Prediction liaison 管预测和纠正。控制台 `ns.SpawnMover`。
 
-验收：Client 走路跟手；在 Listen 窗口里能看见 Client 的角色在动。
+建议项目设置：Network Prediction 用 Fixed tick，Simulated Proxy LOD 用 Interpolated，打开 Fixed Tick Smoothing。
+
+验收：Client 走路跟手；Listen 窗口能看见 Client 的 pawn 在动。
 
 ## 第四步：谁复制给谁
 
@@ -115,7 +118,7 @@ void AMyDoor::ServerSetOpen_Implementation(bool bNewOpen)
 | GameState | `bReplicates=true`，比分放这里 |
 | PlayerState | 默认复制，分数、名字 |
 | PlayerController | 仅 Owner，输入和 UI |
-| Pawn | `bReplicates=true`，`SetReplicateMovement(true)` 或走 CMC |
+| Pawn | `bReplicates=true`；移动走 Mover，不要 `SetReplicateMovement(true)` |
 
 `bOnlyRelevantToOwner=true` 用在私有库存。误开在 Pawn 上，别人会看不见你。
 
@@ -124,7 +127,7 @@ void AMyDoor::ServerSetOpen_Implementation(bool bNewOpen)
 1. Listen + Client 进同一张图，打 `log LogNet Verbose`。
 2. 复制 `int32` + Server RPC。
 3. 门的 bool。
-4. Character 移动。
+4. Mover pawn 移动。
 5. 再谈休眠、频率、Replication Graph。人数 < 8 不要上 Graph。
 
 ## 验收清单

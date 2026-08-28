@@ -42,24 +42,25 @@ struct FNsWorld
 
 ## 包 payload
 
-### `C2S_INPUT`
+字节级布局见 [packet-format.md](packet-format.md)。锁步只发输入。
 
-客户端尽快发。服务器只保留每玩家「最新尚未编入帧的输入」。
+### `C2SInput`
 
-| 字段 | 类型 | 含义 |
-| --- | --- | --- |
-| player_id | u8 | 0 .. PLAYER_COUNT-1 |
-| dx | i8 | -1, 0, 1 |
+客户端尽快发。服务器只保留每玩家「最新尚未编入帧的输入」。`win` 固定为 0。
 
-### `S2C_FRAME`
+| 字段 | 含义 |
+| --- | --- |
+| player_id | 0 或 1 |
+| dx | -1 / 0 / 1 |
 
-| 字段 | 类型 | 含义 |
-| --- | --- | --- |
-| frame | u32 | 本包最新拍号 n |
-| count | u8 | 后面跟多少拍，= 1 + 冗余（最多 4） |
-| 重复 count 次：frame_i, dx[0], dx[1], ... | u32 + i8*N | 从 n 往回 |
+### `S2CFrame`
 
-客户端用 `frame_i` 填自己的槽。已执行过的拍丢掉。缺的拍继续等。
+本拍 + 前 3 拍。每拍是两人的 dx，不是坐标。
+
+| 字段 | 含义 |
+| --- | --- |
+| latest | 本包最大拍号 |
+| 每拍 frame, dx0, dx1 | 填客户端 `Buf`；已执行的丢掉 |
 
 ## 服务器主循环
 
@@ -139,6 +140,7 @@ void Logic(FNsFakeNet& Net)
 
 服务器在完成的 `Frame > 0 && Frame % JoinSnapEvery == 0` 时复制 `SnapWorld`，并丢掉更早的 `Hist`
 （保留 `RedundantFrames` 给在线客户端）。`SendJoin` 发两次 `S2CJoinSnap` 抗丢包。
+内容超过 1200 字节时，`NsSplitForMtu` 切成多个 JoinSnap 数据报，快照字段重复。
 
 | 字段 | 含义 |
 | --- | --- |
@@ -146,7 +148,7 @@ void Logic(FNsFakeNet& Net)
 | x0, x1, rng | 快照世界 |
 | 后续输入 | `Hist` 里 `frame >= exec_frame` 的拍 |
 
-客户端 `ApplyJoin` 覆盖 `World` / `ExecFrame`，再 `Logic` 快进。中途加入因此会掺状态，不再是纯输入锁步。
+客户端 `ApplyJoin`：仅当 `Tick > ExecFrame` 时覆盖世界并跳拍；同一快照的后续片只合并 `Buf`。中途加入因此会掺状态，不再是纯输入锁步。
 
 ## 实现顺序（按天）
 
@@ -165,5 +167,5 @@ void Logic(FNsFakeNet& Net)
 ns.SelfTest
 ```
 
-日志必须含 `lockstep frames=`。自动化：`TA.NetworkSync.Lockstep`、`TA.NetworkSync.Lockstep.Join`。
+日志必须含 `lockstep frames=`。自动化：`TA.NetworkSync.Lockstep.Drop10`、`TA.NetworkSync.Lockstep.Join`。
 自测已开 `Drop=0.1` 与冗余。Join 自测 `Drop=0`，避免加入包本身被丢掉。

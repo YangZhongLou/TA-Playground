@@ -11,7 +11,7 @@
 1. [technical-design.md](technical-design.md) — 技术方案总览（架构、四套协议、插件落地）。
 2. [overview.md](overview.md) — 问题空间、权威模型、拓扑。
 3. `schemes/` — 四类主流方案的协议细则（节拍、丢包、变体、失败模式）。
-4. `impl/` — 可直接开写的实现规格；代码在 `Plugins/NetworkSync`。
+4. `impl/` — 可直接开写的实现规格；线上字节见 [impl/packet-format.md](impl/packet-format.md)；代码在 `Plugins/NetworkSync`。
 5. [techniques.md](techniques.md) — 预测、插值、补偿、兴趣管理等配套技术。
 6. [comparison.md](comparison.md) — 四套方案的优劣机理与品类对照。
 7. `cases/` — 守望先锋、Dota 2、王者荣耀的公开方案对照。
@@ -34,6 +34,7 @@
 | [schemes/replication.md](schemes/replication.md) | 对象复制：Role/Owner、属性与 RPC、Graph/Iris |
 | [techniques.md](techniques.md) | 预测、插值、滞后补偿、AOI、压缩 |
 | [impl/README.md](impl/README.md) | 实现规格入口、插件怎么跑 |
+| [impl/packet-format.md](impl/packet-format.md) | 20 字节头与七种 payload 的逐字节布局 |
 | [comparison.md](comparison.md) | 各方案优劣机理、同轴对照、品类总表 |
 | [cases/compare-three.md](cases/compare-three.md) | 守望先锋 / Dota 2 / 王者荣耀三款对照 |
 | [cases/overwatch.md](cases/overwatch.md) | 守望先锋：权威状态同步 + 重预测 |

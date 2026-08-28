@@ -4,8 +4,8 @@
 不要用 TCP 做 15～60Hz 游戏循环。
 
 开发期用 `FNsFakeNet`（`NsFakeNet.h`）：内存队列，带延迟、抖动、丢包。
-`Send` 把包编成小端字节再解回。`FNsUdpNet`（`NsUdpNet.h`）把同一字节发到本机三个 UDP 端口。
-协议自测默认假网络；`TA.NetworkSync.Udp.*` 走真 socket。
+`Send` 把包编成小端字节再解回。`FNsUdpNet`（`NsUdpNet.h`）按地址表把同一字节发到对端 IP:port。
+`BindLoopback` 用于单进程自测；`Bind` + `SetPeer` 用于 Host/Client 两进程。
 
 ## 包头（所有类型共用）
 
@@ -15,7 +15,7 @@
 | --- | --- | --- | --- |
 | 0 | u32 | magic | 固定 `0x54414E53`（随意，但两端一致） |
 | 4 | u8 | type | 见下表 |
-| 5 | u8 | flags | bit0=请 ACK |
+| 5 | u8 | reserved | 编码器写 `0`。解码读掉，不解释 |
 | 6 | u16 | payload_len | 头之后的字节数 |
 | 8 | u32 | seq | 发送端递增，从 1 起 |
 | 12 | u32 | ack | 已收到的对端最大 seq |
@@ -25,35 +25,32 @@ type（`ENsMsg`）：
 
 | 值 | 名字 | 谁发 |
 | --- | --- | --- |
-| 1 | `C2S_INPUT` | 客户端 → 服务器，锁步/预测用 |
-| 2 | `S2C_FRAME` | 服务器 → 客户端，锁步输入帧 |
-| 3 | `S2C_SNAPSHOT` | 服务器 → 客户端，状态快照 |
-| 4 | `C2S_SNAP_ACK` | 客户端 → 服务器，确认快照 tick |
-| 5 | `P2P_INPUT` | 回滚对等输入 |
-| 6 | `C2S_CHECKSUM` | 锁步校验 |
-| 7 | `S2C_JOIN_SNAP` | 锁步重连快照 |
+| 1 | `C2SInput` | 客户端 → 服务器，锁步/预测用 |
+| 2 | `S2CFrame` | 服务器 → 客户端，锁步输入帧 |
+| 3 | `S2CSnapshot` | 服务器 → 客户端，状态快照 |
+| 4 | `C2SSnapAck` | 客户端 → 服务器，确认快照 tick |
+| 5 | `P2PInput` | 回滚对等输入 |
+| 6 | `C2SChecksum` | 锁步校验 |
+| 7 | `S2CJoinSnap` | 锁步重连快照 |
 
-payload 紧跟 20 字节头。大于 MTU（按 1200 字节安全值）就在应用层拆片，这里第一版禁止拆片：超了就缩小冗余。
+payload 紧跟 20 字节头。逐字段宽度、示例和长度公式见 [packet-format.md](packet-format.md)。
+单数据报 UDP 载荷 ≤ 1200 字节，避免 IP 分片把丢包放大。超长在应用层拆成多个完整 Ns 包，见 `NsSplitForMtu`。Src/Dst 不进字节。
 
-## Payload 布局
+## Payload 摘要
 
-字段一律小端。`TMap` 按 key 升序写出。
-
-| type | payload |
-| --- | --- |
-| `C2S_INPUT` | `u8 player_id`、`i8 dx`、`u8 win`、然后 `win` 次 `u32 seq + i8 dx` |
-| `S2C_FRAME` | `u32 latest`、`u8 count`、然后 `count` 次 `u32 frame + i8 dx0 + i8 dx1` |
-| `S2C_SNAPSHOT` | `u32 tick`、`u32 base_tick`、`u8 2`、每玩家 `i32 x + u32 last_seq` |
-| `C2S_SNAP_ACK` | `u8 player_id`、`u32 tick` |
-| `P2P_INPUT` | `u8 count`、然后 `count` 次 `u32 frame + i8 dx` |
-| `C2S_CHECKSUM` | `u8 player_id`、`u32 tick`、`u32 hash` |
-| `S2C_JOIN_SNAP` | `u32 exec_frame`、`i32 x0`、`i32 x1`、`u32 rng`、`u8 count`、然后输入帧 |
-
-锁步的 `C2S_INPUT` 把 `win` 写成 0。Src/Dst 不进字节，由 socket 地址决定。
+| type | payload 长度 | 内容 |
+| --- | --- | --- |
+| `C2SInput` | `3 + 5×win` | 锁步 `win=0`；状态同步最多 8 条 `(seq,dx)` |
+| `S2CFrame` | `5 + 6×count` | `latest` + 每拍两人 dx，count 通常 4 |
+| `S2CSnapshot` | 21 | `tick`、`base_tick`、两人 `x` 与 `last_seq` |
+| `C2SSnapAck` | 5 | `player_id` + 已应用 tick |
+| `P2PInput` | `1 + 5×count` | 自己的 `(frame, dx)`，count 通常 4 |
+| `C2SChecksum` | 9 | `player_id` + 拍号 + hash |
+| `S2CJoinSnap` | `17 + 6×count` | `exec_frame`、x0、x1、rng、之后的输入拍 |
 
 ## 发送端状态
 
-`FNsFakeNet` 已维护每源 `NextSeq` 和每目的 `RecvMax` / `RecvBits`。接真 socket 时沿用同一套窗。
+`FNsFakeNet` 已维护每源 `NextSeq` 和每对 `(Dst, Src)` 的 `RecvMax` / `RecvBits`。接真 socket 时沿用同一套窗。
 
 ```cpp
 int32 Seq = 1;
@@ -76,8 +73,11 @@ void OnRecvSeq(int32 S)
 ## 假网络（开发期）
 
 `FNsFakeNet::Send` 会填 `Seq` / `Ack` / `AckBits`，再 `NsEncodePacket` / `NsDecodePacket`。
-`FNsUdpNet::BindLoopback` 为 `Sv` / `C0` / `C1` 各开一个 IPv4 数据报，Src/Dst 由端口反查。
-`Drain` 按目的端去重同一 `Seq`。假网络乱序用 jitter；真 UDP 由内核排队。
+`FNsUdpNet::Bind` 只开本端数据报；`SetPeer` 登记对端主机和端口。`BindLoopback` 仍为三人各开一端口。
+`Drain` 用来源 IP:port 反查 `ENsAddr`。假网络乱序用 jitter；真 UDP 由内核排队。
+
+两份编辑器：都勾 `bUseUdp`，一份 `Host`、一份 `Client`，同一 `UdpBasePort`（如 27000），
+`UdpRemoteHost` 填对端 IPv4。局域网勾 `bUdpLan`。
 
 第一周把 `Drop` 设 0、`RttMs` 设 80，只验证逻辑。第二周 `Drop=0.05`。
 `ns.SelfTest` 三套协议分别开了 0.1 / 0.05 / 0.05 丢包。
@@ -87,3 +87,5 @@ void OnRecvSeq(int32 S)
 - 同一 `seq` 处理两次必须幂等（用 `last_seq` 集合或 1024 大小的位窗）。
 - `payload_len` 与实际长度不符则丢弃整包。
 - 未知 `type` 丢弃，不要断连接（版本滚动时有用）。
+- 序号窗口按 **(接收端, 发送端)** 记账，两个客户端发往服务器的 seq=1 互不打架。
+- 发出的每个 UDP 数据报 ≤ 1200 字节。超长必须先 `NsSplitForMtu`，禁止靠 IP 分片。

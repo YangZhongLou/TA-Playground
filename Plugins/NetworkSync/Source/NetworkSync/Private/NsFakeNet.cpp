@@ -6,16 +6,18 @@
 void FNsSeqWindow::Stamp(ENsAddr Src, FNsPacket& Packet)
 {
 	const int32 Si = static_cast<int32>(Src);
+	const int32 Di = static_cast<int32>(Packet.Dst);
 	Packet.Seq = NextSeq[Si]++;
-	Packet.Ack = RecvMax[Si];
-	Packet.AckBits = RecvBits[Si];
+	Packet.Ack = RecvMax[Si][Di];
+	Packet.AckBits = RecvBits[Si][Di];
 }
 
-bool FNsSeqWindow::Accept(ENsAddr Dst, int32 S)
+bool FNsSeqWindow::Accept(ENsAddr Dst, ENsAddr Src, int32 S)
 {
 	const int32 Di = static_cast<int32>(Dst);
-	int32& Max = RecvMax[Di];
-	uint32& Bits = RecvBits[Di];
+	const int32 Si = static_cast<int32>(Src);
+	int32& Max = RecvMax[Di][Si];
+	uint32& Bits = RecvBits[Di][Si];
 	if (S > Max)
 	{
 		const int32 Shift = S - Max;
@@ -47,30 +49,35 @@ bool FNsSeqWindow::Accept(ENsAddr Dst, int32 S)
 
 void FNsFakeNet::Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet)
 {
-	if (Rng.FRand() < Drop)
+	TArray<FNsPacket> Parts;
+	NsSplitForMtu(Packet, Parts);
+	for (const FNsPacket& Part : Parts)
 	{
-		return;
-	}
-	FNsPacket Copy = Packet;
-	Copy.Src = Src;
-	Copy.Dst = Dst;
-	Seq.Stamp(Src, Copy);
-	Copy.DeliverAt = Now + RttMs * 0.5 + Rng.FRandRange(0.f, JitterMs);
+		if (Rng.FRand() < Drop)
+		{
+			continue;
+		}
+		FNsPacket Copy = Part;
+		Copy.Src = Src;
+		Copy.Dst = Dst;
+		Seq.Stamp(Src, Copy);
+		Copy.DeliverAt = Now + RttMs * 0.5 + Rng.FRandRange(0.f, JitterMs);
 
-	TArray<uint8> Bytes;
-	if (!NsEncodePacket(Copy, Bytes))
-	{
-		return;
+		TArray<uint8> Bytes;
+		if (!NsEncodePacket(Copy, Bytes))
+		{
+			continue;
+		}
+		FNsPacket Wired;
+		if (!NsDecodePacket(Bytes, Wired))
+		{
+			continue;
+		}
+		Wired.Src = Src;
+		Wired.Dst = Dst;
+		Wired.DeliverAt = Copy.DeliverAt;
+		Queue.Add(MoveTemp(Wired));
 	}
-	FNsPacket Wired;
-	if (!NsDecodePacket(Bytes, Wired))
-	{
-		return;
-	}
-	Wired.Src = Src;
-	Wired.Dst = Dst;
-	Wired.DeliverAt = Copy.DeliverAt;
-	Queue.Add(MoveTemp(Wired));
 }
 
 void FNsFakeNet::Drain(ENsAddr Dst, TArray<FNsPacket>& Out)
@@ -80,7 +87,7 @@ void FNsFakeNet::Drain(ENsAddr Dst, TArray<FNsPacket>& Out)
 	{
 		if (Queue[i].Dst == Dst && Queue[i].DeliverAt <= Now)
 		{
-			if (Seq.Accept(Dst, Queue[i].Seq))
+			if (Seq.Accept(Dst, Queue[i].Src, Queue[i].Seq))
 			{
 				Out.Add(Queue[i]);
 			}

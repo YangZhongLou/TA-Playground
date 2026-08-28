@@ -100,8 +100,9 @@ PlayerController 若复制给所有人，别人就能看到你的私有 UI 数�
 两个客户端不要同时预测同一物体。载具换座、可拾取武器、可推箱子，必须把所有权交割写清楚：
 哪一帧谁成为 Owner，旧 Owner 何时停预测。交割期间两边都预测，就是互拉和橡皮筋。
 
-UE 的 `UCharacterMovementComponent` 把「保存未确认移动、服务器校验、平滑纠正」做成现成件。
-角色移动优先走它，而不是 `SetActorLocation` 复制或位置 RPC。
+本仓库关卡移动走 **Mover**（`UCharacterMoverComponent` + Network Prediction），不接 CMC。
+CMC 是 `ACharacter` 上那套客户端发 move、服务器立刻重放再纠错的旧模型；Mover 按共享时间线只发输入。
+不要 `SetActorLocation` 复制或位置 RPC。
 
 GAS（Gameplay Ability System）另有 Prediction Key。技能预测和移动预测是两本账，
 对不齐会出现「技能放出去但人还在墙外」。

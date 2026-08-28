@@ -380,3 +380,171 @@ bool NsDecodePacket(const TArray<uint8>& Bytes, FNsPacket& OutPacket)
 	OutPacket = MoveTemp(Decoded);
 	return true;
 }
+
+int32 NsPayloadBytes(const FNsPacket& Packet)
+{
+	switch (Packet.Type)
+	{
+	case ENsMsg::C2SInput:
+	{
+		const int32 Win = FMath::Min(Packet.SeqWindow.Num(), Packet.DxWindow.Num());
+		if (Win > 255)
+		{
+			return -1;
+		}
+		return 3 + 5 * Win;
+	}
+	case ENsMsg::S2CFrame:
+		if (Packet.Frames.Num() > 255)
+		{
+			return -1;
+		}
+		return 5 + 6 * Packet.Frames.Num();
+	case ENsMsg::S2CSnapshot:
+		return 21;
+	case ENsMsg::C2SSnapAck:
+		return 5;
+	case ENsMsg::P2PInput:
+		if (Packet.RemoteDx.Num() > 255)
+		{
+			return -1;
+		}
+		return 1 + 5 * Packet.RemoteDx.Num();
+	case ENsMsg::C2SChecksum:
+		return 9;
+	case ENsMsg::S2CJoinSnap:
+		if (Packet.Frames.Num() > 255)
+		{
+			return -1;
+		}
+		return 17 + 6 * Packet.Frames.Num();
+	default:
+		return -1;
+	}
+}
+
+int32 NsWireBytes(const FNsPacket& Packet)
+{
+	const int32 Payload = NsPayloadBytes(Packet);
+	if (Payload < 0)
+	{
+		return -1;
+	}
+	return Ns::HeaderBytes + Payload;
+}
+
+bool NsFitsMtu(const FNsPacket& Packet)
+{
+	const int32 Wire = NsWireBytes(Packet);
+	return Wire > 0 && Wire <= Ns::MaxPacketBytes;
+}
+
+int32 NsMaxEntriesPerPacket(ENsMsg Type)
+{
+	switch (Type)
+	{
+	case ENsMsg::C2SInput:
+		return Ns::MaxC2SInputEntries;
+	case ENsMsg::S2CFrame:
+		return Ns::MaxS2CFrameEntries;
+	case ENsMsg::P2PInput:
+		return Ns::MaxP2PInputEntries;
+	case ENsMsg::S2CJoinSnap:
+		return Ns::MaxJoinSnapEntries;
+	default:
+		return 0;
+	}
+}
+
+void NsSplitForMtu(const FNsPacket& Packet, TArray<FNsPacket>& Out)
+{
+	Out.Reset();
+	if (NsFitsMtu(Packet))
+	{
+		Out.Add(Packet);
+		return;
+	}
+
+	const int32 Cap = NsMaxEntriesPerPacket(Packet.Type);
+	if (Cap <= 0)
+	{
+		return;
+	}
+
+	if (Packet.Type == ENsMsg::C2SInput)
+	{
+		const int32 Win = FMath::Min(Packet.SeqWindow.Num(), Packet.DxWindow.Num());
+		for (int32 i = 0; i < Win; )
+		{
+			FNsPacket Part = Packet;
+			Part.SeqWindow.Reset();
+			Part.DxWindow.Reset();
+			const int32 Take = FMath::Min(Cap, Win - i);
+			for (int32 k = 0; k < Take; ++k)
+			{
+				Part.SeqWindow.Add(Packet.SeqWindow[i + k]);
+				Part.DxWindow.Add(Packet.DxWindow[i + k]);
+			}
+			i += Take;
+			if (!NsFitsMtu(Part))
+			{
+				Out.Reset();
+				return;
+			}
+			Out.Add(Part);
+		}
+		return;
+	}
+
+	if (Packet.Type == ENsMsg::P2PInput)
+	{
+		TArray<int32> Keys;
+		SortedIntKeys(Packet.RemoteDx, Keys);
+		for (int32 i = 0; i < Keys.Num(); )
+		{
+			FNsPacket Part = Packet;
+			Part.RemoteDx.Reset();
+			const int32 Take = FMath::Min(Cap, Keys.Num() - i);
+			for (int32 k = 0; k < Take; ++k)
+			{
+				const int32 Key = Keys[i + k];
+				if (const int8* Found = Packet.RemoteDx.Find(Key))
+				{
+					Part.RemoteDx.Add(Key, *Found);
+				}
+			}
+			i += Take;
+			if (!NsFitsMtu(Part))
+			{
+				Out.Reset();
+				return;
+			}
+			Out.Add(Part);
+		}
+		return;
+	}
+
+	TArray<int32> Keys;
+	SortedIntKeys(Packet.Frames, Keys);
+	for (int32 i = 0; i < Keys.Num(); )
+	{
+		FNsPacket Part = Packet;
+		Part.Frames.Reset();
+		const int32 Take = FMath::Min(Cap, Keys.Num() - i);
+		for (int32 k = 0; k < Take; ++k)
+		{
+			const int32 Key = Keys[i + k];
+			if (const FNsInputs* Found = Packet.Frames.Find(Key))
+			{
+				Part.Frames.Add(Key, *Found);
+			}
+		}
+		i += Take;
+		if (!NsFitsMtu(Part))
+		{
+			Out.Reset();
+			return;
+		}
+		Out.Add(Part);
+	}
+}

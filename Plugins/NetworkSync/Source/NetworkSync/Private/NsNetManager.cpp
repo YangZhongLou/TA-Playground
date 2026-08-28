@@ -3,6 +3,7 @@
 #include "NsNetManager.h"
 #include "NsReplicatedActor.h"
 #include "NsDoor.h"
+#include "NsMoverPawn.h"
 #include "NsTypes.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
@@ -27,7 +28,7 @@ void ANsNetManager::BeginPlay()
 	NetLink = &Fake;
 	if (bUseUdp)
 	{
-		if (Udp.BindLoopback(UdpBasePort))
+		if (BindUdp())
 		{
 			NetLink = &Udp;
 		}
@@ -59,6 +60,52 @@ void ANsNetManager::BeginPlay()
 INsNet& ANsNetManager::Wire()
 {
 	return *NetLink;
+}
+
+bool ANsNetManager::RunsServer() const
+{
+	return !bUseUdp || UdpRole == ENsUdpRole::LocalMesh || UdpRole == ENsUdpRole::Host;
+}
+
+bool ANsNetManager::RunsC0() const
+{
+	return !bUseUdp || UdpRole == ENsUdpRole::LocalMesh || UdpRole == ENsUdpRole::Host;
+}
+
+bool ANsNetManager::RunsC1() const
+{
+	return !bUseUdp || UdpRole == ENsUdpRole::LocalMesh || UdpRole == ENsUdpRole::Client;
+}
+
+bool ANsNetManager::BindUdp()
+{
+	Udp.Close();
+	if (UdpRole == ENsUdpRole::LocalMesh)
+	{
+		return Udp.BindLoopback(UdpBasePort);
+	}
+	const int32 Base = (UdpBasePort > 0) ? UdpBasePort : 27000;
+	const int32 RemoteBase = (UdpRemoteBasePort > 0) ? UdpRemoteBasePort : Base;
+	const TCHAR* Remote = UdpRemoteHost.IsEmpty() ? TEXT("127.0.0.1") : *UdpRemoteHost;
+	if (Scheme == ENsScheme::Rollback)
+	{
+		if (UdpRole == ENsUdpRole::Host)
+		{
+			return Udp.Bind(ENsAddr::C0, Base + 1, bUdpLan)
+				&& Udp.SetPeer(ENsAddr::C1, Remote, RemoteBase + 2);
+		}
+		return Udp.Bind(ENsAddr::C1, Base + 2, bUdpLan)
+			&& Udp.SetPeer(ENsAddr::C0, Remote, RemoteBase + 1);
+	}
+	if (UdpRole == ENsUdpRole::Host)
+	{
+		return Udp.Bind(ENsAddr::Sv, Base, bUdpLan)
+			&& Udp.Bind(ENsAddr::C0, Base + 1, bUdpLan)
+			&& Udp.SetPeer(ENsAddr::C1, Remote, RemoteBase + 2);
+	}
+	return Udp.Bind(ENsAddr::C1, Base + 2, bUdpLan)
+		&& Udp.SetPeer(ENsAddr::Sv, Remote, RemoteBase)
+		&& Udp.SetPeer(ENsAddr::C0, Remote, RemoteBase + 1);
 }
 
 void ANsNetManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -101,13 +148,35 @@ FVector ANsNetManager::GetPawnLocation(int32 PlayerId) const
 	{
 	case ENsScheme::Lockstep:
 	{
-		const FNsLockstepClient& C = (PlayerId == 0) ? LsC0 : LsC1;
-		const int32 Idx = PlayerId;
-		X = FMath::Lerp(static_cast<float>(C.PrevX[Idx]), static_cast<float>(C.World.X[Idx]), Alpha);
+		if (bUseUdp && UdpRole == ENsUdpRole::Client)
+		{
+			X = FMath::Lerp(static_cast<float>(LsC1.PrevX[PlayerId]),
+				static_cast<float>(LsC1.World.X[PlayerId]), Alpha);
+		}
+		else if (bUseUdp && UdpRole == ENsUdpRole::Host && PlayerId == 1)
+		{
+			X = static_cast<float>(LsSv.World.X[1]);
+		}
+		else
+		{
+			const FNsLockstepClient& C = (PlayerId == 0) ? LsC0 : LsC1;
+			X = FMath::Lerp(static_cast<float>(C.PrevX[PlayerId]),
+				static_cast<float>(C.World.X[PlayerId]), Alpha);
+		}
 		break;
 	}
 	case ENsScheme::StateSync:
-		if (PlayerId == 0)
+		if (bUseUdp && UdpRole == ENsUdpRole::Client)
+		{
+			X = (PlayerId == 1)
+				? static_cast<float>(SsC1.PredX)
+				: static_cast<float>(SsC1.bHasRemote ? SsC1.RemoteDrawn : 0);
+		}
+		else if (bUseUdp && UdpRole == ENsUdpRole::Host && PlayerId == 1)
+		{
+			X = static_cast<float>(SsSv.Pawns[1].X);
+		}
+		else if (PlayerId == 0)
 		{
 			X = static_cast<float>(SsC0.PredX);
 		}
@@ -117,9 +186,23 @@ FVector ANsNetManager::GetPawnLocation(int32 PlayerId) const
 		}
 		break;
 	case ENsScheme::Rollback:
-		if (!RbA.bInRollback && !RbB.bInRollback)
+		if (bUseUdp && UdpRole == ENsUdpRole::Client)
 		{
-			X = static_cast<float>((PlayerId == 0) ? RbA.World.X[0] : RbB.World.X[1]);
+			if (!RbB.bInRollback)
+			{
+				X = static_cast<float>(RbB.World.X[PlayerId]);
+			}
+		}
+		else if (!RbA.bInRollback && (UdpRole != ENsUdpRole::LocalMesh || !RbB.bInRollback))
+		{
+			if (bUseUdp && UdpRole == ENsUdpRole::Host)
+			{
+				X = static_cast<float>(RbA.World.X[PlayerId]);
+			}
+			else
+			{
+				X = static_cast<float>((PlayerId == 0) ? RbA.World.X[0] : RbB.World.X[1]);
+			}
 		}
 		break;
 	case ENsScheme::Replication:
@@ -170,27 +253,41 @@ void ANsNetManager::TickLockstep()
 	{
 		AccumMs -= Ns::LogicDtMs;
 
-		LsC0.SendInput(Wire(), ReadDx(true));
-		LsC1.SendInput(Wire(), ReadDx(false));
-
-		TArray<FNsPacket> ToSv;
-		Wire().Drain(ENsAddr::Sv, ToSv);
-		for (const FNsPacket& P : ToSv)
+		const bool bClientOnly = bUseUdp && UdpRole == ENsUdpRole::Client;
+		if (RunsC0())
 		{
-			if (P.Type == ENsMsg::C2SInput)
-			{
-				LsSv.OnInput(P.PlayerId, P.Dx);
-			}
-			else if (P.Type == ENsMsg::C2SChecksum)
-			{
-				LsSv.OnChecksum(P.Tick, P.Hash);
-			}
+			LsC0.SendInput(Wire(), ReadDx(true));
 		}
-		LsSv.Tick(Wire());
+		if (RunsC1())
+		{
+			LsC1.SendInput(Wire(), ReadDx(bClientOnly));
+		}
+
+		if (RunsServer())
+		{
+			TArray<FNsPacket> ToSv;
+			Wire().Drain(ENsAddr::Sv, ToSv);
+			for (const FNsPacket& P : ToSv)
+			{
+				if (P.Type == ENsMsg::C2SInput)
+				{
+					LsSv.OnInput(P.PlayerId, P.Dx);
+				}
+				else if (P.Type == ENsMsg::C2SChecksum)
+				{
+					LsSv.OnChecksum(P.Tick, P.Hash);
+				}
+			}
+			LsSv.Tick(Wire());
+		}
 
 		FNsLockstepClient* Clients[2] = {&LsC0, &LsC1};
 		for (FNsLockstepClient* C : Clients)
 		{
+			if ((C == &LsC0 && !RunsC0()) || (C == &LsC1 && !RunsC1()))
+			{
+				continue;
+			}
 			TArray<FNsPacket> ToC;
 			Wire().Drain(C->Addr, ToC);
 			for (const FNsPacket& P : ToC)
@@ -218,30 +315,44 @@ void ANsNetManager::TickStateSync()
 	{
 		AccumMs -= Ns::SimDtMs;
 
-		SsC0.LocalTick(Wire(), ReadDx(true));
-		SsC1.LocalTick(Wire(), ReadDx(false));
-
-		TArray<FNsPacket> ToSv;
-		Wire().Drain(ENsAddr::Sv, ToSv);
-		for (const FNsPacket& P : ToSv)
+		const bool bClientOnly = bUseUdp && UdpRole == ENsUdpRole::Client;
+		if (RunsC0())
 		{
-			if (P.Type == ENsMsg::C2SInput)
+			SsC0.LocalTick(Wire(), ReadDx(true));
+		}
+		if (RunsC1())
+		{
+			SsC1.LocalTick(Wire(), ReadDx(bClientOnly));
+		}
+
+		if (RunsServer())
+		{
+			TArray<FNsPacket> ToSv;
+			Wire().Drain(ENsAddr::Sv, ToSv);
+			for (const FNsPacket& P : ToSv)
 			{
-				for (int32 i = 0; i < P.SeqWindow.Num(); ++i)
+				if (P.Type == ENsMsg::C2SInput)
 				{
-					SsSv.OnInput(P.PlayerId, P.SeqWindow[i], P.DxWindow[i]);
+					for (int32 i = 0; i < P.SeqWindow.Num(); ++i)
+					{
+						SsSv.OnInput(P.PlayerId, P.SeqWindow[i], P.DxWindow[i]);
+					}
+				}
+				else if (P.Type == ENsMsg::C2SSnapAck)
+				{
+					SsSv.OnAck(P.PlayerId, P.Tick);
 				}
 			}
-			else if (P.Type == ENsMsg::C2SSnapAck)
-			{
-				SsSv.OnAck(P.PlayerId, P.Tick);
-			}
+			SsSv.Sim(Wire());
 		}
-		SsSv.Sim(Wire());
 
 		FNsStateSyncClient* Clients[2] = {&SsC0, &SsC1};
 		for (FNsStateSyncClient* C : Clients)
 		{
+			if ((C == &SsC0 && !RunsC0()) || (C == &SsC1 && !RunsC1()))
+			{
+				continue;
+			}
 			TArray<FNsPacket> ToC;
 			Wire().Drain(C->Addr, ToC);
 			for (const FNsPacket& P : ToC)
@@ -265,25 +376,38 @@ void ANsNetManager::TickRollback()
 	{
 		AccumMs -= Ns::RollbackDtMs;
 
-		RbA.Advance(Wire(), ReadDx(true));
-		RbB.Advance(Wire(), ReadDx(false));
-
-		TArray<FNsPacket> ToA;
-		Wire().Drain(ENsAddr::C0, ToA);
-		for (const FNsPacket& P : ToA)
+		const bool bClientOnly = bUseUdp && UdpRole == ENsUdpRole::Client;
+		if (RunsC0())
 		{
-			if (P.Type == ENsMsg::P2PInput)
+			RbA.Advance(Wire(), ReadDx(true));
+		}
+		if (RunsC1())
+		{
+			RbB.Advance(Wire(), ReadDx(bClientOnly));
+		}
+
+		if (RunsC0())
+		{
+			TArray<FNsPacket> ToA;
+			Wire().Drain(ENsAddr::C0, ToA);
+			for (const FNsPacket& P : ToA)
 			{
-				RbA.OnRemote(P.RemoteDx);
+				if (P.Type == ENsMsg::P2PInput)
+				{
+					RbA.OnRemote(P.RemoteDx);
+				}
 			}
 		}
-		TArray<FNsPacket> ToB;
-		Wire().Drain(ENsAddr::C1, ToB);
-		for (const FNsPacket& P : ToB)
+		if (RunsC1())
 		{
-			if (P.Type == ENsMsg::P2PInput)
+			TArray<FNsPacket> ToB;
+			Wire().Drain(ENsAddr::C1, ToB);
+			for (const FNsPacket& P : ToB)
 			{
-				RbB.OnRemote(P.RemoteDx);
+				if (P.Type == ENsMsg::P2PInput)
+				{
+					RbB.OnRemote(P.RemoteDx);
+				}
 			}
 		}
 
@@ -321,4 +445,6 @@ void ANsNetManager::SpawnReplicatedDemo()
 		FRotator::ZeroRotator,
 		Params);
 	DoorActor = Door;
+	const FVector MoverLoc = GetActorLocation() + FVector(80.f, 0.f, 120.f);
+	ANsMoverPawn::SpawnAndPossess(World, MoverLoc);
 }
