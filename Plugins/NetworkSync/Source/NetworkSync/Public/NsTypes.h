@@ -20,6 +20,7 @@ namespace Ns
 	constexpr int32 InputWindow = 8;
 	constexpr int32 InterpDelayMs = 100;
 	constexpr int32 HistoryTicks = 64;
+	constexpr int32 MaxInboxAhead = HistoryTicks;
 	constexpr int32 InputDelay = 1;
 	constexpr int32 LagCompCapMs = 220;
 	constexpr int32 JoinSnapEvery = 75;

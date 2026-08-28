@@ -38,7 +38,7 @@ struct FNsWorld
 
 `Step` 里禁止：float、字典遍历、系统时间、未初始化内存。
 单机验收：两个 `FNsWorld` 同种子，喂同一串输入，1000 拍后 `Checksum` 必须相等。
-测试名：`TA.NetworkSync.World.Determinism`。
+测试名：`NetworkSync.World.Determinism`。
 
 ## 包 payload
 
@@ -156,7 +156,9 @@ void Logic(INsNet& Net)
 ## 校验
 
 服务器若跑了同一份 `World`：每 `ChecksumEvery` 拍比对客户端上报。
-`FNsLockstepServer::OnChecksum` 对不上则 `bDesync`。`ns.SelfTest` 要求 `ChecksumOk > 0` 且不分叉。
+`FNsLockstepServer::OnChecksum` 对不上则 `bDesync`。
+迟到的校验：若该拍已从 `Checksums` 删掉，或该拍本来就不是校验拍，则**忽略**，不记 `bDesync`。
+`ns.SelfTest` 要求 `ChecksumOk > 0` 且不分叉。
 
 ## 重连
 
@@ -180,7 +182,7 @@ void Logic(INsNet& Net)
 3. `RedundantFrames=3`，Drop=0.1，ExecFrame 仍能追上，不卡死超过 1 秒。
 4. 表现插值 + 定期 checksum 上报。已做。
 5. 重连：服务器每 `JoinSnapEvery=75` 拍存 `SnapWorld`；`SendJoin` 发 `S2CJoinSnap`。
-   客户端 `ApplyJoin` 后从 `ExecFrame` 快进。已做。自测：`TA.NetworkSync.Lockstep.Join`。
+   客户端 `ApplyJoin` 后从 `ExecFrame` 快进。已做。自测：`NetworkSync.Lockstep.Join`。
 
 ## 验收命令
 
@@ -190,6 +192,6 @@ void Logic(INsNet& Net)
 ns.SelfTest
 ```
 
-日志必须含 `lockstep frames=`。自动化：`TA.NetworkSync.Lockstep.Drop10`、`.Join`、`.LateJoin`。
+日志必须含 `lockstep frames=`。自动化：`NetworkSync.Lockstep.Drop10`、`.Join`、`.LateJoin`。
 自测已开 `Drop=0.1` 与冗余。Join 自测 `Drop=0`，避免加入包本身被丢掉。
 LateJoin：丢掉 C1 早期包后靠周期 Join 追上；伪造 payload `player_id` 不得改错槽。

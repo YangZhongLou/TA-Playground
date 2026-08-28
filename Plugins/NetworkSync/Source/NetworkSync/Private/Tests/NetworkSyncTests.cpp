@@ -11,7 +11,7 @@
 #include "NsReplicatedActor.h"
 #include "UObject/Package.h"
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsWorld_Determinism, "TA.NetworkSync.World.Determinism",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsWorld_Determinism, "NetworkSync.World.Determinism",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsWorld_Determinism::RunTest(const FString& Parameters)
@@ -29,7 +29,7 @@ bool FNsWorld_Determinism::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_Lockstep, "TA.NetworkSync.Lockstep.Drop10",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_Lockstep, "NetworkSync.Lockstep.Drop10",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsSelfTest_Lockstep::RunTest(const FString& Parameters)
@@ -39,7 +39,7 @@ bool FNsSelfTest_Lockstep::RunTest(const FString& Parameters)
 	return R.bOk;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_LockstepJoin, "TA.NetworkSync.Lockstep.Join",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_LockstepJoin, "NetworkSync.Lockstep.Join",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsSelfTest_LockstepJoin::RunTest(const FString& Parameters)
@@ -49,7 +49,7 @@ bool FNsSelfTest_LockstepJoin::RunTest(const FString& Parameters)
 	return R.bOk;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_StateSync, "TA.NetworkSync.StateSync.Drop05",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_StateSync, "NetworkSync.StateSync.Drop05",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsSelfTest_StateSync::RunTest(const FString& Parameters)
@@ -59,7 +59,7 @@ bool FNsSelfTest_StateSync::RunTest(const FString& Parameters)
 	return R.bOk;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_Rollback, "TA.NetworkSync.Rollback.Drop05",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_Rollback, "NetworkSync.Rollback.Drop05",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsSelfTest_Rollback::RunTest(const FString& Parameters)
@@ -69,7 +69,7 @@ bool FNsSelfTest_Rollback::RunTest(const FString& Parameters)
 	return R.bOk;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsFakeNet_SeqIncreases, "TA.NetworkSync.FakeNet.Seq",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsFakeNet_SeqIncreases, "NetworkSync.FakeNet.Seq",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsFakeNet_SeqIncreases::RunTest(const FString& Parameters)
@@ -94,7 +94,7 @@ bool FNsFakeNet_SeqIncreases::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsCodec_RoundTrip, "TA.NetworkSync.Codec.RoundTrip",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsCodec_RoundTrip, "NetworkSync.Codec.RoundTrip",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsCodec_RoundTrip::RunTest(const FString& Parameters)
@@ -142,7 +142,7 @@ bool FNsCodec_RoundTrip::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsCodec_RejectsBad, "TA.NetworkSync.Codec.RejectsBad",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsCodec_RejectsBad, "NetworkSync.Codec.RejectsBad",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsCodec_RejectsBad::RunTest(const FString& Parameters)
@@ -171,7 +171,7 @@ bool FNsCodec_RejectsBad::RunTest(const FString& Parameters)
 	return true;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_UdpLoopback, "TA.NetworkSync.Udp.Loopback",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_UdpLoopback, "NetworkSync.Udp.Loopback",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsSelfTest_UdpLoopback::RunTest(const FString& Parameters)
@@ -181,7 +181,7 @@ bool FNsSelfTest_UdpLoopback::RunTest(const FString& Parameters)
 	return R.bOk;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_UdpLockstep, "TA.NetworkSync.Udp.Lockstep",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_UdpLockstep, "NetworkSync.Udp.Lockstep",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsSelfTest_UdpLockstep::RunTest(const FString& Parameters)
@@ -191,7 +191,7 @@ bool FNsSelfTest_UdpLockstep::RunTest(const FString& Parameters)
 	return R.bOk;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_UdpPeers, "TA.NetworkSync.Udp.Peers",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_UdpPeers, "NetworkSync.Udp.Peers",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsSelfTest_UdpPeers::RunTest(const FString& Parameters)
@@ -201,7 +201,7 @@ bool FNsSelfTest_UdpPeers::RunTest(const FString& Parameters)
 	return R.bOk;
 }
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_UdpSplit, "TA.NetworkSync.Udp.Split",
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_UdpSplit, "NetworkSync.Udp.Split",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FNsSelfTest_UdpSplit::RunTest(const FString& Parameters)
@@ -222,38 +222,41 @@ static constexpr EAutomationTestFlags NsAutoFlags = EAutomationTestFlags::Editor
 		return R.bOk; \
 	}
 
-NS_WRAP(FNsWorld_Contract, "TA.NetworkSync.World.Contract", NsRunWorldContractSelfTest, NsAutoFlags)
-NS_WRAP(FNsCodec_Contract, "TA.NetworkSync.Codec.Contract", NsRunCodecContractSelfTest, NsAutoFlags)
-NS_WRAP(FNsCodec_Mtu, "TA.NetworkSync.Codec.Mtu", NsRunMtuSelfTest, NsAutoFlags)
-NS_WRAP(FNsSeqWindow_Dup, "TA.NetworkSync.FakeNet.SeqWindow", NsRunSeqWindowSelfTest, NsAutoFlags)
-NS_WRAP(FNsFakeNet_DropDelay, "TA.NetworkSync.FakeNet.DropDelay", NsRunFakeNetContractSelfTest, NsAutoFlags)
-NS_WRAP(FNsFakeNet_DropRate, "TA.NetworkSync.FakeNet.DropRate", NsRunFakeNetDropRateSelfTest, NsAutoFlags)
-NS_WRAP(FNsLockstep_Clean, "TA.NetworkSync.Lockstep.Clean", NsRunLockstepCleanSelfTest, NsAutoFlags)
-NS_WRAP(FNsLockstep_HighDrop, "TA.NetworkSync.Lockstep.HighDrop", NsRunLockstepHighDropSelfTest, NsAutoFlags)
-NS_WRAP(FNsLockstep_LateJoin, "TA.NetworkSync.Lockstep.LateJoin", NsRunLockstepLateJoinSelfTest, NsAutoFlags)
-NS_WRAP(FNsLockstep_NoSkip, "TA.NetworkSync.Lockstep.NoSkip", NsRunLockstepNoSkipSelfTest, NsAutoFlags)
-NS_WRAP(FNsLockstep_JoinFrag, "TA.NetworkSync.Lockstep.JoinFrag", NsRunLockstepJoinFragSelfTest, NsAutoFlags)
-NS_WRAP(FNsLockstep_Desync, "TA.NetworkSync.Lockstep.Desync", NsRunLockstepDesyncSelfTest, NsAutoFlags)
-NS_WRAP(FNsStateSync_Clean, "TA.NetworkSync.StateSync.Clean", NsRunStateSyncCleanSelfTest, NsAutoFlags)
-NS_WRAP(FNsStateSync_Rewind, "TA.NetworkSync.StateSync.Rewind", NsRunStateSyncRewindSelfTest, NsAutoFlags)
-NS_WRAP(FNsStateSync_Nack, "TA.NetworkSync.StateSync.Nack", NsRunStateSyncNackSelfTest, NsAutoFlags)
-NS_WRAP(FNsStateSync_InboxHole, "TA.NetworkSync.StateSync.InboxHole", NsRunStateSyncInboxHoleSelfTest, NsAutoFlags)
-NS_WRAP(FNsStateSync_OldSnap, "TA.NetworkSync.StateSync.OldSnap", NsRunStateSyncOldSnapSelfTest, NsAutoFlags)
-NS_WRAP(FNsStateSync_Spoof, "TA.NetworkSync.StateSync.Spoof", NsRunStateSyncSpoofSelfTest, NsAutoFlags)
-NS_WRAP(FNsRollback_Clean, "TA.NetworkSync.Rollback.Clean", NsRunRollbackCleanSelfTest, NsAutoFlags)
-NS_WRAP(FNsRollback_Wait, "TA.NetworkSync.Rollback.Wait", NsRunRollbackWaitSelfTest, NsAutoFlags)
-NS_WRAP(FNsRollback_Hole, "TA.NetworkSync.Rollback.Hole", NsRunRollbackHoleSelfTest, NsAutoFlags)
-NS_WRAP(FNsRollback_MidHole, "TA.NetworkSync.Rollback.MidHole", NsRunRollbackMidHoleSelfTest, NsAutoFlags)
-NS_WRAP(FNsUdp_Burst, "TA.NetworkSync.Udp.Burst", NsRunUdpBurstSelfTest, NsAutoFlags)
+NS_WRAP(FNsWorld_Contract, "NetworkSync.World.Contract", NsRunWorldContractSelfTest, NsAutoFlags)
+NS_WRAP(FNsCodec_Contract, "NetworkSync.Codec.Contract", NsRunCodecContractSelfTest, NsAutoFlags)
+NS_WRAP(FNsCodec_Mtu, "NetworkSync.Codec.Mtu", NsRunMtuSelfTest, NsAutoFlags)
+NS_WRAP(FNsSeqWindow_Dup, "NetworkSync.FakeNet.SeqWindow", NsRunSeqWindowSelfTest, NsAutoFlags)
+NS_WRAP(FNsFakeNet_DropDelay, "NetworkSync.FakeNet.DropDelay", NsRunFakeNetContractSelfTest, NsAutoFlags)
+NS_WRAP(FNsFakeNet_DropRate, "NetworkSync.FakeNet.DropRate", NsRunFakeNetDropRateSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_Clean, "NetworkSync.Lockstep.Clean", NsRunLockstepCleanSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_HighDrop, "NetworkSync.Lockstep.HighDrop", NsRunLockstepHighDropSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_LateJoin, "NetworkSync.Lockstep.LateJoin", NsRunLockstepLateJoinSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_NoSkip, "NetworkSync.Lockstep.NoSkip", NsRunLockstepNoSkipSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_JoinFrag, "NetworkSync.Lockstep.JoinFrag", NsRunLockstepJoinFragSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_Desync, "NetworkSync.Lockstep.Desync", NsRunLockstepDesyncSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_Clean, "NetworkSync.StateSync.Clean", NsRunStateSyncCleanSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_Rewind, "NetworkSync.StateSync.Rewind", NsRunStateSyncRewindSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_Nack, "NetworkSync.StateSync.Nack", NsRunStateSyncNackSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_InboxHole, "NetworkSync.StateSync.InboxHole", NsRunStateSyncInboxHoleSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_InboxCap, "NetworkSync.StateSync.InboxCap", NsRunStateSyncInboxCapSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_OldSnap, "NetworkSync.StateSync.OldSnap", NsRunStateSyncOldSnapSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_Spoof, "NetworkSync.StateSync.Spoof", NsRunStateSyncSpoofSelfTest, NsAutoFlags)
+NS_WRAP(FNsRollback_Clean, "NetworkSync.Rollback.Clean", NsRunRollbackCleanSelfTest, NsAutoFlags)
+NS_WRAP(FNsRollback_Wait, "NetworkSync.Rollback.Wait", NsRunRollbackWaitSelfTest, NsAutoFlags)
+NS_WRAP(FNsRollback_Hole, "NetworkSync.Rollback.Hole", NsRunRollbackHoleSelfTest, NsAutoFlags)
+NS_WRAP(FNsRollback_MidHole, "NetworkSync.Rollback.MidHole", NsRunRollbackMidHoleSelfTest, NsAutoFlags)
+NS_WRAP(FNsUdp_Burst, "NetworkSync.Udp.Burst", NsRunUdpBurstSelfTest, NsAutoFlags)
+NS_WRAP(FNsUdp_StateSync, "NetworkSync.Udp.StateSync", NsRunUdpStateSyncSelfTest, NsAutoFlags)
+NS_WRAP(FNsUdp_Rollback, "NetworkSync.Udp.Rollback", NsRunUdpRollbackSelfTest, NsAutoFlags)
 
-NS_WRAP(FNsWorld_Stress, "TA.NetworkSync.Stress.World", NsRunWorldStressSelfTest, NsAutoFlags)
-NS_WRAP(FNsCodec_Stress, "TA.NetworkSync.Stress.Codec", NsRunCodecStressSelfTest, NsAutoFlags)
-NS_WRAP(FNsFakeNet_Stress, "TA.NetworkSync.Stress.FakeNet", NsRunFakeNetStressSelfTest, NsAutoFlags)
-NS_WRAP(FNsLockstep_Stress, "TA.NetworkSync.Stress.Lockstep", NsRunLockstepStressSelfTest, NsAutoFlags)
-NS_WRAP(FNsStateSync_Stress, "TA.NetworkSync.Stress.StateSync", NsRunStateSyncStressSelfTest, NsAutoFlags)
-NS_WRAP(FNsRollback_Stress, "TA.NetworkSync.Stress.Rollback", NsRunRollbackStressSelfTest, NsAutoFlags)
+NS_WRAP(FNsWorld_Stress, "NetworkSync.Stress.World", NsRunWorldStressSelfTest, NsAutoFlags)
+NS_WRAP(FNsCodec_Stress, "NetworkSync.Stress.Codec", NsRunCodecStressSelfTest, NsAutoFlags)
+NS_WRAP(FNsFakeNet_Stress, "NetworkSync.Stress.FakeNet", NsRunFakeNetStressSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_Stress, "NetworkSync.Stress.Lockstep", NsRunLockstepStressSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_Stress, "NetworkSync.Stress.StateSync", NsRunStateSyncStressSelfTest, NsAutoFlags)
+NS_WRAP(FNsRollback_Stress, "NetworkSync.Stress.Rollback", NsRunRollbackStressSelfTest, NsAutoFlags)
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsActors_Cdo, "TA.NetworkSync.Actors.Cdo", NsAutoFlags)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsActors_Cdo, "NetworkSync.Actors.Cdo", NsAutoFlags)
 
 bool FNsActors_Cdo::RunTest(const FString& Parameters)
 {

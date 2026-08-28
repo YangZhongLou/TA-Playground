@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "NsTypes.h"
-#include "NsFakeNet.h"
+#include "NsNet.h"
 
 class NETWORKSYNC_API FNsRollbackPeer
 {

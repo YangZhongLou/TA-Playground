@@ -10,6 +10,8 @@
 constexpr int32 SimDtMs = 16;      // 1000/60 的近似
 constexpr int32 SendEvery = 3;     // 60/3 = 20Hz 快照
 constexpr int32 StateSpeed = 4;    // 每模拟拍
+constexpr int32 HistoryTicks = 64;
+constexpr int32 MaxInboxAhead = HistoryTicks;
 constexpr int32 InputWindow = 8;   // 未确认输入重传窗口
 ```
 
@@ -42,7 +44,7 @@ class FNsStateSyncServer
 ### `C2SInput`
 
 standalone `dx` 字节写 0。真输入在窗口：最多 8 个未确认 `(seq, dx)`。
-服务器把 `seq > LastSeq` 的条目放进 Inbox；模拟时只应用 `LastSeq+1`，禁止跳号 latest-wins。
+服务器把 `seq > LastSeq` 且 `seq <= LastSeq + MaxInboxAhead` 的条目放进 Inbox；更远的序号直接丢弃，防止空洞把 Inbox 撑爆。模拟时只应用 `LastSeq+1`，禁止跳号 latest-wins。
 
 ### `S2CSnapshot`
 
@@ -85,7 +87,7 @@ void Sim(INsNet& Net)
 }
 ```
 
-`OnInput`：`seq <= LastSeq` 直接忽略。同号再来则覆盖 Inbox。模拟只走 `LastSeq+1`，因此跳号不会被「最新一条」吞掉。
+`OnInput`：`seq <= LastSeq` 直接忽略。`seq > LastSeq + MaxInboxAhead`（`MaxInboxAhead = HistoryTicks`）也忽略。同号再来则覆盖 Inbox。模拟只走 `LastSeq+1`，因此跳号不会被「最新一条」吞掉。
 缺 `LastSeq+1` 时该玩家本拍不加位移，直到缺号到达。
 
 ## 客户端：别人怎么画
@@ -150,5 +152,5 @@ void OnSnap(...)
 ns.SelfTest
 ```
 
-日志必须含 `state-sync tick=`。自动化：`TA.NetworkSync.StateSync.Drop05`、`.Clean`、`.Rewind`、`.Nack`。
+日志必须含 `state-sync tick=`。自动化：`NetworkSync.StateSync.Drop05`、`.Clean`、`.Rewind`、`.Nack`。
 含义：远端插值有值、本地预测在快照到达后与服务器 x 和解一致；丢掉增量基后 nack 0 能恢复全量。

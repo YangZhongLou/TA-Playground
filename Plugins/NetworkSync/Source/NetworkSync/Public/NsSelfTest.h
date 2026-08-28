@@ -42,6 +42,7 @@ NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncCleanSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncRewindSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncNackSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncInboxHoleSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncInboxCapSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncOldSnapSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncSpoofSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncStressSelfTest();
@@ -55,6 +56,8 @@ NETWORKSYNC_API FNsSelfTestResult NsRunRollbackStressSelfTest();
 
 NETWORKSYNC_API FNsSelfTestResult NsRunUdpLoopbackSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunUdpLockstepSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunUdpStateSyncSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunUdpRollbackSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunUdpPeersSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunUdpSplitLockstepSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunUdpBurstSelfTest();

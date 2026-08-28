@@ -57,11 +57,13 @@
 表现     ANsNetManager（debug 球 / lerp）
          ANsReplicatedActor  ANsDoor
            | 只读 FNsWorld，或走引擎复制
+泵       NsPump*（Drain + 分发消息，Manager 与自测共用）
 协议     FNsLockstep*   FNsStateSync*   FNsRollbackPeer
            | 固定毫秒步，整数状态
 传输     INsNet
+           FNsSeqWindow
            FNsFakeNet   延迟 / 抖动 / 丢包 / 序号
-           FNsUdpNet    本机或分进程数据报
+           FNsUdpNet    本机或分进程数据报（IPv4）
          UNetDriver     仅 Replication
 ```
 
@@ -79,9 +81,12 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | 模块 | 写什么 | 不写什么 |
 | --- | --- | --- |
 | `FNsWorld` | `X[2]`、`Rng` | 网络、渲染 |
+| `NsPacket` / `ENsMsg` | 报文字段 | 投递 |
 | `NsCodec` | 小端字节 ↔ `FNsPacket` | 玩法语义 |
 | `FNsSeqWindow` | 每对 `(Dst,Src)` 的 seq / 去重窗 | 消息 type |
+| `INsNet` | `Send` / `Drain` / `Now` | 玩法 |
 | `FNsFakeNet` / `FNsUdpNet` | 投递、延迟、拆 MTU | 玩家身份解释 |
+| `NsPump*` | 从 `INsNet` 取出包并喂协议 | 编解码 |
 | `FNsLockstep*` | `Latest`、`Hist`、`Buf`、`ExecFrame` | 快照增量 |
 | `FNsStateSync*` | Inbox、权威 x、PredX、插值缓冲 | 输入磁带回滚 |
 | `FNsRollbackPeer` | `Local` / `RealRemote` / `Saves` | 服务器世界 |
@@ -101,6 +106,7 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | `SimDtMs` / `RollbackDtMs` | 16 | 状态同步 / 回滚 ~60Hz |
 | `RedundantFrames` | 3 | 锁步下行与回滚 P2P 冗余窗 |
 | `MaxPacketBytes` | 1200 | 单数据报上限（含 20 字节头） |
+| `MaxInboxAhead` | 64 | 状态同步 Inbox 相对 `LastSeq` 的上限 |
 | `PacketMagic` | `0x54414E53` | 头 magic，小端 `53 4E 41 54` |
 
 `FNsWorld::Step`：每槽 `X += clamp(dx,-1,1) * Speed`，然后
@@ -158,7 +164,7 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | 身份 | `OnInput(NsPlayerIdFromAddr(Src), dx)` |
 | 加入 | 每 75 拍存 `SnapWorld`；每 4 拍 `SendJoin` 两次 |
 | ApplyJoin | 仅当 `Tick > ExecFrame` 时跳世界；只丢掉 `< Tick` 的 `Buf`，保留未来帧 |
-| 校验 | 每 15 拍 `C2SChecksum`；对不上则 `bDesync` |
+| 校验 | 每 15 拍 `C2SChecksum`；对不上则 `bDesync`；缺记录则忽略（迟到） |
 
 中途加入会掺状态快照，不再是纯输入锁步。
 代码：`NsLockstep.*`。规格：[impl/lockstep.md](impl/lockstep.md)。
@@ -170,6 +176,7 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | 不变量 | 含义 |
 | --- | --- |
 | 有序消费 | Inbox 只应用 `LastSeq+1`，禁止 latest-wins 跳号 |
+| Inbox 上限 | `seq > LastSeq + MaxInboxAhead` 丢弃 |
 | 增量基 | `BaseTick` 必须是客户端 ACK 过的 tick |
 | 缺基 | 连发 `C2SSnapAck Tick=0`；服务器把 `LastAck` 置 0，下一份全量 |
 | 旧快照 | `P.Tick <= LastAckedTick` 则忽略 |
@@ -212,6 +219,8 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 ## 运行时
 
 `ANsNetManager` 每套协议用自己的固定步累加器，不跟渲染帧 1:1 步进。
+运行中改 `Scheme` 会 `InitProtocols()` 清零锁步/状态/回滚对象与累加器，再按新方案跑。
+切到 Replication 会再 spawn 演示 Actor。
 
 | Scheme | 玩家 0 | 玩家 1 | 画面 |
 | --- | --- | --- | --- |
@@ -225,21 +234,21 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 1. `ns.SelfTest` — 假网络三套协议、编解码、UDP、压力长跑；日志含 `NetworkSync self-test OK`。
 2. `ns.DropRate [0-1] [count]` — 标定假网络丢包率。
 3. `ns.SpawnDemo` — 生成 Manager；改 `Scheme`，可勾选 `bUseUdp` 与 `UdpRole`。
-4. Session Frontend：`TA.NetworkSync.*`。
+4. Session Frontend：`NetworkSync.*`。
 
 引擎：UE 5.8。`TA-Playground.uproject` 的 `EngineAssociation=5.8`。
 
 ## 测试金字塔
 
-自动化过滤器 `TA.NetworkSync`。`ns.SelfTest` 跑同一批自测函数。RNG 种子为 1。
+自动化过滤器 `NetworkSync`。`ns.SelfTest` 跑同一批自测函数。RNG 种子为 1。
 
 | 层 | 前缀 | 覆盖 |
 | --- | --- | --- |
 | 内核 | `World.*` | 确定性、clamp、Reset |
 | 编解码 | `Codec.*` | 往返（含 Frame/Checksum/JoinSnap）、拒收、MTU 拆包（S2C/Join/C2S/P2P） |
-| 传输 | `FakeNet.*`、`Udp.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程、突发 |
+| 传输 | `FakeNet.*`、`Udp.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程、突发、UDP 锁步/状态同步/回滚 |
 | 锁步 | `Lockstep.*` | 干净、Drop=0.1/0.15、Join、LateJoin、空洞不跳帧、Join 分片不擦未来 Buf、分叉 |
-| 状态同步 | `StateSync.*` | 和解、倒带、nack 全量、Inbox 空洞、旧快照忽略、Src 身份 |
+| 状态同步 | `StateSync.*` | 和解、倒带、nack 全量、Inbox 空洞、Inbox 上限、旧快照忽略、Src 身份 |
 | 回滚 | `Rollback.*` | 干净、WAIT、Confirmed 不跳空洞（前缀/中间） |
 | 复制 | `Actors.Cdo` | Door / Counter RPC |
 | 压力 | `Stress.*` | 长跑限时（World / Codec / FakeNet / 三套协议） |
@@ -276,9 +285,12 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | 类 | 文件 |
 | --- | --- |
 | `FNsWorld` | `Public/NsTypes.h` |
+| `FNsPacket` / `ENsMsg` | `Public/NsPacket.h` |
+| `INsNet` / `FNsSeqWindow` | `Public/NsNet.h` |
 | `NsEncodePacket` | `Public/NsCodec.h` |
-| `INsNet` / `FNsFakeNet` | `Public/NsFakeNet.h` |
+| `FNsFakeNet` | `Public/NsFakeNet.h` |
 | `FNsUdpNet` | `Public/NsUdpNet.h` |
+| `NsPump*` | `Public/NsPump.h` |
 | `FNsLockstepServer` / `Client` | `Public/NsLockstep.h` |
 | `FNsStateSyncServer` / `Client` | `Public/NsStateSync.h` |
 | `FNsRollbackPeer` | `Public/NsRollback.h` |

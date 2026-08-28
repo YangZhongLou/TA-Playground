@@ -5,6 +5,7 @@
 
 开发期用 `FNsFakeNet`（`NsFakeNet.h`）：内存队列，带延迟、抖动、丢包。
 `Send` 把包编成小端字节再解回。`FNsUdpNet`（`NsUdpNet.h`）按地址表把同一字节发到对端 IP:port。
+`Bind` 使用 IPv4 数据报（`FNetworkProtocolTypes::IPv4`）。载荷上限仍按 IPv6 最小 MTU 留余量，见 [packet-format.md](packet-format.md)。
 `BindLoopback` 用于单进程自测；`Bind` + `SetPeer` 用于 Host/Client 两进程。
 
 ## 包头（所有类型共用）
@@ -50,7 +51,7 @@ payload 紧跟 20 字节头。逐字段宽度、示例和长度公式见 [packet
 
 ## 发送端状态
 
-`FNsFakeNet` 已维护每源 `NextSeq` 和每对 `(Dst, Src)` 的 `RecvMax` / `RecvBits`。接真 socket 时沿用同一套窗。
+`FNsFakeNet` 已维护每源 `NextSeq` 和每对 `(Dst, Src)` 的 `RecvMax` / `RecvBits`（`FNsSeqWindow`，`NsNet.h`）。接真 socket 时沿用同一套窗。
 
 ```cpp
 int32 Seq = 1;
@@ -94,4 +95,4 @@ void OnRecvSeq(int32 S)
 - 发出的每个 UDP 数据报 ≤ 1200 字节。超长必须先 `NsSplitForMtu`，禁止靠 IP 分片。
 - 玩法层用 `Src` 认玩家，不信任 payload `player_id`。
 - `NsMeasureFakeNetDrop` / `ns.DropRate`：配置的 `Drop` 与实测丢包率在 0/1 时精确，中间档偏差 ≤ 0.03（2000 包）。
-  自动化：`TA.NetworkSync.FakeNet.DropRate`。
+  自动化：`NetworkSync.FakeNet.DropRate`。

@@ -8,6 +8,7 @@
 #include "NsStateSync.h"
 #include "NsRollback.h"
 #include "NsCodec.h"
+#include "NsPump.h"
 #include "HAL/PlatformProcess.h"
 #include "HAL/PlatformTime.h"
 #include "Containers/Set.h"
@@ -48,140 +49,6 @@ static bool RoundTripPacket(const FNsPacket& Src, FNsPacket& Out)
 	return NsDecodePacket(Bytes, Out);
 }
 
-static void DrainMaybeWait(INsNet& Net, ENsAddr Dst, TArray<FNsPacket>& Out, bool bWait)
-{
-	Out.Reset();
-	const int32 Tries = bWait ? 30 : 1;
-	for (int32 i = 0; i < Tries; ++i)
-	{
-		TArray<FNsPacket> Batch;
-		Net.Drain(Dst, Batch);
-		Out.Append(Batch);
-		if (Out.Num() > 0)
-		{
-			for (int32 j = 0; j < 8; ++j)
-			{
-				Net.Drain(Dst, Batch);
-				if (Batch.Num() == 0)
-				{
-					break;
-				}
-				Out.Append(Batch);
-			}
-			return;
-		}
-		if (bWait)
-		{
-			FPlatformProcess::Sleep(0.001f);
-		}
-	}
-}
-
-static void PumpLockstepServer(INsNet& Net, FNsLockstepServer& Sv, bool bWait = false)
-{
-	TArray<FNsPacket> ToSv;
-	DrainMaybeWait(Net, ENsAddr::Sv, ToSv, bWait);
-	for (const FNsPacket& P : ToSv)
-	{
-		if (P.Type == ENsMsg::C2SInput)
-		{
-			const int32 Id = NsPlayerIdFromAddr(P.Src);
-			if (Id >= 0)
-			{
-				Sv.OnInput(Id, P.Dx);
-			}
-		}
-		else if (P.Type == ENsMsg::C2SChecksum)
-		{
-			Sv.OnChecksum(P.Tick, P.Hash);
-		}
-	}
-	Sv.Tick(Net);
-}
-
-static void PumpLockstepClient(INsNet& Net, FNsLockstepClient& C, bool bWait = false)
-{
-	TArray<FNsPacket> ToC;
-	DrainMaybeWait(Net, C.Addr, ToC, bWait);
-	for (const FNsPacket& P : ToC)
-	{
-		if (P.Type == ENsMsg::S2CJoinSnap)
-		{
-			C.ApplyJoin(P);
-		}
-		else if (P.Type == ENsMsg::S2CFrame)
-		{
-			C.OnS2C(P.Frames);
-		}
-	}
-	C.Logic(Net);
-}
-
-static void PumpStateServer(INsNet& Net, FNsStateSyncServer& Sv)
-{
-	TArray<FNsPacket> ToSv;
-	Net.Drain(ENsAddr::Sv, ToSv);
-	for (const FNsPacket& P : ToSv)
-	{
-		if (P.Type == ENsMsg::C2SInput)
-		{
-			const int32 Id = NsPlayerIdFromAddr(P.Src);
-			if (Id >= 0)
-			{
-				for (int32 i = 0; i < P.SeqWindow.Num(); ++i)
-				{
-					Sv.OnInput(Id, P.SeqWindow[i], P.DxWindow[i]);
-				}
-			}
-		}
-		else if (P.Type == ENsMsg::C2SSnapAck)
-		{
-			const int32 Id = NsPlayerIdFromAddr(P.Src);
-			if (Id >= 0)
-			{
-				Sv.OnAck(Id, P.Tick);
-			}
-		}
-	}
-	Sv.Sim(Net);
-}
-
-static void PumpStateClient(INsNet& Net, FNsStateSyncClient& C)
-{
-	TArray<FNsPacket> ToC;
-	Net.Drain(C.Addr, ToC);
-	for (const FNsPacket& P : ToC)
-	{
-		if (P.Type == ENsMsg::S2CSnapshot)
-		{
-			C.OnSnap(Net, P);
-		}
-	}
-	C.UpdateRemoteDraw(Net.Now);
-}
-
-static void PumpRollback(INsNet& Net, FNsRollbackPeer& A, FNsRollbackPeer& B)
-{
-	TArray<FNsPacket> ToA;
-	Net.Drain(ENsAddr::C0, ToA);
-	for (const FNsPacket& P : ToA)
-	{
-		if (P.Type == ENsMsg::P2PInput)
-		{
-			A.OnRemote(P.RemoteDx);
-		}
-	}
-	TArray<FNsPacket> ToB;
-	Net.Drain(ENsAddr::C1, ToB);
-	for (const FNsPacket& P : ToB)
-	{
-		if (P.Type == ENsMsg::P2PInput)
-		{
-			B.OnRemote(P.RemoteDx);
-		}
-	}
-}
-
 FNsSelfTestResult NsRunLockstepSelfTest()
 {
 	FNsFakeNet Net;
@@ -207,17 +74,17 @@ FNsSelfTestResult NsRunLockstepSelfTest()
 		const int8* Pair = Script[Step % 4];
 		C0.SendInput(Net, Pair[0]);
 		C1.SendInput(Net, Pair[1]);
-		PumpLockstepServer(Net, Sv);
-		PumpLockstepClient(Net, C0);
-		PumpLockstepClient(Net, C1);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C0);
+		NsPumpLockstepClient(Net, C1);
 		Net.Advance(1.0);
 	}
 
 	for (int32 i = 0; i < 200; ++i)
 	{
-		PumpLockstepServer(Net, Sv);
-		PumpLockstepClient(Net, C0);
-		PumpLockstepClient(Net, C1);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C0);
+		NsPumpLockstepClient(Net, C1);
 		Net.Advance(Ns::LogicDtMs);
 	}
 
@@ -269,9 +136,9 @@ FNsSelfTestResult NsRunLockstepJoinSelfTest()
 		const int8* Pair = Script[Step % 4];
 		C0.SendInput(Net, Pair[0]);
 		C1.SendInput(Net, Pair[1]);
-		PumpLockstepServer(Net, Sv);
-		PumpLockstepClient(Net, C0);
-		PumpLockstepClient(Net, C1);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C0);
+		NsPumpLockstepClient(Net, C1);
 		Net.Advance(1.0);
 	}
 
@@ -292,9 +159,9 @@ FNsSelfTestResult NsRunLockstepJoinSelfTest()
 		const int8* Pair = Script[i % 4];
 		C0.SendInput(Net, Pair[0]);
 		C1.SendInput(Net, Pair[1]);
-		PumpLockstepServer(Net, Sv);
-		PumpLockstepClient(Net, C0);
-		PumpLockstepClient(Net, C1);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C0);
+		NsPumpLockstepClient(Net, C1);
 		Net.Advance(Ns::LogicDtMs);
 	}
 
@@ -336,8 +203,8 @@ FNsSelfTestResult NsRunLockstepLateJoinSelfTest()
 	for (int32 i = 0; i < 24; ++i)
 	{
 		C0.SendInput(Net, 1);
-		PumpLockstepServer(Net, Sv);
-		PumpLockstepClient(Net, C0);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C0);
 		TArray<FNsPacket> Dropped;
 		Net.Drain(ENsAddr::C1, Dropped);
 		Net.Advance(Ns::LogicDtMs);
@@ -354,7 +221,7 @@ FNsSelfTestResult NsRunLockstepLateJoinSelfTest()
 	Net.Send(ENsAddr::C1, ENsAddr::Sv, Spoof);
 	Net.Advance(1.0);
 	const int8 Before0 = Sv.Latest.Dx[0];
-	PumpLockstepServer(Net, Sv);
+	NsPumpLockstepServer(Net, Sv);
 	if (Sv.Latest.Dx[0] != Before0 || Sv.Latest.Dx[1] != -1)
 	{
 		return Fail(TEXT("lockstep-late: PlayerId spoof applied"));
@@ -364,9 +231,9 @@ FNsSelfTestResult NsRunLockstepLateJoinSelfTest()
 	{
 		C0.SendInput(Net, 1);
 		C1.SendInput(Net, 0);
-		PumpLockstepServer(Net, Sv);
-		PumpLockstepClient(Net, C0);
-		PumpLockstepClient(Net, C1);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C0);
+		NsPumpLockstepClient(Net, C1);
 		Net.Advance(Ns::LogicDtMs);
 	}
 	if (C1.ExecFrame <= 8)
@@ -494,17 +361,17 @@ FNsSelfTestResult NsRunStateSyncSelfTest()
 	{
 		C0.LocalTick(Net, Script[S % 6]);
 		C1.LocalTick(Net, Script[(S + 3) % 6]);
-		PumpStateServer(Net, Sv);
-		PumpStateClient(Net, C0);
-		PumpStateClient(Net, C1);
+		NsPumpStateServer(Net, Sv);
+		NsPumpStateClient(Net, C0);
+		NsPumpStateClient(Net, C1);
 		Net.Advance(Ns::SimDtMs);
 	}
 
 	for (int32 i = 0; i < 40; ++i)
 	{
-		PumpStateServer(Net, Sv);
-		PumpStateClient(Net, C0);
-		PumpStateClient(Net, C1);
+		NsPumpStateServer(Net, Sv);
+		NsPumpStateClient(Net, C0);
+		NsPumpStateClient(Net, C1);
 		Net.Advance(Ns::SimDtMs);
 	}
 
@@ -557,7 +424,8 @@ FNsSelfTestResult NsRunRollbackSelfTest()
 	{
 		A.Advance(Net, S0[S % 8]);
 		B.Advance(Net, S1[S % 8]);
-		PumpRollback(Net, A, B);
+		NsPumpRollbackPeer(Net, A);
+		NsPumpRollbackPeer(Net, B);
 		Net.Advance(Ns::RollbackDtMs);
 	}
 
@@ -565,7 +433,8 @@ FNsSelfTestResult NsRunRollbackSelfTest()
 	{
 		A.Advance(Net, 0);
 		B.Advance(Net, 0);
-		PumpRollback(Net, A, B);
+		NsPumpRollbackPeer(Net, A);
+		NsPumpRollbackPeer(Net, B);
 		Net.Advance(Ns::RollbackDtMs);
 	}
 
@@ -599,7 +468,7 @@ FNsSelfTestResult NsRunUdpLoopbackSelfTest()
 	Pkt.Dx = -1;
 	Net.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
 	TArray<FNsPacket> Got;
-	DrainMaybeWait(Net, ENsAddr::Sv, Got, true);
+	NsDrain(Net, ENsAddr::Sv, Got, true);
 	if (Got.Num() != 1)
 	{
 		return Fail(TEXT("udp: no datagram"));
@@ -639,16 +508,16 @@ FNsSelfTestResult NsRunUdpLockstepSelfTest()
 		const int8* Pair = Script[S % 4];
 		C0.SendInput(Net, Pair[0]);
 		C1.SendInput(Net, Pair[1]);
-		PumpLockstepServer(Net, Sv, true);
-		PumpLockstepClient(Net, C0, true);
-		PumpLockstepClient(Net, C1, true);
+		NsPumpLockstepServer(Net, Sv, true);
+		NsPumpLockstepClient(Net, C0, true);
+		NsPumpLockstepClient(Net, C1, true);
 		Net.Advance(Ns::LogicDtMs);
 	}
 	for (int32 i = 0; i < 20; ++i)
 	{
-		PumpLockstepServer(Net, Sv, true);
-		PumpLockstepClient(Net, C0, true);
-		PumpLockstepClient(Net, C1, true);
+		NsPumpLockstepServer(Net, Sv, true);
+		NsPumpLockstepClient(Net, C0, true);
+		NsPumpLockstepClient(Net, C1, true);
 		Net.Advance(Ns::LogicDtMs);
 	}
 	if (C0.ExecFrame <= 10)
@@ -667,6 +536,103 @@ FNsSelfTestResult NsRunUdpLockstepSelfTest()
 	Ok.bOk = true;
 	Ok.Detail = FString::Printf(TEXT("udp-lockstep frames=%d x=(%d,%d)"),
 		C0.ExecFrame, C0.World.X[0], C0.World.X[1]);
+	return Ok;
+}
+
+FNsSelfTestResult NsRunUdpStateSyncSelfTest()
+{
+	FNsUdpNet Net;
+	if (!Net.BindLoopback())
+	{
+		return Fail(TEXT("udp-state: bind failed"));
+	}
+	FNsStateSyncServer Sv;
+	FNsStateSyncClient C0;
+	C0.PlayerId = 0;
+	C0.Addr = ENsAddr::C0;
+	FNsStateSyncClient C1;
+	C1.PlayerId = 1;
+	C1.Addr = ENsAddr::C1;
+	const int8 Script[] = {1, 1, 0, -1, -1, 0};
+	for (int32 S = 0; S < 80; ++S)
+	{
+		C0.LocalTick(Net, Script[S % 6]);
+		C1.LocalTick(Net, Script[(S + 3) % 6]);
+		NsPumpStateServer(Net, Sv, true);
+		NsPumpStateClient(Net, C0, true);
+		NsPumpStateClient(Net, C1, true);
+		Net.Advance(Ns::SimDtMs);
+	}
+	for (int32 i = 0; i < 20; ++i)
+	{
+		NsPumpStateServer(Net, Sv, true);
+		NsPumpStateClient(Net, C0, true);
+		NsPumpStateClient(Net, C1, true);
+		Net.Advance(Ns::SimDtMs);
+	}
+	if (C0.PredX != Sv.Pawns[0].X || C1.PredX != Sv.Pawns[1].X)
+	{
+		return FailStr(FString::Printf(TEXT("udp-state: pred=(%d,%d) sv=(%d,%d)"),
+			C0.PredX, C1.PredX, Sv.Pawns[0].X, Sv.Pawns[1].X));
+	}
+	if (Sv.LastAck[0] <= 0 || Sv.LastAck[1] <= 0)
+	{
+		return Fail(TEXT("udp-state: missing snap ack"));
+	}
+	FNsSelfTestResult Ok;
+	Ok.bOk = true;
+	Ok.Detail = FString::Printf(TEXT("udp-state tick=%d ack=%d x=(%d,%d)"),
+		Sv.Tick, Sv.LastAck[0], Sv.Pawns[0].X, Sv.Pawns[1].X);
+	return Ok;
+}
+
+FNsSelfTestResult NsRunUdpRollbackSelfTest()
+{
+	FNsUdpNet Net;
+	if (!Net.BindLoopback())
+	{
+		return Fail(TEXT("udp-rollback: bind failed"));
+	}
+	FNsRollbackPeer A;
+	A.PlayerId = 0;
+	A.Addr = ENsAddr::C0;
+	A.Other = ENsAddr::C1;
+	FNsRollbackPeer B;
+	B.PlayerId = 1;
+	B.Addr = ENsAddr::C1;
+	B.Other = ENsAddr::C0;
+	const int8 S0[] = {1, 1, 1, 0, -1, -1, 0, 1};
+	const int8 S1[] = {0, -1, -1, 1, 1, 0, 0, -1};
+	for (int32 S = 0; S < 80; ++S)
+	{
+		A.Advance(Net, S0[S % 8]);
+		B.Advance(Net, S1[S % 8]);
+		NsPumpRollbackPeer(Net, A, true);
+		NsPumpRollbackPeer(Net, B, true);
+		Net.Advance(Ns::RollbackDtMs);
+	}
+	for (int32 i = 0; i < 40; ++i)
+	{
+		A.Advance(Net, 0);
+		B.Advance(Net, 0);
+		NsPumpRollbackPeer(Net, A, true);
+		NsPumpRollbackPeer(Net, B, true);
+		Net.Advance(Ns::RollbackDtMs);
+	}
+	if (!A.World.Equals(B.World))
+	{
+		return Fail(TEXT("udp-rollback: peers diverged"));
+	}
+	if (A.bWaiting || B.bWaiting)
+	{
+		return FailStr(FString::Printf(
+			TEXT("udp-rollback: still waiting a(frame=%d conf=%d) b(frame=%d conf=%d)"),
+			A.Frame, A.Confirmed, B.Frame, B.Confirmed));
+	}
+	FNsSelfTestResult Ok;
+	Ok.bOk = true;
+	Ok.Detail = FString::Printf(TEXT("udp-rollback frame=%d x=(%d,%d)"),
+		A.Frame, A.World.X[0], A.World.X[1]);
 	return Ok;
 }
 
@@ -689,7 +655,7 @@ FNsSelfTestResult NsRunUdpPeersSelfTest()
 	Pkt.Dx = 1;
 	A.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
 	TArray<FNsPacket> Got;
-	DrainMaybeWait(B, ENsAddr::Sv, Got, true);
+	NsDrain(B, ENsAddr::Sv, Got, true);
 	if (Got.Num() != 1 || Got[0].Dx != 1 || Got[0].Src != ENsAddr::C0)
 	{
 		return Fail(TEXT("udp-peers: datagram mismatch"));
@@ -729,17 +695,17 @@ FNsSelfTestResult NsRunUdpSplitLockstepSelfTest()
 		const int8* Pair = Script[S % 4];
 		C0.SendInput(Host, Pair[0]);
 		C1.SendInput(Client, Pair[1]);
-		PumpLockstepServer(Host, Sv, true);
-		PumpLockstepClient(Host, C0, true);
-		PumpLockstepClient(Client, C1, true);
+		NsPumpLockstepServer(Host, Sv, true);
+		NsPumpLockstepClient(Host, C0, true);
+		NsPumpLockstepClient(Client, C1, true);
 		Host.Advance(Ns::LogicDtMs);
 		Client.Advance(Ns::LogicDtMs);
 	}
 	for (int32 i = 0; i < 20; ++i)
 	{
-		PumpLockstepServer(Host, Sv, true);
-		PumpLockstepClient(Host, C0, true);
-		PumpLockstepClient(Client, C1, true);
+		NsPumpLockstepServer(Host, Sv, true);
+		NsPumpLockstepClient(Host, C0, true);
+		NsPumpLockstepClient(Client, C1, true);
 		Host.Advance(Ns::LogicDtMs);
 		Client.Advance(Ns::LogicDtMs);
 	}
@@ -783,24 +749,24 @@ static FNsSelfTestResult RunFakeLockstep(float RttMs, float Drop, float JitterMs
 		const int8* Pair = Script[Step % 4];
 		C0.SendInput(Net, Pair[0]);
 		C1.SendInput(Net, Pair[1]);
-		PumpLockstepServer(Net, Sv);
-		PumpLockstepClient(Net, C0);
-		PumpLockstepClient(Net, C1);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C0);
+		NsPumpLockstepClient(Net, C1);
 		Net.Advance(1.0);
 	}
 
 	for (int32 i = 0; i < Cooldown; ++i)
 	{
-		PumpLockstepServer(Net, Sv);
-		PumpLockstepClient(Net, C0);
-		PumpLockstepClient(Net, C1);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C0);
+		NsPumpLockstepClient(Net, C1);
 		Net.Advance(Ns::LogicDtMs);
 	}
 	for (int32 i = 0; i < 48 && C0.ExecFrame != C1.ExecFrame; ++i)
 	{
-		PumpLockstepServer(Net, Sv);
-		PumpLockstepClient(Net, C0);
-		PumpLockstepClient(Net, C1);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C0);
+		NsPumpLockstepClient(Net, C1);
 		Net.Advance(Ns::LogicDtMs);
 	}
 
@@ -862,16 +828,16 @@ static FNsSelfTestResult RunFakeStateSync(float RttMs, float Drop, float JitterM
 	{
 		C0.LocalTick(Net, Script[S % 6]);
 		C1.LocalTick(Net, Script[(S + 3) % 6]);
-		PumpStateServer(Net, Sv);
-		PumpStateClient(Net, C0);
-		PumpStateClient(Net, C1);
+		NsPumpStateServer(Net, Sv);
+		NsPumpStateClient(Net, C0);
+		NsPumpStateClient(Net, C1);
 		Net.Advance(Ns::SimDtMs);
 	}
 	for (int32 i = 0; i < Cooldown; ++i)
 	{
-		PumpStateServer(Net, Sv);
-		PumpStateClient(Net, C0);
-		PumpStateClient(Net, C1);
+		NsPumpStateServer(Net, Sv);
+		NsPumpStateClient(Net, C0);
+		NsPumpStateClient(Net, C1);
 		Net.Advance(Ns::SimDtMs);
 	}
 
@@ -916,14 +882,16 @@ static FNsSelfTestResult RunFakeRollback(float RttMs, float Drop, float JitterMs
 	{
 		A.Advance(Net, S0[S % 8]);
 		B.Advance(Net, S1[S % 8]);
-		PumpRollback(Net, A, B);
+		NsPumpRollbackPeer(Net, A);
+		NsPumpRollbackPeer(Net, B);
 		Net.Advance(Ns::RollbackDtMs);
 	}
 	for (int32 i = 0; i < Cooldown; ++i)
 	{
 		A.Advance(Net, 0);
 		B.Advance(Net, 0);
-		PumpRollback(Net, A, B);
+		NsPumpRollbackPeer(Net, A);
+		NsPumpRollbackPeer(Net, B);
 		Net.Advance(Ns::RollbackDtMs);
 	}
 
@@ -1413,8 +1381,8 @@ FNsSelfTestResult NsRunStateSyncNackSelfTest()
 	for (int32 S = 0; S < 24; ++S)
 	{
 		C0.LocalTick(Net, 1);
-		PumpStateServer(Net, Sv);
-		PumpStateClient(Net, C0);
+		NsPumpStateServer(Net, Sv);
+		NsPumpStateClient(Net, C0);
 		Net.Advance(Ns::SimDtMs);
 	}
 	if (Sv.LastAck[0] <= 0)
@@ -1427,8 +1395,8 @@ FNsSelfTestResult NsRunStateSyncNackSelfTest()
 	for (int32 i = 0; i < 12; ++i)
 	{
 		C0.LocalTick(Net, 1);
-		PumpStateServer(Net, Sv);
-		PumpStateClient(Net, C0);
+		NsPumpStateServer(Net, Sv);
+		NsPumpStateClient(Net, C0);
 		Net.Advance(Ns::SimDtMs);
 	}
 	if (C0.Store0.Num() == 0)
@@ -1462,6 +1430,31 @@ FNsSelfTestResult NsRunStateSyncInboxHoleSelfTest()
 			Sv.Pawns[0].LastSeq, Sv.Pawns[0].X));
 	}
 	return OkStr(TEXT("state-inbox hole then catch"));
+}
+
+FNsSelfTestResult NsRunStateSyncInboxCapSelfTest()
+{
+	FNsFakeNet Net;
+	FNsStateSyncServer Sv;
+	Sv.OnInput(0, Ns::MaxInboxAhead + 1, 1);
+	Sv.Sim(Net);
+	if (Sv.Pawns[0].LastSeq != 0 || Sv.Pawns[0].X != 0 || Sv.Inbox[0].Num() != 0)
+	{
+		return FailStr(FString::Printf(TEXT("state-inbox-cap: far seq stored seq=%d n=%d"),
+			Sv.Pawns[0].LastSeq, Sv.Inbox[0].Num()));
+	}
+	Sv.OnInput(0, Ns::MaxInboxAhead, 1);
+	if (Sv.Inbox[0].Num() != 1)
+	{
+		return Fail(TEXT("state-inbox-cap: LastSeq+MaxInboxAhead should store"));
+	}
+	Sv.OnInput(0, 1, 1);
+	Sv.Sim(Net);
+	if (Sv.Pawns[0].LastSeq != 1)
+	{
+		return FailStr(FString::Printf(TEXT("state-inbox-cap: in-window seq lost last=%d"), Sv.Pawns[0].LastSeq));
+	}
+	return OkStr(TEXT("state-inbox cap rejects far seq"));
 }
 
 FNsSelfTestResult NsRunStateSyncOldSnapSelfTest()
@@ -1510,7 +1503,7 @@ FNsSelfTestResult NsRunStateSyncSpoofSelfTest()
 	Spoof.DxWindow.Add(1);
 	Net.Send(ENsAddr::C1, ENsAddr::Sv, Spoof);
 	Net.Advance(1.0);
-	PumpStateServer(Net, Sv);
+	NsPumpStateServer(Net, Sv);
 	if (Sv.Pawns[0].LastSeq != 0 || Sv.Pawns[0].X != 0)
 	{
 		return Fail(TEXT("state-spoof: payload PlayerId moved pawn 0"));
@@ -2003,6 +1996,7 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunStateSyncRewindSelfTest,
 		&NsRunStateSyncNackSelfTest,
 		&NsRunStateSyncInboxHoleSelfTest,
+		&NsRunStateSyncInboxCapSelfTest,
 		&NsRunStateSyncOldSnapSelfTest,
 		&NsRunStateSyncSpoofSelfTest,
 		&NsRunRollbackSelfTest,
@@ -2012,6 +2006,8 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunRollbackMidHoleSelfTest,
 		&NsRunUdpLoopbackSelfTest,
 		&NsRunUdpLockstepSelfTest,
+		&NsRunUdpStateSyncSelfTest,
+		&NsRunUdpRollbackSelfTest,
 		&NsRunUdpPeersSelfTest,
 		&NsRunUdpSplitLockstepSelfTest,
 		&NsRunUdpBurstSelfTest,

@@ -75,6 +75,7 @@ private:
 	void TickRollback();
 	void DrawPawns() const;
 	void SpawnReplicatedDemo();
+	void InitProtocols();
 	INsNet& Wire();
 	bool RunsServer() const;
 	bool RunsC0() const;
@@ -95,4 +96,5 @@ private:
 	TWeakObjectPtr<AActor> RepActor;
 	TWeakObjectPtr<AActor> DoorActor;
 	double AccumMs = 0.0;
+	ENsScheme AppliedScheme = ENsScheme::Lockstep;
 };

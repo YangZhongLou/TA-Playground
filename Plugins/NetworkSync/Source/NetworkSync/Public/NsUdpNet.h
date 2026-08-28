@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "NsFakeNet.h"
+#include "NsNet.h"
 
 class FSocket;
 class FInternetAddr;

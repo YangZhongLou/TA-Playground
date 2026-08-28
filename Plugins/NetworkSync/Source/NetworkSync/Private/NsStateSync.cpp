@@ -12,6 +12,10 @@ void FNsStateSyncServer::OnInput(int32 PlayerId, int32 Seq, int8 Dx)
 	{
 		return;
 	}
+	if (Seq > Pawns[PlayerId].LastSeq + Ns::MaxInboxAhead)
+	{
+		return;
+	}
 	Inbox[PlayerId].Add(Seq, NsClampDx(Dx));
 }
 

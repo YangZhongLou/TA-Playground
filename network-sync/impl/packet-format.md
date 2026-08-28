@@ -38,6 +38,7 @@ IP 若把一个 UDP 拆成多片，丢任意一片则整报作废。单片丢包
 
 因此每个 Ns 包必须单独成为一个 IP 包。UDP 载荷上限 `MaxPacketBytes=1200`：
 IPv6 最小 MTU 1280，IPv6+UDP 头 48，1200+48=1248 < 1280。IPv4 以太网 1200+28=1228 < 1500。
+`FNsUdpNet` 只开 IPv4 socket；1200 仍按 IPv6 下限留余量，避免以后换 dual-stack 时踩分片。
 
 超长内容在应用层拆成多个完整 Ns 包（各带 20 字节头），互不依赖。丢其中一个不影响其它。禁止依赖内核 IP 分片。
 
@@ -95,7 +96,7 @@ payload 长度：`3 + 5×win`。锁步整包 23 字节。状态同步 `win≤8` 
 ```
 
 状态同步窗口由近到远最多 8 个尚未被快照 `last_processed_seq` 确认的 `(seq, dx)`。
-服务器把 `seq > LastSeq` 写入 Inbox，模拟时按 `LastSeq+1` 顺序应用。
+服务器把 `LastSeq < seq <= LastSeq + MaxInboxAhead` 写入 Inbox，模拟时按 `LastSeq+1` 顺序应用。
 
 ## 2 `S2CFrame`
 
@@ -240,6 +241,6 @@ UE 复制（`Counter`、`bOpen`）走 `UNetDriver`，不是本格式。
 | 项 | 位置 |
 | --- | --- |
 | 常量 `HeaderBytes` / `PacketMagic` / `MaxPacketBytes` | `NsTypes.h` |
-| `ENsMsg` | `NsFakeNet.h` |
+| `ENsMsg` / `FNsPacket` | `NsPacket.h` |
 | 读写、长度、`NsSplitForMtu` | `NsCodec.cpp` |
-| 填 seq/ack、去重 | `FNsSeqWindow` |
+| 填 seq/ack、去重 | `FNsSeqWindow`（`NsNet.h`） |

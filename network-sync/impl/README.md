@@ -15,7 +15,7 @@
 | 格斗 | [rollback.md](rollback.md) | `NsRollback.h` / `NsRollback.cpp` |
 | UE 联机原型 | [replication_ue.md](replication_ue.md) | `NsReplicatedActor` / `NsDoor` |
 
-公共传输：[transport.md](transport.md)、[packet-format.md](packet-format.md)、`NsFakeNet.h`、`NsCodec.h`。
+公共传输：[transport.md](transport.md)、[packet-format.md](packet-format.md)、`NsPacket.h`、`NsNet.h`、`NsFakeNet.h`、`NsCodec.h`、`NsPump.h`。
 共享世界：`NsTypes.h`（`FNsWorld::Step` / `Checksum`）。
 
 ## 硬规则（所有方案共用）
@@ -41,9 +41,9 @@
 
 1. 控制台 `ns.SelfTest` — 单元 + 三套协议 + UDP + 压力长跑，日志 `NetworkSync self-test OK`。
 2. `ns.DropRate [0-1] [count]` — 测量假网络实际丢包率（默认 0.1 / 2000 包）。
-3. 自动化：`TA.NetworkSync.*`（Session Frontend）。
+3. 自动化：`NetworkSync.*`（Session Frontend）。
 4. PIE 控制台 `ns.SpawnDemo` — 生成 `ANsNetManager`。A/D 控玩家 0，方向键控玩家 1。
-5. 在 Actor 上改 `Scheme`：Lockstep / StateSync / Rollback / Replication。
+5. 在 Actor 上改 `Scheme`：Lockstep / StateSync / Rollback / Replication（热切会重置协议状态）。
 6. 勾选 `bUseUdp`：`LocalMesh` 本机三端口；`Host`/`Client` 填 `UdpRemoteHost` 做两进程。
 7. Replication：Listen Server 下按 `E` 增加 `Counter`，按 `F` 开关门。
 

@@ -107,5 +107,5 @@ void OnRemote(const TMap<int32, int8>& Packed)
 ns.SelfTest
 ```
 
-日志必须含 `rollback frame=`。自动化：`TA.NetworkSync.Rollback.Drop05`、`.Clean`、`.Wait`、`.Hole`。
+日志必须含 `rollback frame=`。自动化：`NetworkSync.Rollback.Drop05`、`.Clean`、`.Wait`、`.Hole`。
 含义：故意错猜若干拍后，两端最终 `X[0],X[1],Rng` 一致；缺前缀帧时 Confirmed 不跳空洞。
