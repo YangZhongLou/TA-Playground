@@ -6,7 +6,7 @@
 整数复制：`ANsReplicatedActor`，按 `E` 增加 `Counter`。
 门：`ANsDoor`，按 `F` 切换 `bOpen`。Scheme 选 Replication 或 `ns.SpawnDemo` 后改 Scheme。
 
-下面仍给出门 / 角色移动的最小集。先 Listen Server 开两份编辑器。
+下面仍给出门的最小集。先 Listen Server 开两份编辑器。
 
 ## 项目开关
 
@@ -100,19 +100,7 @@ void AMyDoor::ServerSetOpen_Implementation(bool bNewOpen)
 
 主机自己改 `bOpen` 时 **OnRep 不会跑**。主机要在 `ServerSetOpen_Implementation` 里同时改表现。
 
-## 第三步：角色移动
-
-不要自己复制 `SetActorLocation`，也不要接 `ACharacter` + CMC。
-本插件的 `ANsMoverPawn` 是 `APawn` + `UCharacterMoverComponent`。
-`SetReplicatingMovement(false)`，`ProduceInput` 采样 WASD / 空格。
-插件 `Build.cs` 不依赖 `NetworkPrediction` 模块（UHT 在 5.8 会崩）。
-控制台 `ns.SpawnMover`，或 Replication 方案在 authority 上一并生成。
-
-建议项目设置：若启用 Network Prediction 插件，用 Fixed tick，Simulated Proxy LOD 用 Interpolated。
-
-验收：Possess 后 WASD 能动；Listen+Client 下观察端能看见 Mover 姿态（引擎 Mover 同步，非本插件字节）。
-
-## 第四步：谁复制给谁
+## 第三步：谁复制给谁
 
 | 对象 | 设置 |
 | --- | --- |
@@ -120,7 +108,7 @@ void AMyDoor::ServerSetOpen_Implementation(bool bNewOpen)
 | GameState | `bReplicates=true`，比分放这里 |
 | PlayerState | 默认复制，分数、名字 |
 | PlayerController | 仅 Owner，输入和 UI |
-| Pawn | `bReplicates=true`；移动走 Mover，不要 `SetReplicateMovement(true)` |
+| Pawn | 本插件不提供；玩法项目自选引擎移动 |
 
 `bOnlyRelevantToOwner=true` 用在私有库存。误开在 Pawn 上，别人会看不见你。
 
@@ -129,8 +117,7 @@ void AMyDoor::ServerSetOpen_Implementation(bool bNewOpen)
 1. Listen + Client 进同一张图，打 `log LogNet Verbose`。
 2. 复制 `int32` + Server RPC。
 3. 门的 bool。
-4. Mover pawn 移动（authority spawn，不 SetOwner）。
-5. 再谈休眠、频率、Replication Graph。人数 < 8 不要上 Graph。
+4. 再谈休眠、频率、Replication Graph。人数 < 8 不要上 Graph。
 
 ## 验收清单
 

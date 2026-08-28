@@ -66,20 +66,18 @@ Iris 与旧复制在项目设置里切换。新项目值得默认评估 Iris；�
 
 ## 移动与物理
 
-本仓库关卡原型走 **Mover**（UE 5.8 `Engine/Plugins/Experimental/Mover`），不接 CMC。
-`UCharacterMoverComponent` 挂在 `APawn` 上；`SetReplicatingMovement(false)`，由 Network Prediction 按共享时间线预测、缓冲输入、广播状态再决定是否 rollback+resim。
+引擎提供两条角色移动路径：**Mover**（Experimental，`UCharacterMoverComponent` + Network Prediction）和旧的 **CMC**（`ACharacter` 客户端 RPC 移步）。
+NetworkSync 插件不接入其中任何一条。角色怎么动是玩法项目的事。
 不要每帧复制 `SetActorLocation`。
 
-CMC 是 `ACharacter` 上那套客户端 RPC 移步、服务器立刻重放再纠错的旧模型。Mover 仍标 Experimental，API 会变；本仓库接受这一点，换移动系统时只动 Mover 侧。
-
-Chaos 物理联网仍在演进。载具、可破坏物不要假设“开了复制就会确定重演”。需要物理回滚时用 ChaosMover liaison，等于另一条后端。
+Chaos 物理联网仍在演进。载具、可破坏物不要假设“开了复制就会确定重演”。
 
 Gameplay Ability System（GAS）有自己的 Prediction Key。技能预测与移动预测是两套账，对不齐会出现“技能放出去但人还在墙外”。
 
 ## 本仓库若做联网原型
 
 1. 用 Dedicated Server 或 Listen Server 跑一份权威。
-2. 角色移动走 Mover（`UCharacterMoverComponent`），不要 CMC，不要手写位置 RPC。
+2. 角色移动不在 NetworkSync 里做；玩法项目自选引擎移动系统，不要手写位置 RPC。
 3. 状态用 `Replicated` 属性；一次性事件用 RPC。
 4. 先把 Owner / Role / Relevancy 做对，再谈压缩。
 5. 人数或地图撑大之后，再开 Replication Graph 或 Iris。

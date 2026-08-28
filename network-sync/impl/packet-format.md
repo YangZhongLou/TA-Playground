@@ -233,7 +233,7 @@ payload 长度：`17 + 6×count`。服务器每 75 拍存一份 `SnapWorld`，`S
 
 位移由本地 `X += dx * Speed` 算出（Speed 为 8 / 4 / 3）。lerp、胶囊、相机不进包。
 
-UE 复制（`Counter`、`bOpen`、Mover 的 `FCharacterDefaultInputs`）走 `UNetDriver`，不是本格式。
+UE 复制（`Counter`、`bOpen`）走 `UNetDriver`，不是本格式。
 
 ## 代码
 

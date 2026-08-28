@@ -3,7 +3,6 @@
 #include "NetworkSyncModule.h"
 #include "NsSelfTest.h"
 #include "NsNetManager.h"
-#include "NsMoverPawn.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
@@ -51,28 +50,6 @@ static void NsSpawnDemo()
 	}
 }
 
-static void NsSpawnMover()
-{
-	UWorld* World = NsActiveWorld();
-	if (!World)
-	{
-		UE_LOG(LogNetworkSyncModule, Warning, TEXT("ns.SpawnMover: no world"));
-		return;
-	}
-	FVector Loc = FVector(0.f, 0.f, 120.f);
-	if (const APlayerController* PC = World->GetFirstPlayerController())
-	{
-		if (const APawn* Existing = PC->GetPawn())
-		{
-			Loc = Existing->GetActorLocation() + FVector(0.f, 120.f, 40.f);
-		}
-	}
-	if (ANsMoverPawn::SpawnAndPossess(World, Loc))
-	{
-		UE_LOG(LogNetworkSyncModule, Display, TEXT("Spawned ANsMoverPawn. WASD/arrows move, Space jump."));
-	}
-}
-
 static void NsDropRateCmd(const TArray<FString>& Args)
 {
 	float Drop = 0.1f;
@@ -105,13 +82,8 @@ void FNetworkSyncModule::StartupModule()
 		TEXT("Spawn ANsNetManager (A/D vs arrow keys, debug spheres)"),
 		FConsoleCommandDelegate::CreateStatic(&NsSpawnDemo),
 		ECVF_Default);
-	SpawnMoverCmd = IConsoleManager::Get().RegisterConsoleCommand(
-		TEXT("ns.SpawnMover"),
-		TEXT("Spawn ANsMoverPawn and possess (WASD + Space, Mover not CMC)"),
-		FConsoleCommandDelegate::CreateStatic(&NsSpawnMover),
-		ECVF_Default);
 	UE_LOG(LogNetworkSyncModule, Log,
-		TEXT("NetworkSync started. Console: ns.SelfTest, ns.DropRate, ns.SpawnDemo, ns.SpawnMover"));
+		TEXT("NetworkSync started. Console: ns.SelfTest, ns.DropRate, ns.SpawnDemo"));
 }
 
 void FNetworkSyncModule::ShutdownModule()
@@ -130,11 +102,6 @@ void FNetworkSyncModule::ShutdownModule()
 	{
 		IConsoleManager::Get().UnregisterConsoleObject(SpawnCmd);
 		SpawnCmd = nullptr;
-	}
-	if (SpawnMoverCmd)
-	{
-		IConsoleManager::Get().UnregisterConsoleObject(SpawnMoverCmd);
-		SpawnMoverCmd = nullptr;
 	}
 }
 

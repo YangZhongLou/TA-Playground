@@ -24,14 +24,6 @@
 			"Enabled": true
 		},
 		{
-			"Name": "Mover",
-			"Enabled": true
-		},
-		{
-			"Name": "NetworkPrediction",
-			"Enabled": true
-		},
-		{
 			"Name": "ProceduralMeshComponent",
 			"Enabled": true
 		},

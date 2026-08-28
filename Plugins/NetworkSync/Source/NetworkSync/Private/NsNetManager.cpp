@@ -3,7 +3,6 @@
 #include "NsNetManager.h"
 #include "NsReplicatedActor.h"
 #include "NsDoor.h"
-#include "NsMoverPawn.h"
 #include "NsTypes.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
@@ -454,6 +453,4 @@ void ANsNetManager::SpawnReplicatedDemo()
 		FRotator::ZeroRotator,
 		Params);
 	DoorActor = Door;
-	const FVector MoverLoc = GetActorLocation() + FVector(80.f, 0.f, 120.f);
-	ANsMoverPawn::SpawnAndPossess(World, MoverLoc);
 }

@@ -55,7 +55,7 @@
 
 ```text
 表现     ANsNetManager（debug 球 / lerp）
-         ANsReplicatedActor  ANsDoor  ANsMoverPawn
+         ANsReplicatedActor  ANsDoor
            | 只读 FNsWorld，或走引擎复制
 协议     FNsLockstep*   FNsStateSync*   FNsRollbackPeer
            | 固定毫秒步，整数状态
@@ -86,7 +86,7 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | `FNsStateSync*` | Inbox、权威 x、PredX、插值缓冲 | 输入磁带回滚 |
 | `FNsRollbackPeer` | `Local` / `RealRemote` / `Saves` | 服务器世界 |
 | `ANsNetManager` | 选方案、累加器、按键、画球 | 编解码 |
-| 复制 Actor | `Counter` / `bOpen` / Mover 输入 | `INsNet` |
+| 复制 Actor | `Counter` / `bOpen` | `INsNet` |
 
 玩家身份：锁步与状态同步用 `NsPlayerIdFromAddr(Src)`。payload 里的 `player_id` 不可信。
 
@@ -202,12 +202,10 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | --- | --- | --- |
 | `ANsReplicatedActor` | `Counter` | 主机按 `E` → `ServerBump` |
 | `ANsDoor` | `bOpen` | 主机按 `F` → `ServerSetOpen` |
-| `ANsMoverPawn` | Mover 同步状态 | WASD / 空格；关 Actor 移动复制 |
 
 只在 `HasAuthority` 时 spawn。不 `SetOwner`。
 Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按键可能被引擎丢掉。
-`ANsMoverPawn` 是 `APawn` + `UCharacterMoverComponent`，不接 CMC。
-插件不依赖 `NetworkPrediction` 模块（UHT 会炸）；`ProduceInput` 每拍采样按键。
+本插件不接入角色移动（Mover / CMC）。复制只演示属性和 RPC。
 
 规格：[impl/replication_ue.md](impl/replication_ue.md)。
 
@@ -220,15 +218,14 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | Lockstep | A / D | 方向键 | 两球，锁步 lerp |
 | StateSync | A / D | 方向键 | 自己 PredX，别人插值 |
 | Rollback | A / D | 方向键 | 回滚结束后的 World |
-| Replication | E / F | 观察复制 | Counter + 门；并 Possess Mover |
+| Replication | E / F | 观察复制 | Counter + 门 |
 
 控制台：
 
 1. `ns.SelfTest` — 假网络三套协议、编解码、UDP、压力长跑；日志含 `NetworkSync self-test OK`。
 2. `ns.DropRate [0-1] [count]` — 标定假网络丢包率。
 3. `ns.SpawnDemo` — 生成 Manager；改 `Scheme`，可勾选 `bUseUdp` 与 `UdpRole`。
-4. `ns.SpawnMover` — 生成 `ANsMoverPawn` 并 Possess。
-5. Session Frontend：`TA.NetworkSync.*`。
+4. Session Frontend：`TA.NetworkSync.*`。
 
 引擎：UE 5.8。`TA-Playground.uproject` 的 `EngineAssociation=5.8`。
 
@@ -244,7 +241,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | 锁步 | `Lockstep.*` | 干净、Drop=0.1/0.15、Join、LateJoin、空洞不跳帧、Join 分片不擦未来 Buf、分叉 |
 | 状态同步 | `StateSync.*` | 和解、倒带、nack 全量、Inbox 空洞、旧快照忽略、Src 身份 |
 | 回滚 | `Rollback.*` | 干净、WAIT、Confirmed 不跳空洞（前缀/中间） |
-| 复制 | `Actors.Cdo` | Door / Counter RPC；Mover 关移动复制；ProduceInput 无控制器不跳 |
+| 复制 | `Actors.Cdo` | Door / Counter RPC |
 | 压力 | `Stress.*` | 长跑限时（World / Codec / FakeNet / 三套协议） |
 
 改 `Drop` 后若偶发失败，先看冷却循环是否排空在途包。
@@ -252,17 +249,17 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 
 ## 已知边界
 
-已闭环：两人整数世界、假网络字节头、本机与分进程 UDP、三套协议主循环、checksum、有序 Inbox、增量 nack、回滚空洞、锁步周期 Join、复制整数与门、Mover pawn（非 CMC）。
+已闭环：两人整数世界、假网络字节头、本机与分进程 UDP、三套协议主循环、checksum、有序 Inbox、增量 nack、回滚空洞、锁步周期 Join、复制整数与门。
 
 | 未做 | 影响 |
 | --- | --- |
 | NAT / STUN | 地址表手工填 IP:port |
 | 多人 / AOI | 地址写死 Sv/C0/C1 |
 | 开火命中 | `RewindX` 已有，未接武器 |
-| Mover 同 `SimTimeMs` 输入缓存 | 重模拟可能重复采样空格；UHT 不宜把 Mover 输入类型放进 UCLASS |
 | 客户端 Owner RPC | 远端按 `E`/`F` 可能被丢 |
+| 角色移动 | 不在本插件；玩法项目自选引擎移动系统 |
 
-后续：Listen+Client 验收 Mover 跟手，或射击倒带；跨机填 `UdpRemoteHost`。
+后续：射击倒带，或跨机填 `UdpRemoteHost`。
 
 ## 索引
 
@@ -288,4 +285,3 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | `ANsNetManager` | `Public/NsNetManager.h` |
 | `ANsReplicatedActor` | `Public/NsReplicatedActor.h` |
 | `ANsDoor` | `Public/NsDoor.h` |
-| `ANsMoverPawn` | `Public/NsMoverPawn.h` |

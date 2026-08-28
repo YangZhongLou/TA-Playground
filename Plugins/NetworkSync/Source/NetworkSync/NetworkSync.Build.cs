@@ -14,7 +14,6 @@ public class NetworkSync : ModuleRules
 			"InputCore",
 			"NetCore",
 			"Sockets",
-			"Mover",
 		});
 	}
 }

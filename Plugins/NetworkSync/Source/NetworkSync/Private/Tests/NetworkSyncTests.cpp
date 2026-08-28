@@ -9,13 +9,6 @@
 #include "NsCodec.h"
 #include "NsDoor.h"
 #include "NsReplicatedActor.h"
-#include "NsMoverPawn.h"
-#include "DefaultMovementSet/CharacterMoverComponent.h"
-#include "Camera/CameraComponent.h"
-#include "Components/CapsuleComponent.h"
-#include "GameFramework/SpringArmComponent.h"
-#include "MoverDataModelTypes.h"
-#include "MoverSimulationTypes.h"
 #include "UObject/Package.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsWorld_Determinism, "TA.NetworkSync.World.Determinism",
@@ -280,34 +273,6 @@ bool FNsActors_Cdo::RunTest(const FString& Parameters)
 	Counter->ServerBump_Implementation();
 	Counter->ServerBump_Implementation();
 	TestEqual(TEXT("counter bump"), Counter->Counter, 2);
-
-	ANsMoverPawn* Pawn = NewObject<ANsMoverPawn>(Pkg);
-	TestNotNull(TEXT("mover"), Pawn);
-	TestTrue(TEXT("mover replicates"), Pawn->GetIsReplicated());
-	TestFalse(TEXT("mover no actor move repl"), Pawn->IsReplicatingMovement());
-	TestNotNull(TEXT("capsule"), Pawn->FindComponentByClass<UCapsuleComponent>());
-	TestNotNull(TEXT("spring"), Pawn->FindComponentByClass<USpringArmComponent>());
-	TestNotNull(TEXT("camera"), Pawn->FindComponentByClass<UCameraComponent>());
-	TestNotNull(TEXT("mover comp"), Pawn->FindComponentByClass<UCharacterMoverComponent>());
-	TestTrue(TEXT("implements producer"), Pawn->GetClass()->ImplementsInterface(UMoverInputProducerInterface::StaticClass()));
-
-	FMoverInputCmdContext Cmd;
-	Pawn->ProduceInput_Implementation(16, Cmd);
-	const FCharacterDefaultInputs* Inputs = Cmd.InputCollection.FindDataByType<FCharacterDefaultInputs>();
-	TestNotNull(TEXT("mover inputs"), Inputs);
-	if (Inputs)
-	{
-		TestFalse(TEXT("jump not pressed"), Inputs->bIsJumpPressed);
-		TestFalse(TEXT("jump not just pressed"), Inputs->bIsJumpJustPressed);
-	}
-	FMoverInputCmdContext Again;
-	Pawn->ProduceInput_Implementation(16, Again);
-	const FCharacterDefaultInputs* AgainInputs = Again.InputCollection.FindDataByType<FCharacterDefaultInputs>();
-	TestNotNull(TEXT("mover inputs again"), AgainInputs);
-	if (AgainInputs)
-	{
-		TestFalse(TEXT("jump still not pressed"), AgainInputs->bIsJumpPressed);
-	}
 	return true;
 }
 
