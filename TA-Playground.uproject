@@ -1,6 +1,6 @@
 {
 	"FileVersion": 3,
-	"EngineAssociation": "5.7",
+	"EngineAssociation": "5.8",
 	"Category": "",
 	"Description": "Technical Artist Playground — UE rendering and graphics experiments",
 	"Modules": [
@@ -17,6 +17,10 @@
 		},
 		{
 			"Name": "Hexagon",
+			"Enabled": true
+		},
+		{
+			"Name": "NetworkSync",
 			"Enabled": true
 		},
 		{

@@ -53,7 +53,7 @@ Unreal Editor  +  UnrealMCP C++ 插件
 | FFmpeg | 音频/视频编解码 | 4.x / 5.x | `ffmpeg -version` |
 | CUDA Toolkit | NVIDIA GPU 加速 | 11.8 / 12.x | `nvidia-smi` |
 | Rust | 编译 MCP Server | 1.80+ | `rustc --version` |
-| Unreal Engine | 编辑器与运行时 | 5.4+（推荐 5.5/5.7） | — |
+| Unreal Engine | 编辑器与运行时 | 5.8 | — |
 | Visual Studio 2022 | 编译 UE 插件与 CUDA 扩展 | MSVC v143 | — |
 
 ### 2.2 PowerShell 执行策略
@@ -114,15 +114,13 @@ Plugins/UnrealMCP/MCP_Server/target/release/unreal-mcp-server.exe
 
 ### 3.3 生成并编译 UE 工程
 
-替换路径中的 `UE_5.7` 为你实际安装的引擎版本。
-
 ```powershell
 # 1. 生成 Visual Studio 工程文件
-"C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" `
+"C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" `
   -projectfiles -project="D:\Playground\TA-Playground\TA-Playground.uproject" -game -rocket
 
 # 2. 编译 Editor 目标
-"C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" `
+"C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" `
   TAPlaygroundEditor Win64 Development -Project="D:\Playground\TA-Playground\TA-Playground.uproject"
 ```
 

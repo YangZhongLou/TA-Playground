@@ -1,0 +1,54 @@
+// Copyright (c) 2026 TA-Playground. All Rights Reserved.
+
+#pragma once
+
+#include "CoreMinimal.h"
+
+namespace Ns
+{
+	constexpr int32 PlayerCount = 2;
+	constexpr int32 LogicDtMs = 66;
+	constexpr int32 LockstepSpeed = 8;
+	constexpr int32 RedundantFrames = 3;
+	constexpr int32 ChecksumEvery = 15;
+	constexpr int32 SimDtMs = 16;
+	constexpr int32 SendEvery = 3;
+	constexpr int32 StateSpeed = 4;
+	constexpr int32 RollbackDtMs = 16;
+	constexpr int32 MaxRollback = 8;
+	constexpr int32 RollbackSpeed = 3;
+	constexpr int32 InputWindow = 8;
+	constexpr int32 InterpDelayMs = 100;
+	constexpr int32 HistoryTicks = 64;
+	constexpr int32 InputDelay = 1;
+	constexpr int32 LagCompCapMs = 220;
+}
+
+inline int8 NsClampDx(int32 Dx)
+{
+	if (Dx < -1)
+	{
+		return -1;
+	}
+	if (Dx > 1)
+	{
+		return 1;
+	}
+	return static_cast<int8>(Dx);
+}
+
+struct NETWORKSYNC_API FNsWorld
+{
+	int32 X[Ns::PlayerCount] = {0, 0};
+	uint32 Rng = 1;
+
+	void Reset();
+	void Step(const int8 Dxs[Ns::PlayerCount], int32 Speed);
+	uint32 Checksum() const;
+	bool Equals(const FNsWorld& Other) const;
+};
+
+struct NETWORKSYNC_API FNsInputs
+{
+	int8 Dx[Ns::PlayerCount] = {0, 0};
+};
