@@ -13,14 +13,17 @@ public:
 	TMap<int32, FNsInputs> Hist;
 	TMap<int32, uint32> Checksums;
 	int32 Frame = 0;
+	int32 SnapFrame = -1;
 	double NextMs = 0.0;
 	FNsWorld World;
+	FNsWorld SnapWorld;
 	int32 ChecksumOk = 0;
 	bool bDesync = false;
 
 	void OnInput(int32 PlayerId, int8 Dx);
 	void OnChecksum(int32 FrameIndex, uint32 Hash);
-	void Tick(FNsFakeNet& Net);
+	void Tick(INsNet& Net);
+	void SendJoin(INsNet& Net, ENsAddr Dst) const;
 };
 
 class NETWORKSYNC_API FNsLockstepClient
@@ -33,7 +36,8 @@ public:
 	FNsWorld World;
 	int32 PrevX[Ns::PlayerCount] = {0, 0};
 
-	void SendInput(FNsFakeNet& Net, int8 Dx);
+	void SendInput(INsNet& Net, int8 Dx);
 	void OnS2C(const TMap<int32, FNsInputs>& Frames);
-	void Logic(FNsFakeNet& Net);
+	void ApplyJoin(const FNsPacket& Packet);
+	void Logic(INsNet& Net);
 };

@@ -82,7 +82,7 @@ void FNsRollbackPeer::AdvanceLocal(int8 Dx, TMap<int32, int8>& OutPacked)
 	Trim();
 }
 
-void FNsRollbackPeer::Advance(FNsFakeNet& Net, int8 Dx)
+void FNsRollbackPeer::Advance(INsNet& Net, int8 Dx)
 {
 	TMap<int32, int8> Packed;
 	AdvanceLocal(Dx, Packed);

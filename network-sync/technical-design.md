@@ -51,13 +51,16 @@
 协议层   FNsLockstep*   FNsStateSync*   FNsRollbackPeer
            | 固定步长，整数状态
 传输层   FNsFakeNet（延迟/抖动/丢包/序号）
+         FNsUdpNet（本机三端口 UDP）
          或 UNetDriver（仅 Replication）
 ```
 
 | 模块 | 职责 |
 | --- | --- |
 | `FNsWorld` | 两人一维坐标 + LCG，纯函数 `Step` / `Checksum` |
-| `FNsFakeNet` | 内存 UDP：RTT、jitter、drop、Seq/Ack 去重 |
+| `NsEncodePacket` / `NsDecodePacket` | 20 字节头 + payload，小端；未知 type / 长度不符则丢弃 |
+| `FNsFakeNet` | 内存 UDP：RTT、jitter、drop、Seq/Ack 去重，收发走编解码 |
+| `FNsUdpNet` | 三个 `FSocket` 绑 127.0.0.1；协议仍用 `INsNet` |
 | 三套协议类 | 锁步 / 快照 / 回滚的主循环与包语义 |
 | `ANsNetManager` | PIE 可视化：同一进程模拟两端 |
 | `ANsReplicatedActor` / `ANsDoor` | 真复制：整数与 bool |
@@ -111,8 +114,11 @@ struct FNsWorld {
 | `C2SSnapAck` | 客户端 → 服务器 | 已应用的最大快照 tick |
 | `P2PInput` | 对等 | 回滚输入 + 前 3 拍 |
 | `C2SChecksum` | 客户端 → 服务器 | 锁步每 15 拍校验 |
+| `S2CJoinSnap` | 服务器 → 客户端 | 锁步重连：世界快照 + 快照之后的输入 |
 
-真 UDP 头（magic、payload_len、ack 窗）规格在 [impl/transport.md](impl/transport.md)，尚未序列化到字节流。
+`FNsFakeNet::Send` 会把 `FNsPacket` 编成字节再解回，Src/Dst 仍由地址表提供。
+`FNsUdpNet` 把同一字节发到本机三个端口（`BindLoopback`）。`ANsNetManager` 勾选 `bUseUdp` 即走真 socket。
+协议自测默认仍用假网络，好控制丢包；环回与锁步另有 UDP 自测。
 
 地址：`Sv` / `C0` / `C1`。两人局足够验证协议，不在本阶段做 AOI。
 
@@ -141,7 +147,9 @@ C0/C1  Buf 填槽，仅当 ExecFrame 已到才 Step，禁止跳帧
 服务器 `OnChecksum`：对得上则 `ChecksumOk++`，对不上则 `bDesync`。
 自测要求两端 `World` 相等、`ChecksumOk > 0`、无分叉。
 
-未做：断线重连（存 5 秒一份世界快照再快进）。中途加入必须掺状态，纯度会下降。
+重连：每 75 拍（约 5 秒）存一份 `SnapWorld`。`SendJoin` 下发 `S2CJoinSnap`
+（`ExecFrame = SnapFrame+1`、坐标、Rng、之后的 `Hist`）。客户端 `ApplyJoin` 后快进。
+无快照时从第 0 拍重放全部 `Hist`。
 
 代码：`NsLockstep.h` / `NsLockstep.cpp`。规格：[impl/lockstep.md](impl/lockstep.md)。
 
@@ -230,8 +238,8 @@ Server RPC 只能由 Owner 客户端调用。演示把 Owner 设成 Listen 的 F
 
 控制台：
 
-1. `ns.SelfTest` — 三套假网络协议，日志 `NetworkSync self-test OK`。
-2. `ns.SpawnDemo` — 生成 Manager；在细节面板改 `Scheme`。
+1. `ns.SelfTest` — 假网络三套协议 + 本机 UDP，日志 `NetworkSync self-test OK`。
+2. `ns.SpawnDemo` — 生成 Manager；在细节面板改 `Scheme`，可勾选 `bUseUdp`。
 3. Session Frontend：`TA.NetworkSync.*`。
 
 引擎：UE 5.8。关联 `TA-Playground.uproject` 的 `EngineAssociation=5.8`。
@@ -245,23 +253,26 @@ Server RPC 只能由 Owner 客户端调用。演示把 Owner 设成 Listen 的 F
 | `TA.NetworkSync.StateSync` | 预测与服务器 x 一致、有远程插值、ACK 与增量发生 |
 | `TA.NetworkSync.Rollback` | 冷却后两端相等、不再 WAIT |
 | `TA.NetworkSync.FakeNet.Seq` | 连续发送序号递增 |
+| `TA.NetworkSync.Lockstep.Join` | 抹掉一端后 `SendJoin`，ExecFrame 与 World 追上 |
+| `TA.NetworkSync.Codec.RoundTrip` | 帧包与加入包编解码后字段一致 |
+| `TA.NetworkSync.Udp.Loopback` | 本机 UDP 发出 `C2SInput` 后能解出同一 payload |
+| `TA.NetworkSync.Udp.Lockstep` | 三端口 UDP 上锁步两端 World 一致 |
 
 自测 RNG 种子为 1，结果应稳定。改 `Drop` 后若偶发失败，先看冷却循环是否排空在途包。
 
 ## 已知边界与后续
 
-已闭环：两人整数世界、假网络、三套协议主循环、checksum、增量快照、回滚延迟与 WAIT、复制整数与门。
+已闭环：两人整数世界、假网络字节头、本机 UDP socket、三套协议主循环、checksum、增量快照、回滚延迟与 WAIT、
+锁步重连快照、复制整数与门。
 
 | 未做 | 原因与影响 |
 | --- | --- |
-| 锁步重连快照 | 中途加入必须快进或掺状态 |
-| 真 UDP 字节包 | 现在是 `FNsPacket` 内存对象 |
+| 跨机 UDP | `FNsUdpNet` 只绑 loopback，没有公网地址表 |
 | CharacterMovement | 需要 Possess；复制移动应走 CMC |
 | 多人 / AOI | 地址写死三人（含服务器） |
 | 开火命中 | `RewindX` 已有，未接武器 |
 
-后续优先顺序：真 socket 替换 `FNsFakeNet` → 锁步重连 → 若做射击再接命中倒带；
-关卡原型继续复制 + CMC，不要把锁步塞进 Character。
+后续优先顺序：跨机地址表，或射击倒带；关卡原型继续复制 + CMC，不要把锁步塞进 Character。
 
 ## 文档与代码索引
 
@@ -279,7 +290,9 @@ Server RPC 只能由 Owner 客户端调用。演示把 Owner 设成 Listen 的 F
 | 类 | 文件 |
 | --- | --- |
 | `FNsWorld` | `Public/NsTypes.h` |
-| `FNsFakeNet` | `Public/NsFakeNet.h` |
+| `NsEncodePacket` | `Public/NsCodec.h` |
+| `FNsFakeNet` / `INsNet` | `Public/NsFakeNet.h` |
+| `FNsUdpNet` | `Public/NsUdpNet.h` |
 | `FNsLockstepServer` / `Client` | `Public/NsLockstep.h` |
 | `FNsStateSyncServer` / `Client` | `Public/NsStateSync.h` |
 | `FNsRollbackPeer` | `Public/NsRollback.h` |

@@ -22,6 +22,10 @@ namespace Ns
 	constexpr int32 HistoryTicks = 64;
 	constexpr int32 InputDelay = 1;
 	constexpr int32 LagCompCapMs = 220;
+	constexpr int32 JoinSnapEvery = 75;
+	constexpr uint32 PacketMagic = 0x54414E53;
+	constexpr int32 HeaderBytes = 20;
+	constexpr int32 MaxPacketBytes = 1200;
 }
 
 inline int8 NsClampDx(int32 Dx)

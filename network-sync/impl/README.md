@@ -14,7 +14,7 @@
 | 格斗 | [rollback.md](rollback.md) | `NsRollback.h` / `NsRollback.cpp` |
 | UE 联机原型 | [replication_ue.md](replication_ue.md) | `NsReplicatedActor` / `NsDoor` |
 
-公共传输：[transport.md](transport.md)、`NsFakeNet.h`。共享世界：`NsTypes.h`（`FNsWorld::Step` / `Checksum`）。
+公共传输：[transport.md](transport.md)、`NsFakeNet.h`、`NsCodec.h`。共享世界：`NsTypes.h`（`FNsWorld::Step` / `Checksum`）。
 
 ## 硬规则（所有方案共用）
 
@@ -36,10 +36,11 @@
 
 插件已写入 `TA-Playground.uproject`。编译后：
 
-1. 控制台 `ns.SelfTest` — 三套协议在假网络上跑完，日志 `NetworkSync self-test OK`。
+1. 控制台 `ns.SelfTest` — 假网络三套协议 + 本机 UDP 环回，日志 `NetworkSync self-test OK`。
 2. 自动化：`TA.NetworkSync.*`（Session Frontend）。
 3. PIE 控制台 `ns.SpawnDemo` — 生成 `ANsNetManager`。A/D 控玩家 0，方向键控玩家 1。
 4. 在 Actor 上改 `Scheme`：Lockstep / StateSync / Rollback / Replication。
-5. Replication：Listen Server 下按 `E` 增加 `Counter`，按 `F` 开关门。
+5. 勾选 `bUseUdp` 后三套自研协议走本机 UDP；`UdpBasePort=0` 让系统分配端口。
+6. Replication：Listen Server 下按 `E` 增加 `Counter`，按 `F` 开关门。
 
 源码根目录：`Plugins/NetworkSync/Source/NetworkSync/`。

@@ -6,6 +6,7 @@
 #include "NsSelfTest.h"
 #include "NsTypes.h"
 #include "NsFakeNet.h"
+#include "NsCodec.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsWorld_Determinism, "TA.NetworkSync.World.Determinism",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -31,6 +32,16 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_Lockstep, "TA.NetworkSync.Lockstep"
 bool FNsSelfTest_Lockstep::RunTest(const FString& Parameters)
 {
 	const FNsSelfTestResult R = NsRunLockstepSelfTest();
+	TestTrue(R.Detail, R.bOk);
+	return R.bOk;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_LockstepJoin, "TA.NetworkSync.Lockstep.Join",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FNsSelfTest_LockstepJoin::RunTest(const FString& Parameters)
+{
+	const FNsSelfTestResult R = NsRunLockstepJoinSelfTest();
 	TestTrue(R.Detail, R.bOk);
 	return R.bOk;
 }
@@ -78,6 +89,103 @@ bool FNsFakeNet_SeqIncreases::RunTest(const FString& Parameters)
 	TestEqual(TEXT("second deliver"), Second.Num(), 1);
 	TestTrue(TEXT("seq increased"), Second[0].Seq > First[0].Seq);
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsCodec_RoundTrip, "TA.NetworkSync.Codec.RoundTrip",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FNsCodec_RoundTrip::RunTest(const FString& Parameters)
+{
+	FNsPacket Src;
+	Src.Type = ENsMsg::S2CFrame;
+	Src.Seq = 9;
+	Src.Ack = 4;
+	Src.AckBits = 0xA5A5A5A5u;
+	FNsInputs In;
+	In.Dx[0] = -1;
+	In.Dx[1] = 1;
+	Src.Frames.Add(3, In);
+	Src.Frames.Add(4, In);
+
+	TArray<uint8> Bytes;
+	TestTrue(TEXT("encode"), NsEncodePacket(Src, Bytes));
+	TestTrue(TEXT("header size"), Bytes.Num() >= Ns::HeaderBytes);
+	TestEqual(TEXT("magic0"), static_cast<int32>(Bytes[0]), static_cast<int32>(Ns::PacketMagic & 0xFFu));
+
+	FNsPacket Dst;
+	TestTrue(TEXT("decode"), NsDecodePacket(Bytes, Dst));
+	TestEqual(TEXT("type"), static_cast<uint8>(Dst.Type), static_cast<uint8>(ENsMsg::S2CFrame));
+	TestEqual(TEXT("seq"), Dst.Seq, 9);
+	TestEqual(TEXT("ack"), Dst.Ack, 4);
+	TestEqual(TEXT("ackbits"), Dst.AckBits, 0xA5A5A5A5u);
+	TestEqual(TEXT("frames"), Dst.Frames.Num(), 2);
+	const FNsInputs* F3 = Dst.Frames.Find(3);
+	TestTrue(TEXT("frame3"), F3 && F3->Dx[0] == -1 && F3->Dx[1] == 1);
+
+	FNsPacket Join;
+	Join.Type = ENsMsg::S2CJoinSnap;
+	Join.Tick = 76;
+	Join.SnapX[0] = 40;
+	Join.SnapX[1] = -16;
+	Join.SnapRng = 12345;
+	Join.Frames.Add(76, In);
+	TArray<uint8> JoinBytes;
+	TestTrue(TEXT("encode join"), NsEncodePacket(Join, JoinBytes));
+	FNsPacket JoinOut;
+	TestTrue(TEXT("decode join"), NsDecodePacket(JoinBytes, JoinOut));
+	TestEqual(TEXT("join tick"), JoinOut.Tick, 76);
+	TestEqual(TEXT("join x0"), JoinOut.SnapX[0], 40);
+	TestEqual(TEXT("join rng"), JoinOut.SnapRng, 12345u);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsCodec_RejectsBad, "TA.NetworkSync.Codec.RejectsBad",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FNsCodec_RejectsBad::RunTest(const FString& Parameters)
+{
+	FNsPacket Src;
+	Src.Type = ENsMsg::C2SChecksum;
+	Src.PlayerId = 1;
+	Src.Tick = 15;
+	Src.Hash = 0x11u;
+	TArray<uint8> Bytes;
+	TestTrue(TEXT("encode"), NsEncodePacket(Src, Bytes));
+
+	TArray<uint8> BadMagic = Bytes;
+	BadMagic[0] ^= 1;
+	FNsPacket Out;
+	TestFalse(TEXT("bad magic"), NsDecodePacket(BadMagic, Out));
+
+	TArray<uint8> BadType = Bytes;
+	BadType[4] = 99;
+	TestFalse(TEXT("unknown type"), NsDecodePacket(BadType, Out));
+
+	TArray<uint8> BadLen = Bytes;
+	BadLen[6] = 0;
+	BadLen[7] = 0;
+	TestFalse(TEXT("payload len"), NsDecodePacket(BadLen, Out));
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_UdpLoopback, "TA.NetworkSync.Udp.Loopback",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FNsSelfTest_UdpLoopback::RunTest(const FString& Parameters)
+{
+	const FNsSelfTestResult R = NsRunUdpLoopbackSelfTest();
+	TestTrue(R.Detail, R.bOk);
+	return R.bOk;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsSelfTest_UdpLockstep, "TA.NetworkSync.Udp.Lockstep",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FNsSelfTest_UdpLockstep::RunTest(const FString& Parameters)
+{
+	const FNsSelfTestResult R = NsRunUdpLockstepSelfTest();
+	TestTrue(R.Detail, R.bOk);
+	return R.bOk;
 }
 
 #endif

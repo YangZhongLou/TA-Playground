@@ -26,13 +26,13 @@ public:
 
 	void OnInput(int32 PlayerId, int32 Seq, int8 Dx);
 	void OnAck(int32 PlayerId, int32 AckTick);
-	void Sim(FNsFakeNet& Net);
+	void Sim(INsNet& Net);
 	int32 RewindX(int32 PlayerId, int32 PingMs) const;
 
 private:
 	TMap<int32, int32> SnapX0;
 	TMap<int32, int32> SnapX1;
-	void SendSnap(FNsFakeNet& Net, ENsAddr Dst, int32 PlayerId);
+	void SendSnap(INsNet& Net, ENsAddr Dst, int32 PlayerId);
 };
 
 class NETWORKSYNC_API FNsStateSyncClient
@@ -54,7 +54,7 @@ public:
 	bool bHasRemote = false;
 	bool bGotDelta = false;
 
-	void LocalTick(FNsFakeNet& Net, int8 Dx);
-	void OnSnap(FNsFakeNet& Net, const FNsPacket& P);
+	void LocalTick(INsNet& Net, int8 Dx);
+	void OnSnap(INsNet& Net, const FNsPacket& P);
 	void UpdateRemoteDraw(double NowMs);
 };

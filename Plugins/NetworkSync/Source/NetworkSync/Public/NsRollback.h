@@ -24,7 +24,7 @@ public:
 	TMap<int32, int8> RealRemote;
 
 	void AdvanceLocal(int8 Dx, TMap<int32, int8>& OutPacked);
-	void Advance(FNsFakeNet& Net, int8 Dx);
+	void Advance(INsNet& Net, int8 Dx);
 	void OnRemote(const TMap<int32, int8>& Packed);
 
 private:

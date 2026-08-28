@@ -13,6 +13,7 @@ public class NetworkSync : ModuleRules
 			"Engine",
 			"InputCore",
 			"NetCore",
+			"Sockets",
 		});
 	}
 }

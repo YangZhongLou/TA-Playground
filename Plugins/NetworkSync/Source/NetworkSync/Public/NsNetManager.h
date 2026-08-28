@@ -8,6 +8,7 @@
 #include "NsLockstep.h"
 #include "NsStateSync.h"
 #include "NsRollback.h"
+#include "NsUdpNet.h"
 #include "NsNetManager.generated.h"
 
 UENUM(BlueprintType)
@@ -36,6 +37,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync")
 	float DrawScale = 10.f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync")
+	bool bUseUdp = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync", meta = (EditCondition = "bUseUdp"))
+	int32 UdpBasePort = 0;
+
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	UFUNCTION(BlueprintPure, Category = "NetworkSync")
 	FVector GetPawnLocation(int32 PlayerId) const;
 
@@ -46,8 +55,11 @@ private:
 	void TickRollback();
 	void DrawPawns() const;
 	void SpawnReplicatedDemo();
+	INsNet& Wire();
 
-	FNsFakeNet Net;
+	FNsFakeNet Fake;
+	FNsUdpNet Udp;
+	INsNet* NetLink = nullptr;
 	FNsLockstepServer LsSv;
 	FNsLockstepClient LsC0;
 	FNsLockstepClient LsC1;

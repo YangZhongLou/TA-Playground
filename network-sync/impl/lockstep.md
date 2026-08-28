@@ -14,6 +14,7 @@ constexpr int32 PlayerCount = 2;
 constexpr int32 RedundantFrames = 3;  // 每个下行包带上前 3 拍
 constexpr int32 ChecksumEvery = 15;   // 每秒一次
 constexpr int32 LockstepSpeed = 8;    // 每逻辑拍位移（整数）
+constexpr int32 JoinSnapEvery = 75;   // 约 5 秒一份重连快照
 ```
 
 逻辑拍时长必须整毫秒。不要用 `1/15` 的 float 累加。
@@ -134,13 +135,27 @@ void Logic(FNsFakeNet& Net)
 服务器若跑了同一份 `World`：每 `ChecksumEvery` 拍比对客户端上报。
 `FNsLockstepServer::OnChecksum` 对不上则 `bDesync`。`ns.SelfTest` 要求 `ChecksumOk > 0` 且不分叉。
 
+## 重连
+
+服务器在完成的 `Frame > 0 && Frame % JoinSnapEvery == 0` 时复制 `SnapWorld`，并丢掉更早的 `Hist`
+（保留 `RedundantFrames` 给在线客户端）。`SendJoin` 发两次 `S2CJoinSnap` 抗丢包。
+
+| 字段 | 含义 |
+| --- | --- |
+| exec_frame | 客户端下一拍，等于 `SnapFrame+1`；尚无快照则为 0 |
+| x0, x1, rng | 快照世界 |
+| 后续输入 | `Hist` 里 `frame >= exec_frame` 的拍 |
+
+客户端 `ApplyJoin` 覆盖 `World` / `ExecFrame`，再 `Logic` 快进。中途加入因此会掺状态，不再是纯输入锁步。
+
 ## 实现顺序（按天）
 
 1. 单机两个 `FNsWorld` 喂同一输入，checksum 相同。
 2. 假网络 Drop=0，服务器 15Hz 广播，两端 ExecFrame 对齐、checksum 对齐。
 3. `RedundantFrames=3`，Drop=0.1，ExecFrame 仍能追上，不卡死超过 1 秒。
 4. 表现插值 + 定期 checksum 上报。已做。
-5. 重连：服务器存每 5 秒一份 `World` 快照 + 之后输入；客户端加载快照再快进。尚未做。
+5. 重连：服务器每 `JoinSnapEvery=75` 拍存 `SnapWorld`；`SendJoin` 发 `S2CJoinSnap`。
+   客户端 `ApplyJoin` 后从 `ExecFrame` 快进。已做。自测：`TA.NetworkSync.Lockstep.Join`。
 
 ## 验收命令
 
@@ -150,5 +165,5 @@ void Logic(FNsFakeNet& Net)
 ns.SelfTest
 ```
 
-日志必须含 `lockstep frames=`。自动化：`TA.NetworkSync.Lockstep`。
-自测已开 `Drop=0.1` 与冗余。
+日志必须含 `lockstep frames=`。自动化：`TA.NetworkSync.Lockstep`、`TA.NetworkSync.Lockstep.Join`。
+自测已开 `Drop=0.1` 与冗余。Join 自测 `Drop=0`，避免加入包本身被丢掉。

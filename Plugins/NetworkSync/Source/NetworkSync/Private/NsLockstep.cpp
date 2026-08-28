@@ -26,7 +26,7 @@ void FNsLockstepServer::OnChecksum(int32 FrameIndex, uint32 Hash)
 	}
 }
 
-void FNsLockstepServer::Tick(FNsFakeNet& Net)
+void FNsLockstepServer::Tick(INsNet& Net)
 {
 	while (Net.Now >= NextMs)
 	{
@@ -35,6 +35,24 @@ void FNsLockstepServer::Tick(FNsFakeNet& Net)
 		if (Frame % Ns::ChecksumEvery == 0)
 		{
 			Checksums.Add(Frame, World.Checksum());
+		}
+		if (Frame > 0 && (Frame % Ns::JoinSnapEvery) == 0)
+		{
+			SnapFrame = Frame;
+			SnapWorld = World;
+			const int32 KeepFrom = FMath::Max(0, SnapFrame - Ns::RedundantFrames);
+			TArray<int32> Dead;
+			for (const TPair<int32, FNsInputs>& Kv : Hist)
+			{
+				if (Kv.Key < KeepFrom)
+				{
+					Dead.Add(Kv.Key);
+				}
+			}
+			for (int32 K : Dead)
+			{
+				Hist.Remove(K);
+			}
 		}
 		TMap<int32, FNsInputs> Packed;
 		const int32 First = FMath::Max(0, Frame - Ns::RedundantFrames);
@@ -55,7 +73,34 @@ void FNsLockstepServer::Tick(FNsFakeNet& Net)
 	}
 }
 
-void FNsLockstepClient::SendInput(FNsFakeNet& Net, int8 Dx)
+void FNsLockstepServer::SendJoin(INsNet& Net, ENsAddr Dst) const
+{
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::S2CJoinSnap;
+	if (SnapFrame >= 0)
+	{
+		Pkt.Tick = SnapFrame + 1;
+		Pkt.SnapX[0] = SnapWorld.X[0];
+		Pkt.SnapX[1] = SnapWorld.X[1];
+		Pkt.SnapRng = SnapWorld.Rng;
+	}
+	else
+	{
+		Pkt.Tick = 0;
+		Pkt.SnapRng = 1;
+	}
+	for (const TPair<int32, FNsInputs>& Kv : Hist)
+	{
+		if (Kv.Key >= Pkt.Tick)
+		{
+			Pkt.Frames.Add(Kv.Key, Kv.Value);
+		}
+	}
+	Net.Send(ENsAddr::Sv, Dst, Pkt);
+	Net.Send(ENsAddr::Sv, Dst, Pkt);
+}
+
+void FNsLockstepClient::SendInput(INsNet& Net, int8 Dx)
 {
 	FNsPacket Pkt;
 	Pkt.Type = ENsMsg::C2SInput;
@@ -68,11 +113,26 @@ void FNsLockstepClient::OnS2C(const TMap<int32, FNsInputs>& Frames)
 {
 	for (const TPair<int32, FNsInputs>& Kv : Frames)
 	{
-		Buf.Add(Kv.Key, Kv.Value);
+		if (Kv.Key >= ExecFrame)
+		{
+			Buf.Add(Kv.Key, Kv.Value);
+		}
 	}
 }
 
-void FNsLockstepClient::Logic(FNsFakeNet& Net)
+void FNsLockstepClient::ApplyJoin(const FNsPacket& Packet)
+{
+	World.X[0] = Packet.SnapX[0];
+	World.X[1] = Packet.SnapX[1];
+	World.Rng = Packet.SnapRng;
+	PrevX[0] = World.X[0];
+	PrevX[1] = World.X[1];
+	ExecFrame = Packet.Tick;
+	Buf.Reset();
+	OnS2C(Packet.Frames);
+}
+
+void FNsLockstepClient::Logic(INsNet& Net)
 {
 	while (const FNsInputs* Found = Buf.Find(ExecFrame))
 	{

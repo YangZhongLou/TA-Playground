@@ -44,7 +44,7 @@ int32 FNsStateSyncServer::RewindX(int32 PlayerId, int32 PingMs) const
 	return HistX[PlayerId][T % Ns::HistoryTicks];
 }
 
-void FNsStateSyncServer::SendSnap(FNsFakeNet& Net, ENsAddr Dst, int32 PlayerId)
+void FNsStateSyncServer::SendSnap(INsNet& Net, ENsAddr Dst, int32 PlayerId)
 {
 	FNsPacket Pkt;
 	Pkt.Type = ENsMsg::S2CSnapshot;
@@ -72,7 +72,7 @@ void FNsStateSyncServer::SendSnap(FNsFakeNet& Net, ENsAddr Dst, int32 PlayerId)
 	Net.Send(ENsAddr::Sv, Dst, Pkt);
 }
 
-void FNsStateSyncServer::Sim(FNsFakeNet& Net)
+void FNsStateSyncServer::Sim(INsNet& Net)
 {
 	++Tick;
 	for (int32 i = 0; i < Ns::PlayerCount; ++i)
@@ -108,7 +108,7 @@ void FNsStateSyncServer::Sim(FNsFakeNet& Net)
 	}
 }
 
-void FNsStateSyncClient::LocalTick(FNsFakeNet& Net, int8 Dx)
+void FNsStateSyncClient::LocalTick(INsNet& Net, int8 Dx)
 {
 	++Seq;
 	const int8 D = NsClampDx(Dx);
@@ -127,7 +127,7 @@ void FNsStateSyncClient::LocalTick(FNsFakeNet& Net, int8 Dx)
 	Net.Send(Addr, ENsAddr::Sv, Pkt);
 }
 
-void FNsStateSyncClient::OnSnap(FNsFakeNet& Net, const FNsPacket& P)
+void FNsStateSyncClient::OnSnap(INsNet& Net, const FNsPacket& P)
 {
 	int32 Xs[Ns::PlayerCount];
 	if (P.BaseTick == 0)

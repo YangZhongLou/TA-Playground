@@ -1,25 +1,17 @@
 // Copyright (c) 2026 TA-Playground. All Rights Reserved.
 
 #include "NsFakeNet.h"
+#include "NsCodec.h"
 
-void FNsFakeNet::Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet)
+void FNsSeqWindow::Stamp(ENsAddr Src, FNsPacket& Packet)
 {
-	if (Rng.FRand() < Drop)
-	{
-		return;
-	}
-	FNsPacket Copy = Packet;
-	Copy.Src = Src;
-	Copy.Dst = Dst;
 	const int32 Si = static_cast<int32>(Src);
-	Copy.Seq = NextSeq[Si]++;
-	Copy.Ack = RecvMax[Si];
-	Copy.AckBits = RecvBits[Si];
-	Copy.DeliverAt = Now + RttMs * 0.5 + Rng.FRandRange(0.f, JitterMs);
-	Queue.Add(MoveTemp(Copy));
+	Packet.Seq = NextSeq[Si]++;
+	Packet.Ack = RecvMax[Si];
+	Packet.AckBits = RecvBits[Si];
 }
 
-bool FNsFakeNet::AcceptSeq(ENsAddr Dst, int32 S)
+bool FNsSeqWindow::Accept(ENsAddr Dst, int32 S)
 {
 	const int32 Di = static_cast<int32>(Dst);
 	int32& Max = RecvMax[Di];
@@ -53,6 +45,34 @@ bool FNsFakeNet::AcceptSeq(ENsAddr Dst, int32 S)
 	return true;
 }
 
+void FNsFakeNet::Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet)
+{
+	if (Rng.FRand() < Drop)
+	{
+		return;
+	}
+	FNsPacket Copy = Packet;
+	Copy.Src = Src;
+	Copy.Dst = Dst;
+	Seq.Stamp(Src, Copy);
+	Copy.DeliverAt = Now + RttMs * 0.5 + Rng.FRandRange(0.f, JitterMs);
+
+	TArray<uint8> Bytes;
+	if (!NsEncodePacket(Copy, Bytes))
+	{
+		return;
+	}
+	FNsPacket Wired;
+	if (!NsDecodePacket(Bytes, Wired))
+	{
+		return;
+	}
+	Wired.Src = Src;
+	Wired.Dst = Dst;
+	Wired.DeliverAt = Copy.DeliverAt;
+	Queue.Add(MoveTemp(Wired));
+}
+
 void FNsFakeNet::Drain(ENsAddr Dst, TArray<FNsPacket>& Out)
 {
 	Out.Reset();
@@ -60,16 +80,11 @@ void FNsFakeNet::Drain(ENsAddr Dst, TArray<FNsPacket>& Out)
 	{
 		if (Queue[i].Dst == Dst && Queue[i].DeliverAt <= Now)
 		{
-			if (AcceptSeq(Dst, Queue[i].Seq))
+			if (Seq.Accept(Dst, Queue[i].Seq))
 			{
 				Out.Add(Queue[i]);
 			}
 			Queue.RemoveAtSwap(i);
 		}
 	}
-}
-
-void FNsFakeNet::Advance(double Ms)
-{
-	Now += Ms;
 }

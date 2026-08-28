@@ -20,6 +20,7 @@ enum class ENsMsg : uint8
 	C2SSnapAck = 4,
 	P2PInput = 5,
 	C2SChecksum = 6,
+	S2CJoinSnap = 7,
 };
 
 struct FNsPacket
@@ -41,27 +42,42 @@ struct FNsPacket
 	int32 SnapSeq[Ns::PlayerCount] = {0, 0};
 	int32 BaseTick = 0;
 	uint32 Hash = 0;
+	uint32 SnapRng = 1;
 	TMap<int32, int8> RemoteDx;
 };
 
-class NETWORKSYNC_API FNsFakeNet
+struct NETWORKSYNC_API FNsSeqWindow
+{
+	int32 NextSeq[3] = {1, 1, 1};
+	int32 RecvMax[3] = {0, 0, 0};
+	uint32 RecvBits[3] = {0, 0, 0};
+
+	void Stamp(ENsAddr Src, FNsPacket& Packet);
+	bool Accept(ENsAddr Dst, int32 Seq);
+};
+
+class NETWORKSYNC_API INsNet
 {
 public:
+	virtual ~INsNet() = default;
 	double Now = 0.0;
+	virtual void Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet) = 0;
+	virtual void Drain(ENsAddr Dst, TArray<FNsPacket>& Out) = 0;
+	virtual void Advance(double Ms) { Now += Ms; }
+};
+
+class NETWORKSYNC_API FNsFakeNet : public INsNet
+{
+public:
 	float RttMs = 80.f;
 	float Drop = 0.f;
 	float JitterMs = 5.f;
 	FRandomStream Rng;
 
-	void Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet);
-	void Drain(ENsAddr Dst, TArray<FNsPacket>& Out);
-	void Advance(double Ms);
+	virtual void Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet) override;
+	virtual void Drain(ENsAddr Dst, TArray<FNsPacket>& Out) override;
 
 private:
-	bool AcceptSeq(ENsAddr Dst, int32 S);
-
 	TArray<FNsPacket> Queue;
-	int32 NextSeq[3] = {1, 1, 1};
-	int32 RecvMax[3] = {0, 0, 0};
-	uint32 RecvBits[3] = {0, 0, 0};
+	FNsSeqWindow Seq;
 };

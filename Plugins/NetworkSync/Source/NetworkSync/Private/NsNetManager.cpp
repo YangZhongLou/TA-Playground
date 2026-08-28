@@ -13,16 +13,25 @@ ANsNetManager::ANsNetManager()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	bReplicates = false;
+	NetLink = &Fake;
 }
 
 void ANsNetManager::BeginPlay()
 {
 	Super::BeginPlay();
 
-	Net.RttMs = 80.f;
-	Net.Drop = 0.05f;
-	Net.JitterMs = 6.f;
-	Net.Rng.Initialize(1);
+	Fake.RttMs = 80.f;
+	Fake.Drop = 0.05f;
+	Fake.JitterMs = 6.f;
+	Fake.Rng.Initialize(1);
+	NetLink = &Fake;
+	if (bUseUdp)
+	{
+		if (Udp.BindLoopback(UdpBasePort))
+		{
+			NetLink = &Udp;
+		}
+	}
 
 	LsC0.PlayerId = 0;
 	LsC0.Addr = ENsAddr::C0;
@@ -45,6 +54,18 @@ void ANsNetManager::BeginPlay()
 	{
 		SpawnReplicatedDemo();
 	}
+}
+
+INsNet& ANsNetManager::Wire()
+{
+	return *NetLink;
+}
+
+void ANsNetManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	Udp.Close();
+	NetLink = &Fake;
+	Super::EndPlay(EndPlayReason);
 }
 
 void ANsNetManager::Tick(float DeltaSeconds)
@@ -149,11 +170,11 @@ void ANsNetManager::TickLockstep()
 	{
 		AccumMs -= Ns::LogicDtMs;
 
-		LsC0.SendInput(Net, ReadDx(true));
-		LsC1.SendInput(Net, ReadDx(false));
+		LsC0.SendInput(Wire(), ReadDx(true));
+		LsC1.SendInput(Wire(), ReadDx(false));
 
 		TArray<FNsPacket> ToSv;
-		Net.Drain(ENsAddr::Sv, ToSv);
+		Wire().Drain(ENsAddr::Sv, ToSv);
 		for (const FNsPacket& P : ToSv)
 		{
 			if (P.Type == ENsMsg::C2SInput)
@@ -165,24 +186,28 @@ void ANsNetManager::TickLockstep()
 				LsSv.OnChecksum(P.Tick, P.Hash);
 			}
 		}
-		LsSv.Tick(Net);
+		LsSv.Tick(Wire());
 
 		FNsLockstepClient* Clients[2] = {&LsC0, &LsC1};
 		for (FNsLockstepClient* C : Clients)
 		{
 			TArray<FNsPacket> ToC;
-			Net.Drain(C->Addr, ToC);
+			Wire().Drain(C->Addr, ToC);
 			for (const FNsPacket& P : ToC)
 			{
-				if (P.Type == ENsMsg::S2CFrame)
+				if (P.Type == ENsMsg::S2CJoinSnap)
+				{
+					C->ApplyJoin(P);
+				}
+				else if (P.Type == ENsMsg::S2CFrame)
 				{
 					C->OnS2C(P.Frames);
 				}
 			}
-			C->Logic(Net);
+			C->Logic(Wire());
 		}
 
-		Net.Advance(Ns::LogicDtMs);
+		Wire().Advance(Ns::LogicDtMs);
 	}
 }
 
@@ -193,11 +218,11 @@ void ANsNetManager::TickStateSync()
 	{
 		AccumMs -= Ns::SimDtMs;
 
-		SsC0.LocalTick(Net, ReadDx(true));
-		SsC1.LocalTick(Net, ReadDx(false));
+		SsC0.LocalTick(Wire(), ReadDx(true));
+		SsC1.LocalTick(Wire(), ReadDx(false));
 
 		TArray<FNsPacket> ToSv;
-		Net.Drain(ENsAddr::Sv, ToSv);
+		Wire().Drain(ENsAddr::Sv, ToSv);
 		for (const FNsPacket& P : ToSv)
 		{
 			if (P.Type == ENsMsg::C2SInput)
@@ -212,24 +237,24 @@ void ANsNetManager::TickStateSync()
 				SsSv.OnAck(P.PlayerId, P.Tick);
 			}
 		}
-		SsSv.Sim(Net);
+		SsSv.Sim(Wire());
 
 		FNsStateSyncClient* Clients[2] = {&SsC0, &SsC1};
 		for (FNsStateSyncClient* C : Clients)
 		{
 			TArray<FNsPacket> ToC;
-			Net.Drain(C->Addr, ToC);
+			Wire().Drain(C->Addr, ToC);
 			for (const FNsPacket& P : ToC)
 			{
 				if (P.Type == ENsMsg::S2CSnapshot)
 				{
-					C->OnSnap(Net, P);
+					C->OnSnap(Wire(), P);
 				}
 			}
-			C->UpdateRemoteDraw(Net.Now);
+			C->UpdateRemoteDraw(Wire().Now);
 		}
 
-		Net.Advance(Ns::SimDtMs);
+		Wire().Advance(Ns::SimDtMs);
 	}
 }
 
@@ -240,11 +265,11 @@ void ANsNetManager::TickRollback()
 	{
 		AccumMs -= Ns::RollbackDtMs;
 
-		RbA.Advance(Net, ReadDx(true));
-		RbB.Advance(Net, ReadDx(false));
+		RbA.Advance(Wire(), ReadDx(true));
+		RbB.Advance(Wire(), ReadDx(false));
 
 		TArray<FNsPacket> ToA;
-		Net.Drain(ENsAddr::C0, ToA);
+		Wire().Drain(ENsAddr::C0, ToA);
 		for (const FNsPacket& P : ToA)
 		{
 			if (P.Type == ENsMsg::P2PInput)
@@ -253,7 +278,7 @@ void ANsNetManager::TickRollback()
 			}
 		}
 		TArray<FNsPacket> ToB;
-		Net.Drain(ENsAddr::C1, ToB);
+		Wire().Drain(ENsAddr::C1, ToB);
 		for (const FNsPacket& P : ToB)
 		{
 			if (P.Type == ENsMsg::P2PInput)
@@ -262,7 +287,7 @@ void ANsNetManager::TickRollback()
 			}
 		}
 
-		Net.Advance(Ns::RollbackDtMs);
+		Wire().Advance(Ns::RollbackDtMs);
 	}
 }
 
