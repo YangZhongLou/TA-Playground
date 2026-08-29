@@ -4,7 +4,7 @@
 
 对标：1500 Archers。概念见 [../schemes/lockstep-variants.md](../schemes/lockstep-variants.md)「通信回合」。
 
-Speed Control 是本 Kind 的第二里程碑，写在文末。第一版回合长度写死。
+Speed Control 是本 Kind 的第二里程碑：主机按回合完成时间改 `FramesPerTurn`（2～6），随 `S2CFrame` 广播。
 
 ## 和乐观 / 等齐的差别
 
@@ -68,6 +68,6 @@ World.Step(I)
 
 仍在 `NsLockstepTurn.*` 里加，不要新 Kind。
 
-主机用各端回合完成时间和 RTT，加权改 `FramesPerTurn`（整数，范围 2～6）。
-变差时立刻加大，好转时每回合最多减 1。全场同一 `FramesPerTurn`，随回合广播。
-验收：人为把 C1 的处理变慢，全场 `FramesPerTurn` 上升，且两端 `World` 仍同位。
+主机用各端回合完成时间改 `FramesPerTurn`（整数，范围 2～6）。
+变差时立刻加大，好转时每回合最多减 1。全场同一 `FramesPerTurn`，写在 `S2CFrame` 的 reserved 字节（内存里是 `Tick`）。
+验收：`NetworkSync.Lockstep.Turn.Speed` — 人为把 C1 的处理变慢，全场 `FramesPerTurn` 上升，且两端 `World` 仍同位。

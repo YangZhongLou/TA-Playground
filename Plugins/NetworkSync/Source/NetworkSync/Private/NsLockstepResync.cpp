@@ -8,6 +8,9 @@ void FNsLockstepResync::CaptureLive(const FNsLockstepServer& Sv)
 	LiveSnap = Sv.World;
 	LiveSnapTick = Sv.Frame;
 	bCaptured = true;
+	bResumed = false;
+	Acked[0] = false;
+	Acked[1] = false;
 }
 
 void FNsLockstepResync::SendLiveSnap(INsNet& Net, ENsAddr Dst) const
@@ -20,6 +23,13 @@ void FNsLockstepResync::SendLiveSnap(INsNet& Net, ENsAddr Dst) const
 	Pkt.SnapRng = LiveSnap.Rng;
 	Net.Send(ENsAddr::Sv, Dst, Pkt);
 	Net.Send(ENsAddr::Sv, Dst, Pkt);
+}
+
+void FNsLockstepResync::Resume(FNsLockstepServer& Sv, INsNet& Net)
+{
+	Sv.bDesync = false;
+	bResumed = true;
+	Sv.NextMs = Net.Now + Ns::LogicDtMs;
 }
 
 void NsApplyResyncSnap(FNsLockstepClient& Client, const FNsPacket& Packet)
@@ -49,8 +59,23 @@ void NsPumpLockstepResyncServer(INsNet& Net, FNsLockstepServer& Sv, FNsLockstepR
 		}
 		else if (P.Type == ENsMsg::C2SChecksum)
 		{
-			Sv.OnChecksum(P.Tick, P.Hash);
+			const int32 Id = NsPlayerIdFromAddr(P.Src);
+			if (Sv.bDesync && Resync.bCaptured && !Resync.bGiveUp && !Resync.bResumed
+				&& Id >= 0 && P.Tick == Resync.LiveSnapTick
+				&& P.Hash == Resync.LiveSnap.Checksum())
+			{
+				Resync.Acked[Id] = true;
+			}
+			else
+			{
+				Sv.OnChecksum(P.Tick, P.Hash);
+			}
 		}
+	}
+
+	if (Sv.bDesync && Resync.Acked[0] && Resync.Acked[1] && !Resync.bGiveUp)
+	{
+		Resync.Resume(Sv, Net);
 	}
 
 	if (!Sv.bDesync)
@@ -79,14 +104,41 @@ void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, const FNsLock
 {
 	TArray<FNsPacket> ToC;
 	NsDrain(Net, C.Addr, ToC, bWait);
+	const bool bHalt = Resync.bCaptured && !Resync.bResumed;
+	bool bApplied = false;
 	for (const FNsPacket& P : ToC)
 	{
-		if (P.Type == ENsMsg::S2CJoinSnap
-			&& Resync.bCaptured
-			&& P.Tick == Resync.LiveSnapTick
-			&& P.Frames.Num() == 0)
+		if (bHalt)
 		{
-			NsApplyResyncSnap(C, P);
+			if (P.Type == ENsMsg::S2CJoinSnap
+				&& P.Tick == Resync.LiveSnapTick
+				&& P.Frames.Num() == 0)
+			{
+				NsApplyResyncSnap(C, P);
+				bApplied = true;
+			}
+			continue;
 		}
+		if (P.Type == ENsMsg::S2CJoinSnap)
+		{
+			C.ApplyJoin(P);
+		}
+		else if (P.Type == ENsMsg::S2CFrame)
+		{
+			C.OnS2C(P.Frames);
+		}
+	}
+	if (bApplied)
+	{
+		FNsPacket Pkt;
+		Pkt.Type = ENsMsg::C2SChecksum;
+		Pkt.PlayerId = C.PlayerId;
+		Pkt.Tick = C.ExecFrame;
+		Pkt.Hash = C.World.Checksum();
+		Net.Send(C.Addr, ENsAddr::Sv, Pkt);
+	}
+	if (!bHalt)
+	{
+		C.Logic(Net);
 	}
 }

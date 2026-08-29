@@ -172,7 +172,7 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 
 中途加入会掺状态快照，不再是纯输入锁步。
 代码：`NsLockstep.*`。规格：[impl/lockstep.md](impl/lockstep.md)。
-四支内核：乐观 `NsLockstep.*`、等齐 `NsLockstepWait.*`、通信回合 `NsLockstepTurn.*`（Speed Control 未做）、delay `NsLockstepDelay.*`。见 [impl/lockstep-kinds.md](impl/lockstep-kinds.md)。
+四支内核：乐观 `NsLockstep.*`、等齐 `NsLockstepWait.*`、通信回合 `NsLockstepTurn.*`（含 Speed Control）、delay `NsLockstepDelay.*`。见 [impl/lockstep-kinds.md](impl/lockstep-kinds.md)。
 与状态同步结合按包拆开，见 [impl/hybrid/README.md](impl/hybrid/README.md)。不要在乐观 `Tick` 里双写 `X`。
 
 ### 权威状态同步
@@ -253,7 +253,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | 内核 | `World.*` | 确定性、clamp、Reset |
 | 编解码 | `Codec.*` | 往返（含 Frame/Checksum/JoinSnap）、拒收、MTU 拆包（S2C/Join/C2S/P2P） |
 | 传输 | `FakeNet.*`、`Udp.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程锁步/状态同步/回滚、突发 |
-| 锁步 | `Lockstep.*` | 乐观：干净、Drop、Join、空洞、分叉。等齐：`Lockstep.Wait.*`。通信回合：`Lockstep.Turn.*`。delay：`Lockstep.Delay.*` |
+| 锁步 | `Lockstep.*` | 乐观：干净、Drop、Join、空洞、分叉。等齐：`Lockstep.Wait.*`。通信回合：`Lockstep.Turn.*`（含 Speed）。delay：`Lockstep.Delay.*` |
 | 结合 | `Lockstep.Resync.*` / `LockstepDoor.*` | 停拍强制回跳；FakeNet 门；检查点用 `Lockstep.Join*`；切段 `SchemeSwitch` 只测时钟 |
 | 状态同步 | `StateSync.*` | 和解、倒带、nack 全量、Inbox 空洞、Inbox 上限、未确认窗、旧快照忽略、Src 身份 |
 | 回滚 | `Rollback.*` | 干净、WAIT、Confirmed 不跳空洞（前缀/中间） |
@@ -270,8 +270,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 
 | 未做 | 影响 |
 | --- | --- |
-| 锁步 Speed Control | 通信回合第一版回合长度写死 |
-| 停拍拉齐 | 第一版停拍对齐已做 `NsLockstepResync.*`；不恢复打拍 |
+| 停拍拉齐 | 停拍对齐 + checksum ack 后恢复打拍已做 `NsLockstepResync.*` |
 | 锁步加门 | 第一版 FakeNet 门已做 `NsLockstepDoor.*`；不接 `UNetDriver` |
 | NAT / STUN | 地址表手工填 IP:port |
 | 多人 / AOI | 地址写死 Sv/C0/C1 |

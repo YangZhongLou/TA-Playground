@@ -53,7 +53,7 @@ static void TurnReceive(FNsFakeNet& Net, FNsLockstepTurnClient& C)
 	{
 		if (P.Type == ENsMsg::S2CFrame)
 		{
-			C.OnS2C(P.Frames);
+			C.OnS2C(P.Frames, P.Tick);
 		}
 	}
 }
@@ -85,13 +85,14 @@ FNsSelfTestResult NsRunLockstepTurnCleanSelfTest()
 
 	bool bSawPreApply = false;
 	bool bSawApply = false;
-	const int32 ApplyFrame = (0 + NsLockstepTurnLead) * NsLockstepTurnFrames;
 	const int32 Steps = 40;
 	for (int32 S = 0; S < Steps; ++S)
 	{
 		C0.SendInput(Net, 1);
 		C1.SendInput(Net, -1);
 		TurnPump(Net, Sv, C0, C1);
+		const int32 ApplyFrame = NsLockstepTurnFrameStart(
+			Sv.TurnLen, NsLockstepTurnLead, Sv.FramesPerTurn);
 		if (C0.ExecFrame == ApplyFrame)
 		{
 			if (C0.World.X[0] != 0 || C0.World.X[1] != 0)
@@ -143,7 +144,8 @@ FNsSelfTestResult NsRunLockstepTurnLateSelfTest()
 	FNsLockstepTurnClient C1;
 	TurnInit(C0, C1);
 
-	const int32 Boundary = (0 + NsLockstepTurnLead) * NsLockstepTurnFrames;
+	const int32 Boundary = NsLockstepTurnFrameStart(
+		Sv.TurnLen, NsLockstepTurnLead, Sv.FramesPerTurn);
 	for (int32 S = 0; S < Boundary + 1; ++S)
 	{
 		C0.SendInput(Net, 1);
@@ -219,4 +221,77 @@ FNsSelfTestResult NsRunLockstepTurnDropSelfTest()
 			C1.World.X[0], C1.World.X[1]));
 	}
 	return TurnOk(FString::Printf(TEXT("lockstep-turn-drop frames=%d"), C0.ExecFrame));
+}
+
+FNsSelfTestResult NsRunLockstepTurnSpeedSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepTurnServer Sv;
+	FNsLockstepTurnClient C0;
+	FNsLockstepTurnClient C1;
+	TurnInit(C0, C1);
+
+	for (int32 S = 0; S < 16; ++S)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		TurnPump(Net, Sv, C0, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+
+	const int32 FptBefore = Sv.FramesPerTurn;
+	const double SlowMs = 400.0;
+	for (int32 SlowTurns = 0; SlowTurns < 5; ++SlowTurns)
+	{
+		const int32 Turn = Sv.CollectTurn;
+		const double Start = Sv.TurnStartMs;
+		C0.SendTurn = Turn;
+		C0.SendInput(Net, 1);
+		NsPumpLockstepTurnServer(Net, Sv);
+		NsPumpLockstepTurnClient(Net, C0);
+		while (Net.Now - Start < SlowMs && Sv.CollectTurn == Turn)
+		{
+			C0.SendTurn = Turn;
+			C0.SendInput(Net, 1);
+			NsPumpLockstepTurnServer(Net, Sv);
+			NsPumpLockstepTurnClient(Net, C0);
+			Net.Advance(10.0);
+		}
+		C0.SendTurn = Turn;
+		C1.SendTurn = Turn;
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		TurnPump(Net, Sv, C0, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+
+	if (Sv.FramesPerTurn <= FptBefore)
+	{
+		return TurnFailStr(FString::Printf(
+			TEXT("lockstep-turn-speed: fpt %d did not rise from %d collect=%d"),
+			Sv.FramesPerTurn, FptBefore, Sv.CollectTurn));
+	}
+	if (C0.FramesPerTurn != Sv.FramesPerTurn || C1.FramesPerTurn != Sv.FramesPerTurn)
+	{
+		return TurnFailStr(FString::Printf(
+			TEXT("lockstep-turn-speed: fpt sv=%d c0=%d c1=%d"),
+			Sv.FramesPerTurn, C0.FramesPerTurn, C1.FramesPerTurn));
+	}
+
+	for (int32 S = 0; S < 24; ++S)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		TurnPump(Net, Sv, C0, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+	TurnCatchUp(Net, Sv, C0, C1);
+	if (!C0.World.Equals(C1.World) || !C0.World.Equals(Sv.World))
+	{
+		return TurnFail(TEXT("lockstep-turn-speed: worlds"));
+	}
+	return TurnOk(FString::Printf(TEXT("lockstep-turn-speed fpt=%d"), Sv.FramesPerTurn));
 }

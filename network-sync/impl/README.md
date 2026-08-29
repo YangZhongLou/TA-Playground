@@ -13,7 +13,7 @@
 | 锁步哪一支 | [lockstep-kinds.md](lockstep-kinds.md) | `ENsLockstepKind`；乐观是 `NsLockstep.*` |
 | 手游 MOBA（乐观 15Hz） | [lockstep.md](lockstep.md) | `NsLockstep.h` / `NsLockstep.cpp` |
 | 等齐 | [lockstep-conservative.md](lockstep-conservative.md) | `NsLockstepWait.*`，禁止改乐观类 |
-| 通信回合 | [lockstep-comm-turn.md](lockstep-comm-turn.md) | `NsLockstepTurn.*`（Speed Control 未做） |
+| 通信回合 | [lockstep-comm-turn.md](lockstep-comm-turn.md) | `NsLockstepTurn.*` |
 | delay | [lockstep-delay.md](lockstep-delay.md) | `NsLockstepDelay.*` |
 | 射击 / 命令式端游 | [state_sync.md](state_sync.md) | `NsStateSync.h` / `NsStateSync.cpp` |
 | 格斗 | [rollback.md](rollback.md) | `NsRollback.h` / `NsRollback.cpp` |

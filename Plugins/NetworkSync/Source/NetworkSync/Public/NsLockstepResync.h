@@ -11,11 +11,14 @@ public:
 	FNsWorld LiveSnap;
 	int32 LiveSnapTick = 0;
 	bool bCaptured = false;
+	bool bResumed = false;
+	bool Acked[Ns::PlayerCount] = {};
 	int32 PumpCycles = 0;
 	bool bGiveUp = false;
 
 	void CaptureLive(const FNsLockstepServer& Sv);
 	void SendLiveSnap(INsNet& Net, ENsAddr Dst) const;
+	void Resume(FNsLockstepServer& Sv, INsNet& Net);
 };
 
 NETWORKSYNC_API void NsApplyResyncSnap(FNsLockstepClient& Client, const FNsPacket& Packet);

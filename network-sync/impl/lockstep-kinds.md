@@ -3,7 +3,7 @@
 `ENsScheme::Lockstep` 下面还有四支内核。和四套主方案一样：**一次只跑一支，不要合成万能锁步器。**
 
 概念轴见 [../schemes/lockstep-variants.md](../schemes/lockstep-variants.md)。
-已实现：[lockstep.md](lockstep.md)（乐观 15Hz）、[lockstep-conservative.md](lockstep-conservative.md)（等齐）、[lockstep-comm-turn.md](lockstep-comm-turn.md)（通信回合第一版）、[lockstep-delay.md](lockstep-delay.md)（固定 `d`）。
+已实现：[lockstep.md](lockstep.md)（乐观 15Hz）、[lockstep-conservative.md](lockstep-conservative.md)（等齐）、[lockstep-comm-turn.md](lockstep-comm-turn.md)（通信回合 + Speed Control）、[lockstep-delay.md](lockstep-delay.md)（固定 `d`）。
 
 ## 可独立实现的四支
 
@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | `Optimistic` | 墙钟到点就广播 | [lockstep.md](lockstep.md) | `NsLockstep.*`（已做） |
 | `Conservative` | 收齐本拍再 `F` | [lockstep-conservative.md](lockstep-conservative.md) | `NsLockstepWait.*` |
-| `CommTurn` | 通信回合 + 两回合提前 | [lockstep-comm-turn.md](lockstep-comm-turn.md) | `NsLockstepTurn.*`（Speed Control 未做） |
+| `CommTurn` | 通信回合 + 两回合提前 | [lockstep-comm-turn.md](lockstep-comm-turn.md) | `NsLockstepTurn.*` |
 | `DelayBased` | 等齐 + 固定 `d` 拍缓冲 | [lockstep-delay.md](lockstep-delay.md) | `NsLockstepDelay.*` |
 
 Speed Control 是 `CommTurn` 的第二里程碑，不是第五支内核。

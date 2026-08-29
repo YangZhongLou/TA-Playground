@@ -332,7 +332,12 @@ bool NsEncodePacket(const FNsPacket& Packet, TArray<uint8>& OutBytes)
 	OutBytes.Reset();
 	WriteU32(OutBytes, Ns::PacketMagic);
 	WriteU8(OutBytes, static_cast<uint8>(Packet.Type));
-	WriteU8(OutBytes, 0);
+	uint8 Rsv = 0;
+	if (Packet.Type == ENsMsg::S2CFrame && Packet.Tick >= 2 && Packet.Tick <= 6)
+	{
+		Rsv = static_cast<uint8>(Packet.Tick);
+	}
+	WriteU8(OutBytes, Rsv);
 	WriteU16(OutBytes, static_cast<uint16>(Payload.Num()));
 	WriteU32(OutBytes, static_cast<uint32>(Packet.Seq));
 	WriteU32(OutBytes, static_cast<uint32>(Packet.Ack));
@@ -356,7 +361,7 @@ bool NsDecodePacket(const TArray<uint8>& Bytes, FNsPacket& OutPacket)
 		return false;
 	}
 	const uint8 TypeRaw = R.U8();
-	(void)R.U8();
+	const uint8 Rsv = R.U8();
 	const uint16 PayloadLen = R.U16();
 	const int32 Seq = static_cast<int32>(R.U32());
 	const int32 Ack = static_cast<int32>(R.U32());
@@ -378,6 +383,10 @@ bool NsDecodePacket(const TArray<uint8>& Bytes, FNsPacket& OutPacket)
 	if (!ReadPayload(Type, R, Decoded) || !R.bOk)
 	{
 		return false;
+	}
+	if (Type == ENsMsg::S2CFrame && Rsv >= 2 && Rsv <= 6)
+	{
+		Decoded.Tick = static_cast<int32>(Rsv);
 	}
 	if (R.Off != Bytes.Num())
 	{

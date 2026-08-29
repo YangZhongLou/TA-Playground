@@ -39,19 +39,20 @@
 2. 清空 `Buf`。
 3. 不合并 `Frames`（payload 为空）。
 
-`NsPumpLockstepResyncClient`：仅当 `Resync.bCaptured`、`Tick == LiveSnapTick` 且 `Frames` 为空时走 `NsApplyResyncSnap`。周期 Join（`Tick=0` / 旧检查点 / 带尾巴）一律忽略。**忽略** `S2CFrame`；**不**调用 `Logic`。
+停拍期间（`bCaptured && !bResumed`）`NsPumpLockstepResyncClient`：仅当 `Tick == LiveSnapTick` 且 `Frames` 为空时走 `NsApplyResyncSnap`。周期 Join（`Tick=0` / 旧检查点 / 带尾巴）一律忽略。**忽略** `S2CFrame`；**不**调用 `Logic`。回跳成功后发 `C2SChecksum`。`bResumed` 后走平时 `ApplyJoin` / `OnS2C` / `Logic`。
 
 在途的旧输入帧不得在回跳后再执行。
 
 ## 收场
 
 对齐成功：`C0.World`、`C1.World`、`Sv.World`、`LiveSnap` 四份相等，且两客户端 `ExecFrame == LiveSnapTick`。
-保持停拍，**不要**清 `bDesync`、不要再 `Tick`。恢复推进是下一里程碑。
+对齐当拍仍停拍：客户端回跳后发 `C2SChecksum`（`Tick=LiveSnapTick`，Hash 为 `LiveSnap`）。服务器两槽都对上后 `Resume`：清 `bDesync`，`bResumed`，`NextMs = Now + LogicDtMs`（禁止用停拍期间攒下的墙钟追帧）。
+`bGiveUp` 后不要 Resume。
+未对齐前：保持停拍，不要清 `bDesync`、不要 `Tick`。
 
-逻辑 bug 拉齐后仍会分叉。第一版不停拍后再打，所以不会出现「第二次 checksum」。
-若 `Ns::ResyncGiveUpPumps`（32）个泵周期仍对不齐：`bGiveUp`，停止 `SendLiveSnap`。不要无限 Join。
+逻辑 bug 拉齐后仍会分叉；Resume 后若 checksum 再对不上，再次停拍。
 
-第一版不做按视野裁快照，不做踢人替代，不做恢复打拍。
+第一版不做按视野裁快照，不做踢人替代。恢复打拍是本包第二里程碑，已做。
 
 ## 禁令
 
@@ -73,3 +74,4 @@
 6. `ApplyJoin` 单测行为不变：`Tick <= ExecFrame` 时不跳世界。
 7. 对齐后再注入 `Tick=0` 的空 Join、或同 Tick 但带 `Frames` 的 Join：世界仍是 `LiveSnap`。
 8. 丢掉全部 `S2CJoinSnap`：33 个泵后 `bGiveUp`，`Frame` 不再增加。
+9. 对齐且两槽 checksum ack 后：`bResumed`，再过一个 `LogicDtMs` 后 `Frame` 增加，两端 `World` 同位。Ack 当拍 `Frame` 仍等于 `LiveSnapTick`。

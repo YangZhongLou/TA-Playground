@@ -322,6 +322,68 @@ FNsSelfTestResult NsRunLockstepResyncGiveUpSelfTest()
 	return HyOk(TEXT("lockstep-resync-giveup"));
 }
 
+FNsSelfTestResult NsRunLockstepResyncResumeSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	FNsLockstepClient C1;
+	HyInitLs(C0, C1);
+	HyWarmLockstep(Net, Sv, C0, C1, 24);
+	if (!HyForceDesync(Sv))
+	{
+		return HyFail(TEXT("lockstep-resync-resume: no checksum record"));
+	}
+	const int32 FrameAt = Sv.Frame;
+	FNsLockstepResync Repair;
+	NsPumpLockstepResyncServer(Net, Sv, Repair);
+	NsPumpLockstepResyncClient(Net, C0, Repair);
+	NsPumpLockstepResyncClient(Net, C1, Repair);
+	if (!HyAligned(Sv, Repair, C0, C1))
+	{
+		return HyFail(TEXT("lockstep-resync-resume: not aligned"));
+	}
+	if (Repair.bResumed || !Sv.bDesync)
+	{
+		return HyFail(TEXT("lockstep-resync-resume: resumed before acks"));
+	}
+
+	NsPumpLockstepResyncServer(Net, Sv, Repair);
+	if (!Repair.bResumed || Sv.bDesync)
+	{
+		return HyFail(TEXT("lockstep-resync-resume: did not resume after acks"));
+	}
+	if (Sv.Frame != FrameAt)
+	{
+		return HyFailStr(FString::Printf(
+			TEXT("lockstep-resync-resume: ticked on ack pump frame=%d was=%d"),
+			Sv.Frame, FrameAt));
+	}
+
+	C0.SendInput(Net, 1);
+	C1.SendInput(Net, -1);
+	NsPumpLockstepResyncClient(Net, C0, Repair);
+	NsPumpLockstepResyncClient(Net, C1, Repair);
+	Net.Advance(Ns::LogicDtMs);
+	NsPumpLockstepResyncServer(Net, Sv, Repair);
+	NsPumpLockstepResyncClient(Net, C0, Repair);
+	NsPumpLockstepResyncClient(Net, C1, Repair);
+	if (Sv.Frame <= FrameAt || C0.ExecFrame != Sv.Frame || C1.ExecFrame != Sv.Frame)
+	{
+		return HyFailStr(FString::Printf(
+			TEXT("lockstep-resync-resume: did not tick sv=%d c0=%d c1=%d was=%d"),
+			Sv.Frame, C0.ExecFrame, C1.ExecFrame, FrameAt));
+	}
+	if (!C0.World.Equals(C1.World) || !C0.World.Equals(Sv.World))
+	{
+		return HyFail(TEXT("lockstep-resync-resume: worlds"));
+	}
+	return HyOk(FString::Printf(TEXT("lockstep-resync-resume frame=%d"), Sv.Frame));
+}
+
 static void DoorInit(FNsLockstepDoorServer& Sv, FNsLockstepDoorClient& C0, FNsLockstepDoorClient& C1)
 {
 	C0.Ls.PlayerId = 0;
