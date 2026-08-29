@@ -79,7 +79,8 @@ public:
 	int32 PrevX[Ns::PlayerCount] = {0, 0};
 
 	void SendInput(INsNet& Net, int8 Dx);
-	void OnS2C(const TMap<int32, FNsInputs>& Turns, int32 LiveFpt);
+	void OnS2C(const TMap<int32, FNsInputs>& Turns, int32 LiveFpt, int32 ClosedLen,
+		const TMap<int32, int32>& Lens);
 	void Logic();
 	void CatchUpTo(int32 TargetFrame);
 };

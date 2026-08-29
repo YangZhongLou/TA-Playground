@@ -97,6 +97,17 @@ namespace
 		Out.Sort();
 	}
 
+	bool NsRsvCarriesTurnFpt(uint8 Rsv)
+	{
+		const int32 Hi = static_cast<int32>(Rsv >> 4);
+		const int32 Lo = static_cast<int32>(Rsv & 0xF);
+		if (NsIsTurnFpt(Hi) && NsIsTurnFpt(Lo))
+		{
+			return true;
+		}
+		return NsIsTurnFpt(static_cast<int32>(Rsv));
+	}
+
 	bool WritePayload(const FNsPacket& Packet, TArray<uint8>& Out)
 	{
 		switch (Packet.Type)
@@ -139,6 +150,15 @@ namespace
 				WriteU32(Out, static_cast<uint32>(K));
 				WriteI8(Out, Found->Dx[0]);
 				WriteI8(Out, Found->Dx[1]);
+				if (NsIsTurnFpt(Packet.Tick))
+				{
+					int32 Len = 0;
+					if (const int32* FoundLen = Packet.TurnFpt.Find(K))
+					{
+						Len = *FoundLen;
+					}
+					WriteU8(Out, static_cast<uint8>(NsIsTurnFpt(Len) ? Len : 0));
+				}
 			}
 			return true;
 		}
@@ -218,7 +238,7 @@ namespace
 		}
 	}
 
-	bool ReadPayload(ENsMsg Type, FNsReader& R, FNsPacket& Out)
+	bool ReadPayload(ENsMsg Type, FNsReader& R, FNsPacket& Out, bool bTurnFpt)
 	{
 		switch (Type)
 		{
@@ -241,6 +261,7 @@ namespace
 			(void)R.U32();
 			const int32 Count = R.U8();
 			Out.Frames.Reset();
+			Out.TurnFpt.Reset();
 			for (int32 i = 0; i < Count; ++i)
 			{
 				const int32 Frame = static_cast<int32>(R.U32());
@@ -248,6 +269,14 @@ namespace
 				In.Dx[0] = R.I8();
 				In.Dx[1] = R.I8();
 				Out.Frames.Add(Frame, In);
+				if (bTurnFpt)
+				{
+					const int32 Len = static_cast<int32>(R.U8());
+					if (NsIsTurnFpt(Len))
+					{
+						Out.TurnFpt.Add(Frame, Len);
+					}
+				}
 			}
 			return R.bOk;
 		}
@@ -333,9 +362,16 @@ bool NsEncodePacket(const FNsPacket& Packet, TArray<uint8>& OutBytes)
 	WriteU32(OutBytes, Ns::PacketMagic);
 	WriteU8(OutBytes, static_cast<uint8>(Packet.Type));
 	uint8 Rsv = 0;
-	if (Packet.Type == ENsMsg::S2CFrame && Packet.Tick >= 2 && Packet.Tick <= 6)
+	if (Packet.Type == ENsMsg::S2CFrame && NsIsTurnFpt(Packet.Tick))
 	{
-		Rsv = static_cast<uint8>(Packet.Tick);
+		if (NsIsTurnFpt(Packet.BaseTick))
+		{
+			Rsv = static_cast<uint8>((Packet.BaseTick << 4) | Packet.Tick);
+		}
+		else
+		{
+			Rsv = static_cast<uint8>(Packet.Tick);
+		}
 	}
 	WriteU8(OutBytes, Rsv);
 	WriteU16(OutBytes, static_cast<uint16>(Payload.Num()));
@@ -380,13 +416,23 @@ bool NsDecodePacket(const TArray<uint8>& Bytes, FNsPacket& OutPacket)
 	Decoded.Seq = Seq;
 	Decoded.Ack = Ack;
 	Decoded.AckBits = AckBits;
-	if (!ReadPayload(Type, R, Decoded) || !R.bOk)
+	if (!ReadPayload(Type, R, Decoded, Type == ENsMsg::S2CFrame && NsRsvCarriesTurnFpt(Rsv)) || !R.bOk)
 	{
 		return false;
 	}
-	if (Type == ENsMsg::S2CFrame && Rsv >= 2 && Rsv <= 6)
+	if (Type == ENsMsg::S2CFrame)
 	{
-		Decoded.Tick = static_cast<int32>(Rsv);
+		const int32 Hi = static_cast<int32>(Rsv >> 4);
+		const int32 Lo = static_cast<int32>(Rsv & 0xF);
+		if (NsIsTurnFpt(Hi) && NsIsTurnFpt(Lo))
+		{
+			Decoded.BaseTick = Hi;
+			Decoded.Tick = Lo;
+		}
+		else if (NsIsTurnFpt(static_cast<int32>(Rsv)))
+		{
+			Decoded.Tick = static_cast<int32>(Rsv);
+		}
 	}
 	if (R.Off != Bytes.Num())
 	{
@@ -414,7 +460,7 @@ int32 NsPayloadBytes(const FNsPacket& Packet)
 		{
 			return -1;
 		}
-		return 5 + 6 * Packet.Frames.Num();
+		return 5 + (NsIsTurnFpt(Packet.Tick) ? 7 : 6) * Packet.Frames.Num();
 	case ENsMsg::S2CSnapshot:
 		return 21;
 	case ENsMsg::C2SSnapAck:
@@ -543,17 +589,27 @@ void NsSplitForMtu(const FNsPacket& Packet, TArray<FNsPacket>& Out)
 
 	TArray<int32> Keys;
 	SortedIntKeys(Packet.Frames, Keys);
+	int32 FrameCap = Cap;
+	if (Packet.Type == ENsMsg::S2CFrame && NsIsTurnFpt(Packet.Tick))
+	{
+		FrameCap = Ns::MaxS2CTurnFrameEntries;
+	}
 	for (int32 i = 0; i < Keys.Num(); )
 	{
 		FNsPacket Part = Packet;
 		Part.Frames.Reset();
-		const int32 Take = FMath::Min(Cap, Keys.Num() - i);
+		Part.TurnFpt.Reset();
+		const int32 Take = FMath::Min(FrameCap, Keys.Num() - i);
 		for (int32 k = 0; k < Take; ++k)
 		{
 			const int32 Key = Keys[i + k];
 			if (const FNsInputs* Found = Packet.Frames.Find(Key))
 			{
 				Part.Frames.Add(Key, *Found);
+			}
+			if (const int32* FoundLen = Packet.TurnFpt.Find(Key))
+			{
+				Part.TurnFpt.Add(Key, *FoundLen);
 			}
 		}
 		i += Take;

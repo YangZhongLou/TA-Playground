@@ -19,7 +19,7 @@
 | --- | --- | --- | --- | --- |
 | 0 | 4 | u32 | magic | `0x54414E53`。小端字节 `53 4E 41 54` |
 | 4 | 1 | u8 | type | `ENsMsg` 1–8。其它值丢弃 |
-| 5 | 1 | u8 | reserved | 默认 `0`。`S2CFrame` 可把通信回合 `FramesPerTurn`（2–6）写在这里，其它 type 仍为 0 |
+| 5 | 1 | u8 | reserved | 默认 `0`。通信回合 `S2CFrame`：`(ClosedLen<<4)|NextFpt`，两档都是 2–6；仅 NextFpt 时高四位为 0。其它 type 仍为 0 |
 | 6 | 2 | u16 | payload_len | payload 字节数。必须等于 `包长 - 20` |
 | 8 | 4 | u32 | seq | 发送端对该源递增，从 1 起 |
 | 12 | 4 | u32 | ack | 本端作为接收方、对**当前对端**已收到的最大 seq |
@@ -108,19 +108,22 @@ payload 长度：`3 + 5×win`。乐观锁步整包 23 字节。等齐 `win=1` �
 | --- | --- | --- | --- | --- |
 | 0 | 4 | u32 | latest | 本包最大 frame。等于下面 keys 的最后一个。解码读掉但不单独存 |
 | 4 | 1 | u8 | count | 后面拍数。`>255` 失败。实现里 1–4 |
-| 5 | 6×count | — | 拍 | 每拍 `u32 frame + i8 dx0 + i8 dx1` |
+| 5 | 6×count 或 7×count | — | 拍 | 每拍 `u32 frame + i8 dx0 + i8 dx1`；通信回合再加 `u8` 回合长度 |
 
 一拍：
 
 | 相对拍起点 | 宽 | 类型 | 字段 |
 | --- | --- | --- | --- |
-| 0 | 4 | u32 | 逻辑拍号 n |
+| 0 | 4 | u32 | 逻辑拍号 n（通信回合里是回合号） |
 | 4 | 1 | i8 | 玩家 0 的 dx |
 | 5 | 1 | i8 | 玩家 1 的 dx |
+| 6 | 1 | u8 | 仅当 reserved 表示通信回合 FPT：该 key 的回合长度 2–6 |
 
 keys 升序写出。实现打包 `n-RedundantFrames .. n`（缺的 Hist 槽不写）。`RedundantFrames=3`，故 count 通常为 4；开局不足 4 拍则更少。
 
 payload 长度：`5 + 6×count`。count=4 时整包 49 字节。
+
+通信回合把 `Tick` 设为 2–6（下一回合 `FramesPerTurn`）。此时每条多 1 字节 `u8` 该回合长度（2–6），payload 为 `5 + 7×count`。reserved 为 `(ClosedLen<<4)|NextFpt`；只带 NextFpt 的旧包（reserved 2–6）仍解码。`BaseTick` 在内存里是 ClosedLen。
 
 示例（latest=4，两拍：frame 3 为 `(1,-1)`，frame 4 为 `(0,1)`）：
 

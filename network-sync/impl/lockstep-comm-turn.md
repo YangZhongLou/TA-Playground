@@ -69,5 +69,7 @@ World.Step(I)
 仍在 `NsLockstepTurn.*` 里加，不要新 Kind。
 
 主机用各端回合完成时间改 `FramesPerTurn`（整数，范围 2～6）。
-变差时立刻加大，好转时每回合最多减 1。全场同一 `FramesPerTurn`，写在 `S2CFrame` 的 reserved 字节（内存里是 `Tick`）。
+变差时立刻加大，好转时每回合最多减 1。全场同一下一回合长度。
+`S2CFrame` reserved = `(ClosedLen<<4)|NextFpt`（两档都是 2–6）。内存 `Tick=NextFpt`，`BaseTick=ClosedLen`。打包窗口每条再带该回合长度。客户端用包里的长度覆盖 `TurnLen[Closed]`，禁止用本地 `FramesPerTurn` 填已关闭回合。只带 NextFpt 的 reserved（高四位 0）仍解码。
 验收：`NetworkSync.Lockstep.Turn.Speed` — 人为把 C1 的处理变慢，全场 `FramesPerTurn` 上升，且两端 `World` 仍同位。
+`NetworkSync.Lockstep.Turn.LenDrop` — 升 FPT 后丢掉 C1 的 `S2CFrame`，每回合 dx 不同，Resend 后世界同位且 `TurnLen[Closed]` 与主机一致。

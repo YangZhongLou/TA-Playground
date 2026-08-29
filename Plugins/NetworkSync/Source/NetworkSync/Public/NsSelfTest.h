@@ -80,6 +80,7 @@ NETWORKSYNC_API FNsSelfTestResult NsRunLockstepResyncApplyJoinSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepResyncStaleJoinSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepResyncGiveUpSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepResyncResumeSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunLockstepResyncAgainSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepResyncCleanSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDoorCleanSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDoorDropOpenSelfTest();
@@ -97,6 +98,7 @@ NETWORKSYNC_API FNsSelfTestResult NsRunLockstepTurnCleanSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepTurnLateSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepTurnDropSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepTurnSpeedSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunLockstepTurnLenDropSelfTest();
 
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayCleanSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayRttSelfTest();

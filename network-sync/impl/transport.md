@@ -16,7 +16,7 @@
 | --- | --- | --- | --- |
 | 0 | u32 | magic | 固定 `0x54414E53`（随意，但两端一致） |
 | 4 | u8 | type | 见下表 |
-| 5 | u8 | reserved | 默认 `0`。`S2CFrame` 可把通信回合 `FramesPerTurn`（2–6）写在这里 |
+| 5 | u8 | reserved | 默认 `0`。通信回合 `S2CFrame`：`(ClosedLen<<4)|NextFpt`（2–6），或仅 NextFpt |
 | 6 | u16 | payload_len | 头之后的字节数 |
 | 8 | u32 | seq | 发送端递增，从 1 起 |
 | 12 | u32 | ack | 已收到的对端最大 seq |

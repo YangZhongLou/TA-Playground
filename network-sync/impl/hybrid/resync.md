@@ -46,7 +46,8 @@
 ## 收场
 
 对齐成功：`C0.World`、`C1.World`、`Sv.World`、`LiveSnap` 四份相等，且两客户端 `ExecFrame == LiveSnapTick`。
-对齐当拍仍停拍：客户端回跳后发 `C2SChecksum`（`Tick=LiveSnapTick`，Hash 为 `LiveSnap`）。服务器两槽都对上后 `Resume`：清 `bDesync`，`bResumed`，`NextMs = Now + LogicDtMs`（禁止用停拍期间攒下的墙钟追帧）。
+对齐当拍仍停拍：客户端回跳后发 `C2SChecksum`（`Tick=LiveSnapTick`，Hash 为 `LiveSnap`）。服务器两槽都对上后 `Resume`：清 `bDesync`、`bCaptured`、`Acked`、`PumpCycles`，置 `bResumed`，`NextMs = Now + LogicDtMs`（禁止用停拍期间攒下的墙钟追帧）。
+`CaptureLive` 把 `PumpCycles` 归零并清 `bGiveUp`。下一次 checksum 对不上必须重新捕获，禁止用停拍前的 Ack 立刻 Resume。
 `bGiveUp` 后不要 Resume。
 未对齐前：保持停拍，不要清 `bDesync`、不要 `Tick`。
 
@@ -78,3 +79,4 @@
 8. 丢掉全部 `S2CJoinSnap`：33 个泵后 `bGiveUp`，`Frame` 不再增加。
 9. 对齐且两槽 checksum ack 后：`bResumed`，再过一个 `LogicDtMs` 后 `Frame` 增加，两端 `World` 同位。Ack 当拍 `Frame` 仍等于 `LiveSnapTick`。
 10. `NetworkSync.Lockstep.Resync.Clean`：Manager 同序泵（SendInput → Resync 泵 → Advance）40 拍对齐且 checksum 通过。
+11. `NetworkSync.Lockstep.Resync.Again`：Resume 后再人为 checksum 失败。新的 `LiveSnapTick`，再次停拍，ack 后再 Resume，两端同位。

@@ -59,4 +59,10 @@ struct FNsPacket
 	uint32 SnapRng = 1;
 	int32 DoorOpen = 0;
 	TMap<int32, int8> RemoteDx;
+	TMap<int32, int32> TurnFpt;
 };
+
+inline bool NsIsTurnFpt(int32 Value)
+{
+	return Value >= 2 && Value <= 6;
+}

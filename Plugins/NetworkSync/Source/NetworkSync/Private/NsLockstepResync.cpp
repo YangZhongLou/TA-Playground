@@ -12,6 +12,8 @@ void FNsLockstepResync::CaptureLive(const FNsLockstepServer& Sv)
 	bResumed = false;
 	Acked[0] = false;
 	Acked[1] = false;
+	PumpCycles = 0;
+	bGiveUp = false;
 }
 
 void FNsLockstepResync::SendLiveSnap(INsNet& Net, ENsAddr Dst) const
@@ -30,6 +32,10 @@ void FNsLockstepResync::Resume(FNsLockstepServer& Sv, INsNet& Net)
 {
 	Sv.bDesync = false;
 	bResumed = true;
+	bCaptured = false;
+	Acked[0] = false;
+	Acked[1] = false;
+	PumpCycles = 0;
 	Sv.NextMs = Net.Now + Ns::LogicDtMs;
 }
 

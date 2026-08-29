@@ -1160,6 +1160,28 @@ FNsSelfTestResult NsRunCodecContractSelfTest()
 	}
 	{
 		FNsPacket Src;
+		Src.Type = ENsMsg::S2CFrame;
+		Src.Tick = 5;
+		Src.BaseTick = 3;
+		FNsInputs In;
+		In.Dx[0] = 1;
+		In.Dx[1] = -1;
+		Src.Frames.Add(4, In);
+		Src.TurnFpt.Add(4, 3);
+		const FNsSelfTestResult R = Check(TEXT("frame-turn"), Src, [](const FNsPacket& D)
+		{
+			const FNsInputs* F4 = D.Frames.Find(4);
+			const int32* Len = D.TurnFpt.Find(4);
+			return D.Type == ENsMsg::S2CFrame && D.Tick == 5 && D.BaseTick == 3
+				&& F4 && F4->Dx[0] == 1 && Len && *Len == 3;
+		});
+		if (!R.Detail.IsEmpty())
+		{
+			return R;
+		}
+	}
+	{
+		FNsPacket Src;
 		Src.Type = ENsMsg::C2SChecksum;
 		Src.PlayerId = 1;
 		Src.Tick = 15;
@@ -2233,6 +2255,7 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunLockstepResyncStaleJoinSelfTest,
 		&NsRunLockstepResyncGiveUpSelfTest,
 		&NsRunLockstepResyncResumeSelfTest,
+		&NsRunLockstepResyncAgainSelfTest,
 		&NsRunLockstepResyncCleanSelfTest,
 		&NsRunLockstepDoorCleanSelfTest,
 		&NsRunLockstepDoorDropOpenSelfTest,
@@ -2248,6 +2271,7 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunLockstepTurnLateSelfTest,
 		&NsRunLockstepTurnDropSelfTest,
 		&NsRunLockstepTurnSpeedSelfTest,
+		&NsRunLockstepTurnLenDropSelfTest,
 		&NsRunLockstepDelayCleanSelfTest,
 		&NsRunLockstepDelayRttSelfTest,
 		&NsRunLockstepDelayHighRttSelfTest,

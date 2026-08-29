@@ -34,6 +34,7 @@ namespace Ns
 	constexpr int32 MaxPacketBytes = 1200;
 	constexpr int32 MaxPayloadBytes = MaxPacketBytes - HeaderBytes;
 	constexpr int32 MaxS2CFrameEntries = (MaxPayloadBytes - 5) / 6;
+	constexpr int32 MaxS2CTurnFrameEntries = (MaxPayloadBytes - 5) / 7;
 	constexpr int32 MaxJoinSnapEntries = (MaxPayloadBytes - 17) / 6;
 	constexpr int32 MaxP2PInputEntries = (MaxPayloadBytes - 1) / 5;
 	constexpr int32 MaxC2SInputEntries = (MaxPayloadBytes - 3) / 5;
@@ -45,6 +46,8 @@ static_assert(Ns::MaxPacketBytes + Ns::Ipv4UdpOverheadBytes <= Ns::EthernetMtuBy
 	"UDP payload must fit in Ethernet MTU without IP fragmentation");
 static_assert(Ns::MaxS2CFrameEntries >= Ns::RedundantFrames + 1,
 	"one lockstep datagram must hold the working redundant window");
+static_assert(Ns::MaxS2CTurnFrameEntries >= 17,
+	"one turn datagram must hold the closed-turn window");
 
 inline int8 NsClampDx(int32 Dx)
 {
