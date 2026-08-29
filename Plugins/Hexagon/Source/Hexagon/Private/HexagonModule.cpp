@@ -112,8 +112,8 @@ static void RegisterHexEditorMenus()
 void FHexagonModule::StartupModule()
 {
 #if WITH_EDITOR
-	FCoreDelegates::OnPostEngineInit.AddStatic(&RegisterHexCommands);
-	FCoreDelegates::OnPostEngineInit.AddStatic(&RegisterHexEditorModes);
+	FCoreDelegates::GetOnPostEngineInit().AddStatic(&RegisterHexCommands);
+	FCoreDelegates::GetOnPostEngineInit().AddStatic(&RegisterHexEditorModes);
 	RegisterHexEditorMenus();
 #endif
 }

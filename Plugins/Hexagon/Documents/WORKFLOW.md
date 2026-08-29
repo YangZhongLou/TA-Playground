@@ -8,14 +8,14 @@
 
 ```powershell
 # 1. 编译
-& "C:\Program Files\Epic Games\UE_5.7\Engine\Build\BatchFiles\Build.bat" `
+& "C:\Program Files\Epic Games\UE_5.8\Engine\Build\BatchFiles\Build.bat" `
   -Target="TAPlaygroundEditor Win64 Development" `
-  -Project="D:\Mine\unreal_projects\TA-Playground\TA-Playground.uproject" `
+  -Project="D:\Playground\TA-Playground\TA-Playground.uproject" `
   -WaitMutex -FromMsBuild
 
 # 2. 跑测试 (headless)
-& "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
-  "D:\Mine\unreal_projects\TA-Playground\TA-Playground.uproject" `
+& "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
+  "D:\Playground\TA-Playground\TA-Playground.uproject" `
   -ExecCmds="Automation RunTests Hexagon; Quit" `
   -NullRHI -Unattended -NoSplash -Log
 

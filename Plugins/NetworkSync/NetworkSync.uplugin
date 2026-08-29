@@ -1,0 +1,18 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0.0",
+	"FriendlyName": "Network Sync",
+	"Description": "Lockstep, state-sync, rollback, and UE replication prototypes",
+	"Category": "Networking",
+	"CreatedBy": "TA-Playground",
+	"CanContainContent": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "NetworkSync",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

@@ -12,7 +12,7 @@ Technical Artist Playground — 基于 Unreal Engine 的渲染与图形技术实
 
 | 组件 | 版本/说明 |
 |------|-----------|
-| Unreal Engine | 5.4+（推荐 5.5） |
+| Unreal Engine | 5.8 |
 | Rust | 1.80+（MCP Server 编译） |
 | Python | 3.10+（MCP Server 辅助脚本） |
 | 平台 | Windows 10/11 |
@@ -61,11 +61,11 @@ git clone --recursive https://github.com/YangZhongLou/TA-Playground.git
 
 ```bash
 # Generate VS project files
-"C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" \
+"C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" \
   -projectfiles -project="TA-Playground.uproject" -game -rocket
 
 # Build editor target (compile C++ modules + UnrealMCP plugin)
-"C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" \
+"C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" \
   TAPlaygroundEditor Win64 Development -Project="TA-Playground.uproject"
 ```
 
