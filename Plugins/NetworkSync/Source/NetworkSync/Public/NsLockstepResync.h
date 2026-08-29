@@ -20,4 +20,4 @@ public:
 
 NETWORKSYNC_API void NsApplyResyncSnap(FNsLockstepClient& Client, const FNsPacket& Packet);
 NETWORKSYNC_API void NsPumpLockstepResyncServer(INsNet& Net, FNsLockstepServer& Sv, FNsLockstepResync& Resync, bool bWait = false);
-NETWORKSYNC_API void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, bool bWait = false);
+NETWORKSYNC_API void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, const FNsLockstepResync& Resync, bool bWait = false);

@@ -88,26 +88,26 @@ FNsSelfTestResult NsRunLockstepResyncAlignSelfTest()
 	HyWarmLockstep(Net, Sv, C0, C1, 24);
 	if (!HyForceDesync(Sv))
 	{
-		return HyFail(TEXT("hybrid-repair-align: no checksum record"));
+		return HyFail(TEXT("lockstep-resync-align: no checksum record"));
 	}
 	const int32 FrameAt = Sv.Frame;
 	FNsLockstepResync Repair;
 	NsPumpLockstepResyncServer(Net, Sv, Repair);
-	NsPumpLockstepResyncClient(Net, C0);
-	NsPumpLockstepResyncClient(Net, C1);
+	NsPumpLockstepResyncClient(Net, C0, Repair);
+	NsPumpLockstepResyncClient(Net, C1, Repair);
 	if (Sv.Frame != FrameAt)
 	{
-		return HyFailStr(FString::Printf(TEXT("hybrid-repair-align: ticked frame=%d was=%d"), Sv.Frame, FrameAt));
+		return HyFailStr(FString::Printf(TEXT("lockstep-resync-align: ticked frame=%d was=%d"), Sv.Frame, FrameAt));
 	}
 	if (!HyAligned(Sv, Repair, C0, C1))
 	{
-		return HyFail(TEXT("hybrid-repair-align: worlds not pulled to live snap"));
+		return HyFail(TEXT("lockstep-resync-align: worlds not pulled to live snap"));
 	}
 	if (Repair.bGiveUp)
 	{
-		return HyFail(TEXT("hybrid-repair-align: gave up"));
+		return HyFail(TEXT("lockstep-resync-align: gave up"));
 	}
-	return HyOk(TEXT("hybrid-repair-align"));
+	return HyOk(TEXT("lockstep-resync-align"));
 }
 
 FNsSelfTestResult NsRunLockstepResyncForceSelfTest()
@@ -123,20 +123,20 @@ FNsSelfTestResult NsRunLockstepResyncForceSelfTest()
 	HyWarmLockstep(Net, Sv, C0, C1, 24);
 	if (!HyForceDesync(Sv))
 	{
-		return HyFail(TEXT("hybrid-repair-force: no checksum record"));
+		return HyFail(TEXT("lockstep-resync-force: no checksum record"));
 	}
 	FNsLockstepResync Repair;
 	NsPumpLockstepResyncServer(Net, Sv, Repair);
 	C0.ExecFrame = Repair.LiveSnapTick + 8;
 	C0.World.X[0] = 999;
 	C0.World.Rng = 7;
-	NsPumpLockstepResyncClient(Net, C0);
-	NsPumpLockstepResyncClient(Net, C1);
+	NsPumpLockstepResyncClient(Net, C0, Repair);
+	NsPumpLockstepResyncClient(Net, C1, Repair);
 	if (C0.ExecFrame != Repair.LiveSnapTick || !C0.World.Equals(Repair.LiveSnap))
 	{
-		return HyFail(TEXT("hybrid-repair-force: ahead client not rewound"));
+		return HyFail(TEXT("lockstep-resync-force: ahead client not rewound"));
 	}
-	return HyOk(TEXT("hybrid-repair-force"));
+	return HyOk(TEXT("lockstep-resync-force"));
 }
 
 FNsSelfTestResult NsRunLockstepResyncIgnoreFrameSelfTest()
@@ -152,12 +152,12 @@ FNsSelfTestResult NsRunLockstepResyncIgnoreFrameSelfTest()
 	HyWarmLockstep(Net, Sv, C0, C1, 24);
 	if (!HyForceDesync(Sv))
 	{
-		return HyFail(TEXT("hybrid-repair-ignore: no checksum record"));
+		return HyFail(TEXT("lockstep-resync-ignore: no checksum record"));
 	}
 	FNsLockstepResync Repair;
 	NsPumpLockstepResyncServer(Net, Sv, Repair);
-	NsPumpLockstepResyncClient(Net, C0);
-	NsPumpLockstepResyncClient(Net, C1);
+	NsPumpLockstepResyncClient(Net, C0, Repair);
+	NsPumpLockstepResyncClient(Net, C1, Repair);
 	const FNsWorld Before = C0.World;
 	const int32 Exec = C0.ExecFrame;
 	FNsInputs In;
@@ -166,12 +166,12 @@ FNsSelfTestResult NsRunLockstepResyncIgnoreFrameSelfTest()
 	TMap<int32, FNsInputs> Extra;
 	Extra.Add(Exec, In);
 	C0.OnS2C(Extra);
-	NsPumpLockstepResyncClient(Net, C0);
+	NsPumpLockstepResyncClient(Net, C0, Repair);
 	if (!C0.World.Equals(Before) || C0.ExecFrame != Exec)
 	{
-		return HyFail(TEXT("hybrid-repair-ignore: S2CFrame still stepped"));
+		return HyFail(TEXT("lockstep-resync-ignore: S2CFrame still stepped"));
 	}
-	return HyOk(TEXT("hybrid-repair-ignore-frame"));
+	return HyOk(TEXT("lockstep-resync-ignore-frame"));
 }
 
 FNsSelfTestResult NsRunLockstepResyncDropSelfTest()
@@ -188,22 +188,22 @@ FNsSelfTestResult NsRunLockstepResyncDropSelfTest()
 	HyWarmLockstep(Net, Sv, C0, C1, 24);
 	if (!HyForceDesync(Sv))
 	{
-		return HyFail(TEXT("hybrid-repair-drop: no checksum record"));
+		return HyFail(TEXT("lockstep-resync-drop: no checksum record"));
 	}
 	Net.Drop = 0.1f;
 	FNsLockstepResync Repair;
 	for (int32 i = 0; i < Ns::ResyncGiveUpPumps; ++i)
 	{
 		NsPumpLockstepResyncServer(Net, Sv, Repair);
-		NsPumpLockstepResyncClient(Net, C0);
-		NsPumpLockstepResyncClient(Net, C1);
+		NsPumpLockstepResyncClient(Net, C0, Repair);
+		NsPumpLockstepResyncClient(Net, C1, Repair);
 		Net.Advance(1.0);
 		if (HyAligned(Sv, Repair, C0, C1))
 		{
-			return HyOk(TEXT("hybrid-repair-drop"));
+			return HyOk(TEXT("lockstep-resync-drop"));
 		}
 	}
-	return HyFail(TEXT("hybrid-repair-drop: did not align"));
+	return HyFail(TEXT("lockstep-resync-drop: did not align"));
 }
 
 FNsSelfTestResult NsRunLockstepResyncApplyJoinSelfTest()
@@ -220,18 +220,109 @@ FNsSelfTestResult NsRunLockstepResyncApplyJoinSelfTest()
 	C.ApplyJoin(Pkt);
 	if (C.World.X[0] != 5 || C.ExecFrame != 10)
 	{
-		return HyFail(TEXT("hybrid-repair-applyjoin: equal tick jumped"));
+		return HyFail(TEXT("lockstep-resync-applyjoin: equal tick jumped"));
 	}
 	Pkt.Tick = 11;
 	C.ApplyJoin(Pkt);
 	if (C.World.X[0] != 99 || C.ExecFrame != 11)
 	{
-		return HyFail(TEXT("hybrid-repair-applyjoin: future tick did not jump"));
+		return HyFail(TEXT("lockstep-resync-applyjoin: future tick did not jump"));
 	}
-	return HyOk(TEXT("hybrid-repair-applyjoin-guard"));
+	return HyOk(TEXT("lockstep-resync-applyjoin-guard"));
 }
 
-static void HyInitOverlay(FNsLockstepDoorServer& Sv, FNsLockstepDoorClient& C0, FNsLockstepDoorClient& C1)
+FNsSelfTestResult NsRunLockstepResyncStaleJoinSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	FNsLockstepClient C1;
+	HyInitLs(C0, C1);
+	HyWarmLockstep(Net, Sv, C0, C1, 24);
+	if (!HyForceDesync(Sv))
+	{
+		return HyFail(TEXT("lockstep-resync-stale: no checksum record"));
+	}
+	FNsLockstepResync Repair;
+	NsPumpLockstepResyncServer(Net, Sv, Repair);
+	NsPumpLockstepResyncClient(Net, C0, Repair);
+	NsPumpLockstepResyncClient(Net, C1, Repair);
+	if (!HyAligned(Sv, Repair, C0, C1))
+	{
+		return HyFail(TEXT("lockstep-resync-stale: not aligned"));
+	}
+
+	FNsPacket Stale;
+	Stale.Type = ENsMsg::S2CJoinSnap;
+	Stale.Tick = 0;
+	Stale.SnapX[0] = 999;
+	Stale.SnapX[1] = -999;
+	Stale.SnapRng = 99;
+	Net.Send(ENsAddr::Sv, ENsAddr::C0, Stale);
+	NsPumpLockstepResyncClient(Net, C0, Repair);
+	if (!C0.World.Equals(Repair.LiveSnap) || C0.ExecFrame != Repair.LiveSnapTick)
+	{
+		return HyFail(TEXT("lockstep-resync-stale: Tick=0 JoinSnap overwrote live snap"));
+	}
+
+	FNsPacket Periodic;
+	Periodic.Type = ENsMsg::S2CJoinSnap;
+	Periodic.Tick = Repair.LiveSnapTick;
+	Periodic.SnapX[0] = 777;
+	Periodic.SnapRng = 11;
+	FNsInputs Tail;
+	Tail.Dx[0] = 1;
+	Periodic.Frames.Add(Repair.LiveSnapTick, Tail);
+	Net.Send(ENsAddr::Sv, ENsAddr::C0, Periodic);
+	NsPumpLockstepResyncClient(Net, C0, Repair);
+	if (C0.World.X[0] == 777 || !C0.World.Equals(Repair.LiveSnap))
+	{
+		return HyFail(TEXT("lockstep-resync-stale: Join with Frames overwrote live snap"));
+	}
+	return HyOk(TEXT("lockstep-resync-stale-join"));
+}
+
+FNsSelfTestResult NsRunLockstepResyncGiveUpSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	FNsLockstepClient C1;
+	HyInitLs(C0, C1);
+	HyWarmLockstep(Net, Sv, C0, C1, 24);
+	if (!HyForceDesync(Sv))
+	{
+		return HyFail(TEXT("lockstep-resync-giveup: no checksum record"));
+	}
+	Net.bDropType = true;
+	Net.DropType = ENsMsg::S2CJoinSnap;
+	const int32 FrameAt = Sv.Frame;
+	FNsLockstepResync Repair;
+	for (int32 i = 0; i <= Ns::ResyncGiveUpPumps; ++i)
+	{
+		NsPumpLockstepResyncServer(Net, Sv, Repair);
+		NsPumpLockstepResyncClient(Net, C0, Repair);
+		NsPumpLockstepResyncClient(Net, C1, Repair);
+	}
+	if (!Repair.bGiveUp)
+	{
+		return HyFail(TEXT("lockstep-resync-giveup: did not give up"));
+	}
+	if (Sv.Frame != FrameAt)
+	{
+		return HyFailStr(FString::Printf(
+			TEXT("lockstep-resync-giveup: ticked frame=%d was=%d"), Sv.Frame, FrameAt));
+	}
+	return HyOk(TEXT("lockstep-resync-giveup"));
+}
+
+static void DoorInit(FNsLockstepDoorServer& Sv, FNsLockstepDoorClient& C0, FNsLockstepDoorClient& C1)
 {
 	C0.Ls.PlayerId = 0;
 	C0.Ls.Addr = ENsAddr::C0;
@@ -239,7 +330,7 @@ static void HyInitOverlay(FNsLockstepDoorServer& Sv, FNsLockstepDoorClient& C0, 
 	C1.Ls.Addr = ENsAddr::C1;
 }
 
-static void HyWarmOverlay(FNsFakeNet& Net, FNsLockstepDoorServer& Sv, FNsLockstepDoorClient& C0, FNsLockstepDoorClient& C1, int32 Steps)
+static void DoorWarm(FNsFakeNet& Net, FNsLockstepDoorServer& Sv, FNsLockstepDoorClient& C0, FNsLockstepDoorClient& C1, int32 Steps)
 {
 	for (int32 S = 0; S < Steps; ++S)
 	{
@@ -261,18 +352,18 @@ FNsSelfTestResult NsRunLockstepDoorCleanSelfTest()
 	FNsLockstepDoorServer Sv;
 	FNsLockstepDoorClient C0;
 	FNsLockstepDoorClient C1;
-	HyInitOverlay(Sv, C0, C1);
+	DoorInit(Sv, C0, C1);
 	Sv.SetOpen(Net, 1);
-	HyWarmOverlay(Net, Sv, C0, C1, 40);
+	DoorWarm(Net, Sv, C0, C1, 40);
 	if (!C0.Ls.World.Equals(C1.Ls.World) || C0.Ls.ExecFrame < 20)
 	{
-		return HyFail(TEXT("hybrid-overlay-clean: pawns"));
+		return HyFail(TEXT("lockstep-door-clean: pawns"));
 	}
 	if (C0.Door.Open != 1 || C1.Door.Open != 1 || Sv.Door.Open != 1)
 	{
-		return HyFail(TEXT("hybrid-overlay-clean: gate"));
+		return HyFail(TEXT("lockstep-door-clean: gate"));
 	}
-	return HyOk(TEXT("hybrid-overlay-clean"));
+	return HyOk(TEXT("lockstep-door-clean"));
 }
 
 FNsSelfTestResult NsRunLockstepDoorDropOpenSelfTest()
@@ -286,22 +377,22 @@ FNsSelfTestResult NsRunLockstepDoorDropOpenSelfTest()
 	FNsLockstepDoorServer Sv;
 	FNsLockstepDoorClient C0;
 	FNsLockstepDoorClient C1;
-	HyInitOverlay(Sv, C0, C1);
+	DoorInit(Sv, C0, C1);
 	Sv.SetOpen(Net, 1);
-	HyWarmOverlay(Net, Sv, C0, C1, 40);
+	DoorWarm(Net, Sv, C0, C1, 40);
 	if (!C0.Ls.World.Equals(C1.Ls.World) || C0.Ls.ExecFrame < 20)
 	{
-		return HyFail(TEXT("hybrid-overlay-dropgate: pawns diverged"));
+		return HyFail(TEXT("lockstep-door-dropgate: pawns diverged"));
 	}
 	if (C0.Door.Open != 0 || C1.Door.Open != 0)
 	{
-		return HyFail(TEXT("hybrid-overlay-dropgate: gate should stay closed"));
+		return HyFail(TEXT("lockstep-door-dropgate: gate should stay closed"));
 	}
 	if (Sv.Door.Open != 1)
 	{
-		return HyFail(TEXT("hybrid-overlay-dropgate: server gate"));
+		return HyFail(TEXT("lockstep-door-dropgate: server gate"));
 	}
-	return HyOk(TEXT("hybrid-overlay-drop-gate"));
+	return HyOk(TEXT("lockstep-door-drop-gate"));
 }
 
 FNsSelfTestResult NsRunLockstepDoorDropFrameSelfTest()
@@ -311,10 +402,12 @@ FNsSelfTestResult NsRunLockstepDoorDropFrameSelfTest()
 	Net.RttMs = 80.f;
 	Net.JitterMs = 8.f;
 	Net.Rng.Initialize(1);
+	Net.bExemptDrop = true;
+	Net.ExemptDrop = ENsMsg::S2CDoorOpen;
 	FNsLockstepDoorServer Sv;
 	FNsLockstepDoorClient C0;
 	FNsLockstepDoorClient C1;
-	HyInitOverlay(Sv, C0, C1);
+	DoorInit(Sv, C0, C1);
 	Sv.SetOpen(Net, 1);
 	const int32 Frames = 90;
 	const double End = Frames * Ns::LogicDtMs;
@@ -336,13 +429,13 @@ FNsSelfTestResult NsRunLockstepDoorDropFrameSelfTest()
 	}
 	if (C0.Ls.ExecFrame <= 40 || !C0.Ls.World.Equals(C1.Ls.World))
 	{
-		return HyFail(TEXT("hybrid-overlay-dropframe: pawns"));
+		return HyFail(TEXT("lockstep-door-dropframe: pawns"));
 	}
 	if (C0.Door.Open != 1 || C1.Door.Open != 1)
 	{
-		return HyFail(TEXT("hybrid-overlay-dropframe: gate"));
+		return HyFail(TEXT("lockstep-door-dropframe: gate"));
 	}
-	return HyOk(TEXT("hybrid-overlay-drop-frame"));
+	return HyOk(TEXT("lockstep-door-drop-frame"));
 }
 
 FNsSelfTestResult NsRunLockstepDoorIgnoreSnapSelfTest()
@@ -354,8 +447,8 @@ FNsSelfTestResult NsRunLockstepDoorIgnoreSnapSelfTest()
 	FNsLockstepDoorServer Sv;
 	FNsLockstepDoorClient C0;
 	FNsLockstepDoorClient C1;
-	HyInitOverlay(Sv, C0, C1);
-	HyWarmOverlay(Net, Sv, C0, C1, 12);
+	DoorInit(Sv, C0, C1);
+	DoorWarm(Net, Sv, C0, C1, 12);
 	const int32 X0 = C0.Ls.World.X[0];
 	FNsPacket Snap;
 	Snap.Type = ENsMsg::S2CSnapshot;
@@ -366,9 +459,9 @@ FNsSelfTestResult NsRunLockstepDoorIgnoreSnapSelfTest()
 	NsPumpLockstepDoorClient(Net, C0);
 	if (C0.Ls.World.X[0] != X0)
 	{
-		return HyFail(TEXT("hybrid-overlay-ignoresnap: snapshot wrote X"));
+		return HyFail(TEXT("lockstep-door-ignoresnap: snapshot wrote X"));
 	}
-	return HyOk(TEXT("hybrid-overlay-ignore-snap"));
+	return HyOk(TEXT("lockstep-door-ignore-snap"));
 }
 
 FNsSelfTestResult NsRunLockstepDoorNotInStepSelfTest()
@@ -384,7 +477,7 @@ FNsSelfTestResult NsRunLockstepDoorNotInStepSelfTest()
 	FNsLockstepDoorServer Ov;
 	FNsLockstepDoorClient Oc0;
 	FNsLockstepDoorClient Oc1;
-	HyInitOverlay(Ov, Oc0, Oc1);
+	DoorInit(Ov, Oc0, Oc1);
 	Ov.SetOpen(A, 1);
 	FNsLockstepServer Ls;
 	FNsLockstepClient Lc0;
@@ -408,7 +501,7 @@ FNsSelfTestResult NsRunLockstepDoorNotInStepSelfTest()
 	}
 	if (!Oc0.Ls.World.Equals(Lc0.World) || Oc0.Door.Open != 1)
 	{
-		return HyFail(TEXT("hybrid-overlay-gate-not-in-f: X moved with gate"));
+		return HyFail(TEXT("lockstep-door-gate-not-in-f: X moved with gate"));
 	}
-	return HyOk(TEXT("hybrid-overlay-gate-not-in-f"));
+	return HyOk(TEXT("lockstep-door-gate-not-in-f"));
 }

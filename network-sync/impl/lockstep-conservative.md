@@ -66,8 +66,10 @@ void Tick(INsNet& Net)
 ## 客户端
 
 本地采样 dx，发 `C2SInput`：`win=1`，`seq=ExecFrame`（尚未执行的下一拍）。
-收到 `S2CFrame` 的拍 n 写入 `Buf`，`Logic` 与乐观相同：`while (Buf.Find(ExecFrame)) Step`。
+收到 `S2CFrame` 的拍 n 写入 `Buf`，`Logic` 与乐观相同：`while (Buf.Find(ExecFrame)) Step`，每 `ChecksumEvery` 拍上报 `C2SChecksum`。
 缺 `ExecFrame` 时禁止跳。
+
+第一版不做 Join。客户端落后超过 `RedundantFrames+1` 拍、且服务器仍在超时推进时，冗余窗盖不住，无法追上。
 
 ## 泵
 
@@ -78,7 +80,7 @@ void Tick(INsNet& Net)
 测试名前缀 `NetworkSync.Lockstep.Wait.`。
 
 1. Drop=0，RTT=0：两边每拍都有输入，`Frame` 与两端 `ExecFrame` 对齐，checksum 相同。
-2. C1 停发：全场 `Frame` 停住，直到 `StallTimeoutMs` 后才进一步。
+2. C1 停发：全场 `Frame` 停住，直到 `NsLockstepWaitStallMs` 后才进一步；缺槽填 0，不是沿用上一拍。
 3. Drop=0.1：靠冗余仍不跳拍；允许因停等变慢，不允许分叉。
 
 不要复用 `NetworkSync.Lockstep.Drop10`：那条假定到点就走。

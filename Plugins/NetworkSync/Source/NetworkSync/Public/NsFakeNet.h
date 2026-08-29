@@ -14,6 +14,8 @@ public:
 	FRandomStream Rng;
 	bool bDropType = false;
 	ENsMsg DropType = ENsMsg::C2SInput;
+	bool bExemptDrop = false;
+	ENsMsg ExemptDrop = ENsMsg::S2CDoorOpen;
 
 	virtual void Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet) override;
 	virtual void Drain(ENsAddr Dst, TArray<FNsPacket>& Out) override;

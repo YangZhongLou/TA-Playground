@@ -2230,6 +2230,8 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunLockstepResyncIgnoreFrameSelfTest,
 		&NsRunLockstepResyncDropSelfTest,
 		&NsRunLockstepResyncApplyJoinSelfTest,
+		&NsRunLockstepResyncStaleJoinSelfTest,
+		&NsRunLockstepResyncGiveUpSelfTest,
 		&NsRunLockstepDoorCleanSelfTest,
 		&NsRunLockstepDoorDropOpenSelfTest,
 		&NsRunLockstepDoorDropFrameSelfTest,

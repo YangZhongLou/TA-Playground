@@ -78,6 +78,10 @@ FNsSelfTestResult NsRunLockstepWaitCleanSelfTest()
 	{
 		return WaitFail(TEXT("lockstep-wait-clean: checksum"));
 	}
+	if (Sv.ChecksumOk <= 0)
+	{
+		return WaitFail(TEXT("lockstep-wait-clean: no checksum ack"));
+	}
 	return WaitOk(TEXT("lockstep-wait-clean"));
 }
 
@@ -121,6 +125,13 @@ FNsSelfTestResult NsRunLockstepWaitStallSelfTest()
 	{
 		return WaitFailStr(FString::Printf(
 			TEXT("lockstep-wait-stall: expected %d got %d"), Held + 1, Sv.Frame));
+	}
+	const int32 SilentX = -5 * Ns::LockstepSpeed;
+	if (C0.World.X[1] != SilentX || C1.World.X[1] != SilentX || Sv.World.X[1] != SilentX)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-stall: fill-0 x1=%d (Latest would be %d)"),
+			C0.World.X[1], SilentX - Ns::LockstepSpeed));
 	}
 	return WaitOk(TEXT("lockstep-wait-stall"));
 }

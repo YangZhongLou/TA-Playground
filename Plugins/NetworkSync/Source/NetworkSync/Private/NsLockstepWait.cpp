@@ -13,6 +13,21 @@ void FNsLockstepWaitServer::OnInput(int32 PlayerId, int32 Tick, int8 Dx)
 	Got[PlayerId] = true;
 }
 
+void FNsLockstepWaitServer::OnChecksum(int32 FrameIndex, uint32 Hash)
+{
+	if (const uint32* Found = Checksums.Find(FrameIndex))
+	{
+		if (*Found == Hash)
+		{
+			++ChecksumOk;
+		}
+		else
+		{
+			bDesync = true;
+		}
+	}
+}
+
 void FNsLockstepWaitServer::Tick(INsNet& Net)
 {
 	const bool bAll = Got[0] && Got[1];
@@ -35,6 +50,10 @@ void FNsLockstepWaitServer::Tick(INsNet& Net)
 
 	Hist.Add(Frame, Slot);
 	World.Step(Slot.Dx, Ns::LockstepSpeed);
+	if (Frame % Ns::ChecksumEvery == 0)
+	{
+		Checksums.Add(Frame, World.Checksum());
+	}
 
 	TMap<int32, FNsInputs> Packed;
 	const int32 First = FMath::Max(0, Frame - Ns::RedundantFrames);
@@ -96,13 +115,22 @@ void FNsLockstepWaitClient::OnS2C(const TMap<int32, FNsInputs>& Frames)
 	}
 }
 
-void FNsLockstepWaitClient::Logic()
+void FNsLockstepWaitClient::Logic(INsNet& Net)
 {
 	while (const FNsInputs* Found = Buf.Find(ExecFrame))
 	{
 		PrevX[0] = World.X[0];
 		PrevX[1] = World.X[1];
 		World.Step(Found->Dx, Ns::LockstepSpeed);
+		if (ExecFrame % Ns::ChecksumEvery == 0)
+		{
+			FNsPacket Pkt;
+			Pkt.Type = ENsMsg::C2SChecksum;
+			Pkt.PlayerId = PlayerId;
+			Pkt.Tick = ExecFrame;
+			Pkt.Hash = World.Checksum();
+			Net.Send(Addr, ENsAddr::Sv, Pkt);
+		}
 		Buf.Remove(ExecFrame);
 		++ExecFrame;
 	}
@@ -114,16 +142,19 @@ void NsPumpLockstepWaitServer(INsNet& Net, FNsLockstepWaitServer& Sv, bool bWait
 	NsDrain(Net, ENsAddr::Sv, ToSv, bWait);
 	for (const FNsPacket& P : ToSv)
 	{
-		if (P.Type != ENsMsg::C2SInput)
+		if (P.Type == ENsMsg::C2SInput)
 		{
-			continue;
+			const int32 Id = NsPlayerIdFromAddr(P.Src);
+			if (Id < 0 || P.SeqWindow.Num() == 0 || P.DxWindow.Num() == 0)
+			{
+				continue;
+			}
+			Sv.OnInput(Id, P.SeqWindow[0], P.DxWindow[0]);
 		}
-		const int32 Id = NsPlayerIdFromAddr(P.Src);
-		if (Id < 0 || P.SeqWindow.Num() == 0 || P.DxWindow.Num() == 0)
+		else if (P.Type == ENsMsg::C2SChecksum)
 		{
-			continue;
+			Sv.OnChecksum(P.Tick, P.Hash);
 		}
-		Sv.OnInput(Id, P.SeqWindow[0], P.DxWindow[0]);
 	}
 	Sv.Tick(Net);
 }
@@ -139,5 +170,5 @@ void NsPumpLockstepWaitClient(INsNet& Net, FNsLockstepWaitClient& C, bool bWait)
 			C.OnS2C(P.Frames);
 		}
 	}
-	C.Logic();
+	C.Logic(Net);
 }

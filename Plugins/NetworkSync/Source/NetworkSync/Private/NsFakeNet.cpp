@@ -18,7 +18,7 @@ void FNsFakeNet::Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet)
 		{
 			continue;
 		}
-		if (Rng.FRand() < Drop)
+		if (!(bExemptDrop && Copy.Type == ExemptDrop) && Rng.FRand() < Drop)
 		{
 			continue;
 		}

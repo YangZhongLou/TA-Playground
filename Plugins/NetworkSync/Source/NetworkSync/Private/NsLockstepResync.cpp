@@ -75,13 +75,16 @@ void NsPumpLockstepResyncServer(INsNet& Net, FNsLockstepServer& Sv, FNsLockstepR
 	Resync.SendLiveSnap(Net, ENsAddr::C1);
 }
 
-void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, bool bWait)
+void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, const FNsLockstepResync& Resync, bool bWait)
 {
 	TArray<FNsPacket> ToC;
 	NsDrain(Net, C.Addr, ToC, bWait);
 	for (const FNsPacket& P : ToC)
 	{
-		if (P.Type == ENsMsg::S2CJoinSnap)
+		if (P.Type == ENsMsg::S2CJoinSnap
+			&& Resync.bCaptured
+			&& P.Tick == Resync.LiveSnapTick
+			&& P.Frames.Num() == 0)
 		{
 			NsApplyResyncSnap(C, P);
 		}

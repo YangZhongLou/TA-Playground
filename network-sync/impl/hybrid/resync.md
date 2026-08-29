@@ -39,7 +39,7 @@
 2. 清空 `Buf`。
 3. 不合并 `Frames`（payload 为空）。
 
-`NsPumpLockstepResyncClient`：JoinSnap 走 `NsApplyResyncSnap`；**忽略** `S2CFrame`；**不**调用 `Logic`。
+`NsPumpLockstepResyncClient`：仅当 `Resync.bCaptured`、`Tick == LiveSnapTick` 且 `Frames` 为空时走 `NsApplyResyncSnap`。周期 Join（`Tick=0` / 旧检查点 / 带尾巴）一律忽略。**忽略** `S2CFrame`；**不**调用 `Logic`。
 
 在途的旧输入帧不得在回跳后再执行。
 
@@ -71,3 +71,5 @@
 4. 置位后注入在途 `S2CFrame`，客户端不得再 `Step`。
 5. Drop=0.1：靠 `SendLiveSnap` 双发对齐（与 Join 分片无关，payload 无尾巴）。
 6. `ApplyJoin` 单测行为不变：`Tick <= ExecFrame` 时不跳世界。
+7. 对齐后再注入 `Tick=0` 的空 Join、或同 Tick 但带 `Frames` 的 Join：世界仍是 `LiveSnap`。
+8. 丢掉全部 `S2CJoinSnap`：33 个泵后 `bGiveUp`，`Frame` 不再增加。
