@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "NsFakeNet.h"
 #include "NsLockstep.h"
+#include "NsLockstepWait.h"
 #include "NsStateSync.h"
 #include "NsRollback.h"
 #include "NsUdpNet.h"
@@ -28,6 +29,15 @@ enum class ENsScheme : uint8
 	Replication  UMETA(DisplayName = "UE Replication"),
 };
 
+UENUM(BlueprintType)
+enum class ENsLockstepKind : uint8
+{
+	Optimistic   UMETA(DisplayName = "Optimistic 15Hz"),
+	Conservative UMETA(DisplayName = "Conservative wait-all"),
+	CommTurn     UMETA(DisplayName = "AoE comm turn"),
+	DelayBased   UMETA(DisplayName = "Delay-based"),
+};
+
 UCLASS()
 class NETWORKSYNC_API ANsNetManager : public AActor
 {
@@ -41,6 +51,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync")
 	ENsScheme Scheme = ENsScheme::Lockstep;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync", meta = (EditCondition = "Scheme == ENsScheme::Lockstep"))
+	ENsLockstepKind LockstepKind = ENsLockstepKind::Optimistic;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync")
 	float DrawScale = 10.f;
@@ -91,6 +104,9 @@ private:
 	FNsLockstepServer LsSv;
 	FNsLockstepClient LsC0;
 	FNsLockstepClient LsC1;
+	FNsLockstepWaitServer WaitSv;
+	FNsLockstepWaitClient WaitC0;
+	FNsLockstepWaitClient WaitC1;
 	FNsStateSyncServer SsSv;
 	FNsStateSyncClient SsC0;
 	FNsStateSyncClient SsC1;
@@ -100,4 +116,5 @@ private:
 	TWeakObjectPtr<AActor> DoorActor;
 	double AccumMs = 0.0;
 	ENsScheme AppliedScheme = ENsScheme::Lockstep;
+	ENsLockstepKind AppliedLockstepKind = ENsLockstepKind::Optimistic;
 };

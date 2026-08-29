@@ -14,7 +14,7 @@
 | 概念 | `schemes/`、`cases/`、[comparison.md](comparison.md) | 四种方案机理与品类 | 插件 API |
 | 框架 | 本文 | 决策、分层、模块边界、验收范围 | 逐字节、逐行主循环 |
 | 规格 | `impl/` | 常量、循环、包语义、怎么跑 | 产品对比 |
-| 线上布局 | [impl/packet-format.md](impl/packet-format.md) | 20 字节头与七种 payload | 策略论述 |
+| 线上布局 | [impl/packet-format.md](impl/packet-format.md) | 20 字节头与八种 payload | 策略论述 |
 
 改协议语义：先改规格，再改代码，最后改本文的不变量表。
 改字节：只改 `packet-format.md` 与 `NsCodec.cpp`。
@@ -25,7 +25,7 @@
 
 | 约束 | 对本原型的含义 |
 | --- | --- |
-| 延迟 | 假网络默认 RTT 80ms；手感靠乐观执行或预测，不靠 TCP |
+| 延迟 | 假网络默认 RTT 80ms；手感靠乐观节拍或预测，不靠 TCP |
 | 丢包 | 应用层冗余或 ACK；传输层是不可靠数据报 |
 | 带宽 | 两人一维整数世界；目标是把协议走通 |
 | 信任 | 锁步 / 回滚各端自模拟；状态同步与复制以服务器为真 |
@@ -36,6 +36,7 @@
 ## 选型结论
 
 四套方案同时保留，用 `ENsScheme` 切换。不要合成「万能同步器」。
+锁步内部再用 `ENsLockstepKind` 切四支内核，同样互斥。新 Kind 另开类型和泵，禁止在 `FNsLockstepServer::Tick` 里分支。
 
 | 方案 | 传什么 | 权威 | 本插件拓扑 | 对标 |
 | --- | --- | --- | --- | --- |
@@ -146,6 +147,7 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | `P2PInput` | 对等 | 回滚输入 + 前 3 拍 |
 | `C2SChecksum` | 客 → 服 | 锁步每 15 拍校验 |
 | `S2CJoinSnap` | 服 → 客 | 锁步重连：世界 + 快照之后的输入 |
+| `S2CDoorOpen` | 服 → 客 | 锁步加门开关，不带 pawn `X` |
 
 逐字节布局以 [impl/packet-format.md](impl/packet-format.md) 为准。
 
@@ -166,8 +168,12 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | ApplyJoin | 仅当 `Tick > ExecFrame` 时跳世界；只丢掉 `< Tick` 的 `Buf`，保留未来帧 |
 | 校验 | 每 15 拍 `C2SChecksum`；对不上则 `bDesync`；缺记录则忽略（迟到） |
 
+停拍拉齐不得改 `ApplyJoin`，也不得在 `Tick` 里看 `bDesync`。见 [impl/hybrid/resync.md](impl/hybrid/resync.md)。
+
 中途加入会掺状态快照，不再是纯输入锁步。
 代码：`NsLockstep.*`。规格：[impl/lockstep.md](impl/lockstep.md)。
+另外两支内核（通信回合 / delay）规格见 [impl/lockstep-kinds.md](impl/lockstep-kinds.md)，代码未做。等齐见 [impl/lockstep-conservative.md](impl/lockstep-conservative.md)。
+与状态同步结合按包拆开，见 [impl/hybrid/README.md](impl/hybrid/README.md)。不要在乐观 `Tick` 里双写 `X`。
 
 ### 权威状态同步
 
@@ -247,10 +253,11 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | 内核 | `World.*` | 确定性、clamp、Reset |
 | 编解码 | `Codec.*` | 往返（含 Frame/Checksum/JoinSnap）、拒收、MTU 拆包（S2C/Join/C2S/P2P） |
 | 传输 | `FakeNet.*`、`Udp.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程锁步/状态同步/回滚、突发 |
-| 锁步 | `Lockstep.*` | 干净、Drop=0.1/0.15、Join、LateJoin、空洞不跳帧、Join 分片不擦未来 Buf、分叉 |
+| 锁步 | `Lockstep.*` | 乐观：干净、Drop、Join、空洞、分叉。等齐：`Lockstep.Wait.*` |
+| 结合 | `Lockstep.Resync.*` / `LockstepDoor.*` | 停拍强制回跳；FakeNet 门；检查点用 `Lockstep.Join*`；切段 `SchemeSwitch` 只测时钟 |
 | 状态同步 | `StateSync.*` | 和解、倒带、nack 全量、Inbox 空洞、Inbox 上限、未确认窗、旧快照忽略、Src 身份 |
 | 回滚 | `Rollback.*` | 干净、WAIT、Confirmed 不跳空洞（前缀/中间） |
-| 运行时 | `Runtime.SchemeSwitch` | 热切后锁步不追 `Now`、队列清空 |
+| 运行时 | `Runtime.SchemeSwitch` | 热切后锁步不追 `Now`、队列清空；不覆盖 `InitProtocols` / `PredX` |
 | 复制 | `Actors.Cdo` | Door / Counter RPC |
 | 压力 | `Stress.*` | 长跑限时（World / Codec / FakeNet / 三套协议） |
 
@@ -263,6 +270,9 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 
 | 未做 | 影响 |
 | --- | --- |
+| 锁步通信回合 / delay | 规格在 `impl/lockstep-*.md`；PIE 选这些 Kind 不跑乐观循环 |
+| 停拍拉齐 | 第一版停拍对齐已做 `NsLockstepResync.*`；不恢复打拍 |
+| 锁步加门 | 第一版 FakeNet 门已做 `NsLockstepDoor.*`；不接 `UNetDriver` |
 | NAT / STUN | 地址表手工填 IP:port |
 | 多人 / AOI | 地址写死 Sv/C0/C1 |
 | 开火命中 | `RewindX` 已有，未接武器 |
@@ -279,6 +289,8 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | [comparison.md](comparison.md) | 优劣与品类 |
 | [schemes/README.md](schemes/README.md) | 四篇协议细则 |
 | [impl/README.md](impl/README.md) | 实现规格与如何运行 |
+| [impl/lockstep-kinds.md](impl/lockstep-kinds.md) | 四支锁步内核如何互斥落地 |
+| [impl/hybrid/README.md](impl/hybrid/README.md) | 结合四包：检查点 / 切段 / 停拍拉齐 / 锁步加门 |
 | [impl/packet-format.md](impl/packet-format.md) | 帧字节格式 |
 | [cases/compare-three.md](cases/compare-three.md) | 守望先锋 / Dota 2 / 王者 |
 | `Plugins/NetworkSync/` | UE 插件源码 |
@@ -293,6 +305,9 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | `FNsUdpNet` | `Public/NsUdpNet.h` |
 | `NsPump*` | `Public/NsPump.h` |
 | `FNsLockstepServer` / `Client` | `Public/NsLockstep.h` |
+| `FNsLockstepWaitServer` / `Client` | `Public/NsLockstepWait.h` |
+| `FNsLockstepResync` | `Public/NsLockstepResync.h` |
+| `FNsLockstepDoorServer` / `Client` | `Public/NsLockstepDoor.h` |
 | `FNsStateSyncServer` / `Client` | `Public/NsStateSync.h` |
 | `FNsRollbackPeer` | `Public/NsRollback.h` |
 | `ANsNetManager` | `Public/NsNetManager.h` |

@@ -31,12 +31,17 @@
 | [overview.md](overview.md) | 同步要解决什么，三层模型（拓扑 / 权威 / 协议） |
 | [schemes/README.md](schemes/README.md) | 四篇主线怎么读、和案例如何对应 |
 | [schemes/lockstep.md](schemes/lockstep.md) | 帧同步：节拍变体、确定性、可靠有序、不同步 |
+| [schemes/lockstep-variants.md](schemes/lockstep-variants.md) | 帧同步变种：节拍、输入形态、追帧、Quantum |
+| [schemes/hybrid/README.md](schemes/hybrid/README.md) | 结合四包：检查点、切段、停拍拉齐、锁步加门 |
 | [schemes/state-sync.md](schemes/state-sync.md) | 状态同步：快照增量、插值、预测、滞后补偿 |
 | [schemes/rollback.md](schemes/rollback.md) | 回滚：确认/预测帧、存档、输入延迟、与 GGPO |
 | [schemes/replication.md](schemes/replication.md) | 对象复制：Role/Owner、属性与 RPC、Graph/Iris |
 | [techniques.md](techniques.md) | 预测、插值、滞后补偿、AOI、压缩 |
 | [impl/README.md](impl/README.md) | 实现规格入口、插件怎么跑 |
-| [impl/packet-format.md](impl/packet-format.md) | 20 字节头与七种 payload 的逐字节布局 |
+| [impl/lockstep.md](impl/lockstep.md) | 乐观 15Hz 规格 |
+| [impl/lockstep-kinds.md](impl/lockstep-kinds.md) | 四支锁步内核：互斥、可独立落地 |
+| [impl/hybrid/README.md](impl/hybrid/README.md) | 结合四包落地；停拍拉齐、锁步加门 |
+| [impl/packet-format.md](impl/packet-format.md) | 20 字节头与八种 payload 的逐字节布局 |
 | [comparison.md](comparison.md) | 各方案优劣机理、同轴对照、品类总表 |
 | [cases/compare-three.md](cases/compare-three.md) | 守望先锋 / Dota 2 / 王者荣耀三款对照 |
 | [cases/overwatch.md](cases/overwatch.md) | 守望先锋：权威状态同步 + 重预测 |
@@ -51,9 +56,9 @@
 
 | 主线 | 传什么 | 典型品类 | 代表 |
 | --- | --- | --- | --- |
-| 帧同步（Lockstep） | 输入 | RTS、手游 MOBA、自走棋 | 星际争霸、王者荣耀、Photon Quantum |
+| 帧同步（Lockstep） | 输入 | RTS、手游 MOBA、自走棋 | 星际争霸、王者荣耀 |
 | 状态同步（State Sync） | 世界状态 / 增量 | FPS、BR、MMO、开放世界 | Source、Fortnite、Valorant、Dota 2、守望先锋 |
-| 回滚（Rollback） | 输入 + 本地推测 | 格斗、部分平台动作 | GGPO、街霸 6、罪恶装备 |
+| 回滚（Rollback） | 输入 + 本地推测 | 格斗、部分平台动作 | GGPO、街霸 6、Photon Quantum 默认 |
 
 配套技术（预测、插值、兴趣管理）可以叠在任何主线上，选型时不要把它们和主线方案混为一谈。
 

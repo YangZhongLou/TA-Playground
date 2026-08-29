@@ -24,6 +24,7 @@ namespace Ns
 	constexpr int32 InputDelay = 1;
 	constexpr int32 LagCompCapMs = 220;
 	constexpr int32 JoinSnapEvery = 75;
+	constexpr int32 ResyncGiveUpPumps = 32;
 	constexpr uint32 PacketMagic = 0x54414E53;
 	constexpr int32 HeaderBytes = 20;
 	constexpr int32 Ipv4UdpOverheadBytes = 28;

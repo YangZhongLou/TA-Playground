@@ -33,6 +33,7 @@ type（`ENsMsg`）：
 | 5 | `P2PInput` | 回滚对等输入 |
 | 6 | `C2SChecksum` | 锁步校验 |
 | 7 | `S2CJoinSnap` | 锁步重连快照 |
+| 8 | `S2CDoorOpen` | 锁步加门开关 |
 
 payload 紧跟 20 字节头。逐字段宽度、示例和长度公式见 [packet-format.md](packet-format.md)。
 单数据报 UDP 载荷 ≤ 1200 字节，避免 IP 分片把丢包放大。超长在应用层拆成多个完整 Ns 包，见 `NsSplitForMtu`。Src/Dst 不进字节。
@@ -48,6 +49,7 @@ payload 紧跟 20 字节头。逐字段宽度、示例和长度公式见 [packet
 | `P2PInput` | `1 + 5×count` | 自己的 `(frame, dx)`，count 通常 4 |
 | `C2SChecksum` | 9 | `player_id` + 拍号 + hash |
 | `S2CJoinSnap` | `17 + 6×count` | `exec_frame`、x0、x1、rng、之后的输入拍 |
+| `S2CDoorOpen` | 4 | `open` |
 
 ## 发送端状态
 

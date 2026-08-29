@@ -34,6 +34,7 @@ enum class ENsMsg : uint8
 	P2PInput = 5,
 	C2SChecksum = 6,
 	S2CJoinSnap = 7,
+	S2CDoorOpen = 8,
 };
 
 struct FNsPacket
@@ -56,5 +57,6 @@ struct FNsPacket
 	int32 BaseTick = 0;
 	uint32 Hash = 0;
 	uint32 SnapRng = 1;
+	int32 DoorOpen = 0;
 	TMap<int32, int8> RemoteDx;
 };

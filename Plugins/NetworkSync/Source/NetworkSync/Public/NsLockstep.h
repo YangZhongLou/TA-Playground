@@ -6,6 +6,8 @@
 #include "NsTypes.h"
 #include "NsNet.h"
 
+// Optimistic lockstep only (ENsLockstepKind::Optimistic).
+// Wait-all / comm-turn / delay-based get their own types. Do not branch Tick on Kind.
 class NETWORKSYNC_API FNsLockstepServer
 {
 public:

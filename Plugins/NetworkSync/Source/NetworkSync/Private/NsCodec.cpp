@@ -210,6 +210,9 @@ namespace
 			}
 			return true;
 		}
+		case ENsMsg::S2CDoorOpen:
+			WriteI32(Out, Packet.DoorOpen);
+			return true;
 		default:
 			return false;
 		}
@@ -302,6 +305,9 @@ namespace
 			}
 			return R.bOk;
 		}
+		case ENsMsg::S2CDoorOpen:
+			Out.DoorOpen = R.I32();
+			return R.bOk;
 		default:
 			return false;
 		}
@@ -418,6 +424,8 @@ int32 NsPayloadBytes(const FNsPacket& Packet)
 			return -1;
 		}
 		return 17 + 6 * Packet.Frames.Num();
+	case ENsMsg::S2CDoorOpen:
+		return 4;
 	default:
 		return -1;
 	}

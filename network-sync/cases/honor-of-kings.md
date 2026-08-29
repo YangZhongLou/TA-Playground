@@ -7,6 +7,7 @@
 
 它不是保守锁步：不等最慢的那个人到齐才开下一拍。
 它也不是状态同步：伤害和位移在每个客户端的逻辑层算，不在服务器算完再下发结果。
+节拍变种对照见 [lockstep-variants.md](../schemes/lockstep-variants.md)。
 
 公开来源：天美 L1 技术总监孙勋，TGDC / 腾讯游戏学堂复盘。
 66ms 一拍、UDP 冗余、不同步 Hash、放弃过的方案，都来自这次分享。
@@ -134,6 +135,8 @@ Dota 2 已是 Source 状态同步，见 [dota2.md](dota2.md)。
 版本不一致不能匹配：十台逻辑二进制必须一样，他们不做多版本协议兼容。
 
 问「王者是不是帧同步」时，只问 PvP 战斗。大厅永远是普通 C/S。
+切法单独成包：[../schemes/hybrid/session.md](../schemes/hybrid/session.md)。
+重连检查点：[../schemes/hybrid/checkpoint.md](../schemes/hybrid/checkpoint.md)。
 
 ## 能抄什么、不能抄什么
 

@@ -24,7 +24,8 @@
 | Valorant / CS Tickrate 讨论（Riot、Valve 公开博文） | 高 Tick 射击 |
 | Fortnite Replication Graph (GDC / Epic 博客) | 大规模对象复制 |
 | GGPO 源码与文档 | 回滚参考实现 |
-| Photon Quantum / Fusion 官方文档 | 锁步中间件 vs 状态预测中间件 |
+| [Photon Quantum Intro](https://doc.photonengine.com/quantum/current/quantum-intro) | 默认 predict/rollback；官方把等齐 lockstep 当过时项 |
+| Photon Fusion 官方文档 | 状态预测中间件，不要和 Quantum 混名 |
 
 ## 引擎文档
 

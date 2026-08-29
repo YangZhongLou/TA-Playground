@@ -12,6 +12,8 @@ public:
 	float Drop = 0.f;
 	float JitterMs = 5.f;
 	FRandomStream Rng;
+	bool bDropType = false;
+	ENsMsg DropType = ENsMsg::C2SInput;
 
 	virtual void Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet) override;
 	virtual void Drain(ENsAddr Dst, TArray<FNsPacket>& Out) override;

@@ -1194,6 +1194,19 @@ FNsSelfTestResult NsRunCodecContractSelfTest()
 			return R;
 		}
 	}
+	{
+		FNsPacket Src;
+		Src.Type = ENsMsg::S2CDoorOpen;
+		Src.DoorOpen = 1;
+		const FNsSelfTestResult R = Check(TEXT("gate"), Src, [](const FNsPacket& D)
+		{
+			return D.Type == ENsMsg::S2CDoorOpen && D.DoorOpen == 1;
+		});
+		if (!R.Detail.IsEmpty())
+		{
+			return R;
+		}
+	}
 
 	FNsPacket Empty;
 	TArray<uint8> None;
@@ -2042,6 +2055,14 @@ FNsSelfTestResult NsRunMtuSelfTest()
 		return FailStr(FString::Printf(TEXT("mtu: join %d"), JoinWire));
 	}
 
+	FNsPacket Gate;
+	Gate.Type = ENsMsg::S2CDoorOpen;
+	Gate.DoorOpen = 1;
+	if (NsWireBytes(Gate) != 24)
+	{
+		return Fail(TEXT("mtu: gate size"));
+	}
+
 	FNsPacket Huge;
 	Huge.Type = ENsMsg::S2CFrame;
 	const int32 HugeCount = Ns::MaxS2CFrameEntries + 40;
@@ -2204,6 +2225,19 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunLockstepJoinFragSelfTest,
 		&NsRunLockstepDesyncSelfTest,
 		&NsRunSchemeSwitchSelfTest,
+		&NsRunLockstepResyncAlignSelfTest,
+		&NsRunLockstepResyncForceSelfTest,
+		&NsRunLockstepResyncIgnoreFrameSelfTest,
+		&NsRunLockstepResyncDropSelfTest,
+		&NsRunLockstepResyncApplyJoinSelfTest,
+		&NsRunLockstepDoorCleanSelfTest,
+		&NsRunLockstepDoorDropOpenSelfTest,
+		&NsRunLockstepDoorDropFrameSelfTest,
+		&NsRunLockstepDoorIgnoreSnapSelfTest,
+		&NsRunLockstepDoorNotInStepSelfTest,
+		&NsRunLockstepWaitCleanSelfTest,
+		&NsRunLockstepWaitStallSelfTest,
+		&NsRunLockstepWaitDropSelfTest,
 		&NsRunStateSyncSelfTest,
 		&NsRunStateSyncCleanSelfTest,
 		&NsRunStateSyncRewindSelfTest,

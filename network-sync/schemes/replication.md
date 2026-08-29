@@ -6,7 +6,7 @@ UE Replication、Unity Netcode for GameObjects、Mirror、Fish-Net、Photon Fusi
 它不是第四种物理定律，是 [state-sync.md](state-sync.md) 的工业接口。
 UE5 专项见 [unreal.md](../unreal.md)。
 
-Photon Quantum 是确定性锁步，不是这一族。Fusion Shared Mode 偏客户端权威，也不要和主机模式混为一谈。
+Photon Quantum 是确定性输入引擎（默认 predict-rollback），不是对象复制。Fusion Shared Mode 偏客户端权威，也不要和主机模式混为一谈。
 
 ## 一个对象要带的三件事
 
@@ -134,7 +134,7 @@ GAS（Gameplay Ability System）另有 Prediction Key。技能预测和移动预
 | Unity Netcode for Entities | Ghost 快照 + 预测，偏确定性混合 |
 | Photon Fusion 主机模式 | 状态同步 + 可预测 |
 | Photon Fusion Shared | 偏客户端权威 |
-| Photon Quantum | 锁步，不是复制 |
+| Photon Quantum | 确定性输入，默认回滚，不是复制 |
 | Mirror / Fish-Net | 类 UE 的行为复制 |
 
 问四件事再选包：要不要确定性、要不要预测、人数上限、谁托管服务器。

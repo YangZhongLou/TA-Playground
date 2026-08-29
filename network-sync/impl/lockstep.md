@@ -1,8 +1,12 @@
-# 帧同步：实现规格
+# 帧同步：乐观 15Hz 规格
+
+本篇只覆盖 `ENsLockstepKind::Optimistic`。
+四支内核如何互斥落地见 [lockstep-kinds.md](lockstep-kinds.md)。不要把等齐、通信回合、delay 写进 `NsLockstep.cpp`。
 
 目标：两个客户端 + 一个服务器，15Hz 逻辑，整数坐标，丢包靠冗余，checksum 发现分叉。
 概念对照 [../schemes/lockstep.md](../schemes/lockstep.md)。
-代码：`Plugins/NetworkSync/.../NsTypes.*`、`NsLockstep.*`、`NsSelfTest.cpp`。
+变种地图 [../schemes/lockstep-variants.md](../schemes/lockstep-variants.md)。
+代码：`NsLockstep.*`、`NsPumpLockstep*`、`NsSelfTest.cpp`。
 
 ## 常量
 
@@ -110,8 +114,9 @@ void Tick(INsNet& Net)
 `pack` 把 n、n-1、n-2、n-3 的输入都放进去（n<0 的跳过）。
 服务器要保存最近 `RedundantFrames+1` 拍的输入数组，供补发。
 
-补发：客户端发现缺拍 n 且等了超过 `LogicDtMs*2`，发一个「请重发 n」或靠下一包冗余带上。
-第一版只靠冗余，不要做复杂请求。
+补发：第一版只靠每个 `S2CFrame` 带前 3 拍。没有按号 NACK。
+周期 `S2CJoinSnap`（每 4 拍发一次，世界快照每 75 拍更新）带上快照之后的 `Hist` 尾巴，给晚加入用，不是随机取出任意旧 `I(n)`。
+所有权与禁令见 [hybrid/checkpoint.md](hybrid/checkpoint.md)。停拍拉齐 / 锁步加门不要写进本文件。
 
 ## 客户端主循环
 
@@ -173,7 +178,7 @@ void Logic(INsNet& Net)
 | x0, x1, rng | 快照世界 |
 | 后续输入 | `Hist` 里 `frame >= exec_frame` 的拍 |
 
-客户端 `ApplyJoin`：仅当 `Tick > ExecFrame` 时覆盖世界并跳拍；同一快照的后续片只合并 `Buf`。中途加入因此会掺状态，不再是纯输入锁步。
+客户端 `ApplyJoin`：仅当 `Tick > ExecFrame` 时覆盖世界并跳拍；同一快照的后续片只合并 `Buf`。中途加入因此会掺状态，不再是纯输入锁步。停拍拉齐禁止改这个守卫，见 [hybrid/resync.md](hybrid/resync.md)。
 
 ## 实现顺序（按天）
 

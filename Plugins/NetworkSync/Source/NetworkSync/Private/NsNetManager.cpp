@@ -22,6 +22,9 @@ void ANsNetManager::InitProtocols()
 	LsSv = FNsLockstepServer();
 	LsC0 = FNsLockstepClient();
 	LsC1 = FNsLockstepClient();
+	WaitSv = FNsLockstepWaitServer();
+	WaitC0 = FNsLockstepWaitClient();
+	WaitC1 = FNsLockstepWaitClient();
 	SsSv = FNsStateSyncServer();
 	SsC0 = FNsStateSyncClient();
 	SsC1 = FNsStateSyncClient();
@@ -33,6 +36,11 @@ void ANsNetManager::InitProtocols()
 	LsC0.Addr = ENsAddr::C0;
 	LsC1.PlayerId = 1;
 	LsC1.Addr = ENsAddr::C1;
+
+	WaitC0.PlayerId = 0;
+	WaitC0.Addr = ENsAddr::C0;
+	WaitC1.PlayerId = 1;
+	WaitC1.Addr = ENsAddr::C1;
 
 	SsC0.PlayerId = 0;
 	SsC0.Addr = ENsAddr::C0;
@@ -62,6 +70,7 @@ void ANsNetManager::ApplyScheme(ENsScheme NewScheme)
 {
 	InitProtocols();
 	AppliedScheme = NewScheme;
+	AppliedLockstepKind = LockstepKind;
 	ResetWire();
 	if (NewScheme == ENsScheme::Replication)
 	{
@@ -146,7 +155,8 @@ void ANsNetManager::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	if (Scheme != AppliedScheme)
+	if (Scheme != AppliedScheme
+		|| (Scheme == ENsScheme::Lockstep && LockstepKind != AppliedLockstepKind))
 	{
 		ApplyScheme(Scheme);
 	}
@@ -180,6 +190,25 @@ FVector ANsNetManager::GetPawnLocation(int32 PlayerId) const
 	{
 	case ENsScheme::Lockstep:
 	{
+		if (AppliedLockstepKind == ENsLockstepKind::Conservative)
+		{
+			if (bUseUdp && UdpRole == ENsUdpRole::Client)
+			{
+				X = FMath::Lerp(static_cast<float>(WaitC1.PrevX[PlayerId]),
+					static_cast<float>(WaitC1.World.X[PlayerId]), Alpha);
+			}
+			else if (bUseUdp && UdpRole == ENsUdpRole::Host && PlayerId == 1)
+			{
+				X = static_cast<float>(WaitSv.World.X[1]);
+			}
+			else
+			{
+				const FNsLockstepWaitClient& C = (PlayerId == 0) ? WaitC0 : WaitC1;
+				X = FMath::Lerp(static_cast<float>(C.PrevX[PlayerId]),
+					static_cast<float>(C.World.X[PlayerId]), Alpha);
+			}
+			break;
+		}
 		if (bUseUdp && UdpRole == ENsUdpRole::Client)
 		{
 			X = FMath::Lerp(static_cast<float>(LsC1.PrevX[PlayerId]),
@@ -280,6 +309,44 @@ int8 ANsNetManager::ReadDx(bool bPlayer0) const
 
 void ANsNetManager::TickLockstep()
 {
+	if (AppliedLockstepKind == ENsLockstepKind::Conservative)
+	{
+		AccumMs += GetWorld()->GetDeltaSeconds() * 1000.0;
+		while (AccumMs >= Ns::LogicDtMs)
+		{
+			AccumMs -= Ns::LogicDtMs;
+
+			const bool bClientOnly = bUseUdp && UdpRole == ENsUdpRole::Client;
+			if (RunsC0())
+			{
+				WaitC0.SendInput(Wire(), ReadDx(true));
+			}
+			if (RunsC1())
+			{
+				WaitC1.SendInput(Wire(), ReadDx(bClientOnly));
+			}
+
+			if (RunsServer())
+			{
+				NsPumpLockstepWaitServer(Wire(), WaitSv);
+			}
+			if (RunsC0())
+			{
+				NsPumpLockstepWaitClient(Wire(), WaitC0);
+			}
+			if (RunsC1())
+			{
+				NsPumpLockstepWaitClient(Wire(), WaitC1);
+			}
+
+			Wire().Advance(Ns::LogicDtMs);
+		}
+		return;
+	}
+	if (AppliedLockstepKind != ENsLockstepKind::Optimistic)
+	{
+		return;
+	}
 	AccumMs += GetWorld()->GetDeltaSeconds() * 1000.0;
 	while (AccumMs >= Ns::LogicDtMs)
 	{

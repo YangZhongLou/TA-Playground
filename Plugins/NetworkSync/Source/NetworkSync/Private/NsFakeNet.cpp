@@ -14,6 +14,10 @@ void FNsFakeNet::Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet)
 		Copy.Dst = Dst;
 		Seq.Stamp(Src, Copy);
 		Copy.DeliverAt = Now + RttMs * 0.5 + Rng.FRandRange(0.f, JitterMs);
+		if (bDropType && Copy.Type == DropType)
+		{
+			continue;
+		}
 		if (Rng.FRand() < Drop)
 		{
 			continue;
