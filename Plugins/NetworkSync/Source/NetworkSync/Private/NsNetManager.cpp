@@ -25,6 +25,12 @@ void ANsNetManager::InitProtocols()
 	WaitSv = FNsLockstepWaitServer();
 	WaitC0 = FNsLockstepWaitClient();
 	WaitC1 = FNsLockstepWaitClient();
+	TurnSv = FNsLockstepTurnServer();
+	TurnC0 = FNsLockstepTurnClient();
+	TurnC1 = FNsLockstepTurnClient();
+	DelaySv = FNsLockstepDelayServer();
+	DelayC0 = FNsLockstepDelayClient();
+	DelayC1 = FNsLockstepDelayClient();
 	SsSv = FNsStateSyncServer();
 	SsC0 = FNsStateSyncClient();
 	SsC1 = FNsStateSyncClient();
@@ -41,6 +47,16 @@ void ANsNetManager::InitProtocols()
 	WaitC0.Addr = ENsAddr::C0;
 	WaitC1.PlayerId = 1;
 	WaitC1.Addr = ENsAddr::C1;
+
+	TurnC0.PlayerId = 0;
+	TurnC0.Addr = ENsAddr::C0;
+	TurnC1.PlayerId = 1;
+	TurnC1.Addr = ENsAddr::C1;
+
+	DelayC0.PlayerId = 0;
+	DelayC0.Addr = ENsAddr::C0;
+	DelayC1.PlayerId = 1;
+	DelayC1.Addr = ENsAddr::C1;
 
 	SsC0.PlayerId = 0;
 	SsC0.Addr = ENsAddr::C0;
@@ -209,6 +225,44 @@ FVector ANsNetManager::GetPawnLocation(int32 PlayerId) const
 			}
 			break;
 		}
+		if (AppliedLockstepKind == ENsLockstepKind::CommTurn)
+		{
+			if (bUseUdp && UdpRole == ENsUdpRole::Client)
+			{
+				X = FMath::Lerp(static_cast<float>(TurnC1.PrevX[PlayerId]),
+					static_cast<float>(TurnC1.World.X[PlayerId]), Alpha);
+			}
+			else if (bUseUdp && UdpRole == ENsUdpRole::Host && PlayerId == 1)
+			{
+				X = static_cast<float>(TurnSv.World.X[1]);
+			}
+			else
+			{
+				const FNsLockstepTurnClient& C = (PlayerId == 0) ? TurnC0 : TurnC1;
+				X = FMath::Lerp(static_cast<float>(C.PrevX[PlayerId]),
+					static_cast<float>(C.World.X[PlayerId]), Alpha);
+			}
+			break;
+		}
+		if (AppliedLockstepKind == ENsLockstepKind::DelayBased)
+		{
+			if (bUseUdp && UdpRole == ENsUdpRole::Client)
+			{
+				X = FMath::Lerp(static_cast<float>(DelayC1.PrevX[PlayerId]),
+					static_cast<float>(DelayC1.World.X[PlayerId]), Alpha);
+			}
+			else if (bUseUdp && UdpRole == ENsUdpRole::Host && PlayerId == 1)
+			{
+				X = static_cast<float>(DelaySv.World.X[1]);
+			}
+			else
+			{
+				const FNsLockstepDelayClient& C = (PlayerId == 0) ? DelayC0 : DelayC1;
+				X = FMath::Lerp(static_cast<float>(C.PrevX[PlayerId]),
+					static_cast<float>(C.World.X[PlayerId]), Alpha);
+			}
+			break;
+		}
 		if (bUseUdp && UdpRole == ENsUdpRole::Client)
 		{
 			X = FMath::Lerp(static_cast<float>(LsC1.PrevX[PlayerId]),
@@ -337,6 +391,74 @@ void ANsNetManager::TickLockstep()
 			if (RunsC1())
 			{
 				NsPumpLockstepWaitClient(Wire(), WaitC1);
+			}
+
+			Wire().Advance(Ns::LogicDtMs);
+		}
+		return;
+	}
+	if (AppliedLockstepKind == ENsLockstepKind::CommTurn)
+	{
+		AccumMs += GetWorld()->GetDeltaSeconds() * 1000.0;
+		while (AccumMs >= Ns::LogicDtMs)
+		{
+			AccumMs -= Ns::LogicDtMs;
+
+			const bool bClientOnly = bUseUdp && UdpRole == ENsUdpRole::Client;
+			if (RunsC0())
+			{
+				TurnC0.SendInput(Wire(), ReadDx(true));
+			}
+			if (RunsC1())
+			{
+				TurnC1.SendInput(Wire(), ReadDx(bClientOnly));
+			}
+
+			if (RunsServer())
+			{
+				NsPumpLockstepTurnServer(Wire(), TurnSv);
+			}
+			if (RunsC0())
+			{
+				NsPumpLockstepTurnClient(Wire(), TurnC0);
+			}
+			if (RunsC1())
+			{
+				NsPumpLockstepTurnClient(Wire(), TurnC1);
+			}
+
+			Wire().Advance(Ns::LogicDtMs);
+		}
+		return;
+	}
+	if (AppliedLockstepKind == ENsLockstepKind::DelayBased)
+	{
+		AccumMs += GetWorld()->GetDeltaSeconds() * 1000.0;
+		while (AccumMs >= Ns::LogicDtMs)
+		{
+			AccumMs -= Ns::LogicDtMs;
+
+			const bool bClientOnly = bUseUdp && UdpRole == ENsUdpRole::Client;
+			if (RunsC0())
+			{
+				DelayC0.SendInput(Wire(), ReadDx(true));
+			}
+			if (RunsC1())
+			{
+				DelayC1.SendInput(Wire(), ReadDx(bClientOnly));
+			}
+
+			if (RunsServer())
+			{
+				NsPumpLockstepDelayServer(Wire(), DelaySv);
+			}
+			if (RunsC0())
+			{
+				NsPumpLockstepDelayClient(Wire(), DelayC0);
+			}
+			if (RunsC1())
+			{
+				NsPumpLockstepDelayClient(Wire(), DelayC1);
 			}
 
 			Wire().Advance(Ns::LogicDtMs);

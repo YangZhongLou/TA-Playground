@@ -13,8 +13,8 @@
 | 锁步哪一支 | [lockstep-kinds.md](lockstep-kinds.md) | `ENsLockstepKind`；乐观是 `NsLockstep.*` |
 | 手游 MOBA（乐观 15Hz） | [lockstep.md](lockstep.md) | `NsLockstep.h` / `NsLockstep.cpp` |
 | 等齐 | [lockstep-conservative.md](lockstep-conservative.md) | `NsLockstepWait.*`，禁止改乐观类 |
-| 通信回合 | [lockstep-comm-turn.md](lockstep-comm-turn.md) | 未做：`NsLsTurn.*` |
-| delay | [lockstep-delay.md](lockstep-delay.md) | 未做：`NsLsDelay.*` |
+| 通信回合 | [lockstep-comm-turn.md](lockstep-comm-turn.md) | `NsLockstepTurn.*`（Speed Control 未做） |
+| delay | [lockstep-delay.md](lockstep-delay.md) | `NsLockstepDelay.*` |
 | 射击 / 命令式端游 | [state_sync.md](state_sync.md) | `NsStateSync.h` / `NsStateSync.cpp` |
 | 格斗 | [rollback.md](rollback.md) | `NsRollback.h` / `NsRollback.cpp` |
 | 检查点 | [hybrid/checkpoint.md](hybrid/checkpoint.md) | 已在 `NsLockstep.*` JoinSnap |
@@ -52,7 +52,7 @@
 3. 自动化：`NetworkSync.*`（Session Frontend）。
 4. PIE 控制台 `ns.SpawnDemo` — 生成 `ANsNetManager`。A/D 控玩家 0，方向键控玩家 1。
 5. 在 Actor 上改 `Scheme`：Lockstep / StateSync / Rollback / Replication（热切会重置协议、时钟、假网络队列，并按方案重绑 UDP）。
-   Lockstep 再选 `LockstepKind`。未实现的 Kind（通信回合 / delay）不会偷偷跑乐观循环。
+   Lockstep 再选 `LockstepKind`（乐观 / 等齐 / 通信回合 / delay）。未实现的 Kind 不会偷偷跑乐观循环。
 6. 勾选 `bUseUdp`：`LocalMesh` 本机三端口；`Host`/`Client` 填 `UdpRemoteHost` 做两进程。
 7. Replication：Listen Server 下按 `E` 增加 `Counter`，按 `F` 开关门。
 

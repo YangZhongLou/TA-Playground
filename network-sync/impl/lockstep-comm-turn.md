@@ -1,6 +1,6 @@
 # 通信回合锁步（帝国时代）
 
-独立内核。不要改 `NsLockstep.cpp`，也不要继承等待类。类名建议 `FNsLsTurnServer` / `FNsLsTurnClient`。
+独立内核。不要改 `NsLockstep.cpp`，也不要继承等待类。类名 `FNsLockstepTurnServer` / `FNsLockstepTurnClient`，泵 `NsPumpLockstepTurn*`。
 
 对标：1500 Archers。概念见 [../schemes/lockstep-variants.md](../schemes/lockstep-variants.md)「通信回合」。
 
@@ -66,7 +66,7 @@ World.Step(I)
 
 ## 第二里程碑：Speed Control
 
-仍在 `NsLsTurn.*` 里加，不要新 Kind。
+仍在 `NsLockstepTurn.*` 里加，不要新 Kind。
 
 主机用各端回合完成时间和 RTT，加权改 `FramesPerTurn`（整数，范围 2～6）。
 变差时立刻加大，好转时每回合最多减 1。全场同一 `FramesPerTurn`，随回合广播。

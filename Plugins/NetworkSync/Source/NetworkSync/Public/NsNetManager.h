@@ -7,6 +7,8 @@
 #include "NsFakeNet.h"
 #include "NsLockstep.h"
 #include "NsLockstepWait.h"
+#include "NsLockstepTurn.h"
+#include "NsLockstepDelay.h"
 #include "NsStateSync.h"
 #include "NsRollback.h"
 #include "NsUdpNet.h"
@@ -107,6 +109,12 @@ private:
 	FNsLockstepWaitServer WaitSv;
 	FNsLockstepWaitClient WaitC0;
 	FNsLockstepWaitClient WaitC1;
+	FNsLockstepTurnServer TurnSv;
+	FNsLockstepTurnClient TurnC0;
+	FNsLockstepTurnClient TurnC1;
+	FNsLockstepDelayServer DelaySv;
+	FNsLockstepDelayClient DelayC0;
+	FNsLockstepDelayClient DelayC1;
 	FNsStateSyncServer SsSv;
 	FNsStateSyncClient SsC0;
 	FNsStateSyncClient SsC1;

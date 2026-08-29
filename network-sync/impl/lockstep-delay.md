@@ -1,6 +1,6 @@
 # 固定帧延迟锁步（delay-based）
 
-独立内核。不要改 `NsLockstep.cpp`。类名建议 `FNsLsDelayServer` / `FNsLsDelayClient`。
+独立内核。不要改 `NsLockstep.cpp`。类名 `FNsLockstepDelayServer` / `FNsLockstepDelayClient`，泵 `NsPumpLockstepDelay*`。
 
 对标：回滚普及前的格斗网战。概念见 [../schemes/lockstep-variants.md](../schemes/lockstep-variants.md)「固定帧延迟」。
 
