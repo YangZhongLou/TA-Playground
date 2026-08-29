@@ -1,6 +1,7 @@
 // Copyright (c) 2026 TA-Playground. All Rights Reserved.
 
 #include "NsPump.h"
+#include "NsLockstepDoor.h"
 #include "HAL/PlatformProcess.h"
 
 void NsDrain(INsNet& Net, ENsAddr Dst, TArray<FNsPacket>& Out, bool bWait)
@@ -54,7 +55,7 @@ void NsPumpLockstepServer(INsNet& Net, FNsLockstepServer& Sv, bool bWait)
 	Sv.Tick(Net);
 }
 
-void NsPumpLockstepClient(INsNet& Net, FNsLockstepClient& C, bool bWait)
+void NsPumpLockstepClient(INsNet& Net, FNsLockstepClient& C, bool bWait, FNsDoorOpen* Door)
 {
 	TArray<FNsPacket> ToC;
 	NsDrain(Net, C.Addr, ToC, bWait);
@@ -67,6 +68,10 @@ void NsPumpLockstepClient(INsNet& Net, FNsLockstepClient& C, bool bWait)
 		else if (P.Type == ENsMsg::S2CFrame)
 		{
 			C.OnS2C(P.Frames);
+		}
+		else if (Door)
+		{
+			NsApplyDoorOpen(*Door, P);
 		}
 	}
 	C.Logic(Net);

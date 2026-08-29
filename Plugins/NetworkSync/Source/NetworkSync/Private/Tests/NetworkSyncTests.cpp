@@ -249,6 +249,7 @@ NS_WRAP(FNsLockstepDoor_DropOpen, "NetworkSync.LockstepDoor.DropOpen", NsRunLock
 NS_WRAP(FNsLockstepDoor_DropFrame, "NetworkSync.LockstepDoor.DropFrame", NsRunLockstepDoorDropFrameSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstepDoor_IgnoreSnap, "NetworkSync.LockstepDoor.IgnoreSnap", NsRunLockstepDoorIgnoreSnapSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstepDoor_NotInStep, "NetworkSync.LockstepDoor.NotInStep", NsRunLockstepDoorNotInStepSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstepDoor_Compose, "NetworkSync.LockstepDoor.Compose", NsRunLockstepDoorComposeSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_WaitClean, "NetworkSync.Lockstep.Wait.Clean", NsRunLockstepWaitCleanSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_WaitStall, "NetworkSync.Lockstep.Wait.Stall", NsRunLockstepWaitStallSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_WaitDrop, "NetworkSync.Lockstep.Wait.Drop", NsRunLockstepWaitDropSelfTest, NsAutoFlags)

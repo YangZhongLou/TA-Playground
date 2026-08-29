@@ -4,7 +4,7 @@
 内部组合 `FNsLockstep*`，不复制乐观循环，不改 `NsLockstep.cpp`。
 概念：[../../schemes/hybrid/door.md](../../schemes/hybrid/door.md)。
 
-不要命名 `NsHybrid`。不要新增 `ENsScheme`。第一版入口是自测泵，Manager 仍四套方案。
+不要命名 `NsHybrid`。不要新增 `ENsScheme`。自测走 `NsPumpLockstepDoor*`。`ANsNetManager` 乐观锁步在同一轮 Drain 里叠加 `Open`（`NsPumpLockstepResyncClient` / `NsPumpLockstepClient` 的可选门指针），不替换停拍拉齐，不双写 `X`。
 
 ## 所有权
 
@@ -28,7 +28,7 @@ struct FNsDoorOpen
 只走 `INsNet` / FakeNet。`ENsMsg::S2CDoorOpen=8`，布局见 [packet-format.md](../packet-format.md)。
 payload：一个 `int32 Open`。服务器每个泵周期把当前值发给 C0、C1；无 ACK 第一版。
 
-不走 `UNetDriver`，不生成 `ANsDoor`。`ApplyScheme` 离开 Replication 仍销毁复制门，本包不依赖它。
+不走 `UNetDriver`，不生成 `ANsDoor`。`ApplyScheme` 离开 Replication 仍销毁复制门，本包不依赖它。乐观演示按 `F` 切 `Open`，debug box 画门。
 
 默认架在 `Optimistic` 上。其它 Kind 要加门：先完成那支 Kind，再组合，仍不改 Kind 的 `Tick`。
 
@@ -49,3 +49,4 @@ payload：一个 `int32 Open`。服务器每个泵周期把当前值发给 C0、
 3. 只丢输入帧：门仍对齐，pawn 与 `Lockstep.Drop10` 同类。
 4. 若测试里把快照坐标写进 `World.X`，必须失败。
 5. `Open` 变化时 `World.X` 与纯锁步对照局相同（门不进 `F`）。
+6. 与停拍拉齐同一轮 Drain：`NetworkSync.LockstepDoor.Compose` — 开门不改 `X`；halt 期间仍能改 `Open`。

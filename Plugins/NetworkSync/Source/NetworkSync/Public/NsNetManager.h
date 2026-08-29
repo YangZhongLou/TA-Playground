@@ -7,6 +7,7 @@
 #include "NsFakeNet.h"
 #include "NsLockstep.h"
 #include "NsLockstepResync.h"
+#include "NsLockstepDoor.h"
 #include "NsLockstepWait.h"
 #include "NsLockstepTurn.h"
 #include "NsLockstepDelay.h"
@@ -90,6 +91,7 @@ private:
 	void TickStateSync();
 	void TickRollback();
 	void DrawPawns() const;
+	void DrawLockstepDoor() const;
 	void SpawnReplicatedDemo();
 	void DestroyReplicatedDemo();
 	void InitProtocols();
@@ -108,6 +110,9 @@ private:
 	FNsLockstepClient LsC0;
 	FNsLockstepClient LsC1;
 	FNsLockstepResync LsResync;
+	FNsDoorOpen DoorSv;
+	FNsDoorOpen DoorC0;
+	FNsDoorOpen DoorC1;
 	FNsLockstepWaitServer WaitSv;
 	FNsLockstepWaitClient WaitC0;
 	FNsLockstepWaitClient WaitC1;

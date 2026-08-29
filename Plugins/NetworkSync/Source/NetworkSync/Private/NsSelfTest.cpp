@@ -2239,6 +2239,7 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunLockstepDoorDropFrameSelfTest,
 		&NsRunLockstepDoorIgnoreSnapSelfTest,
 		&NsRunLockstepDoorNotInStepSelfTest,
+		&NsRunLockstepDoorComposeSelfTest,
 		&NsRunLockstepWaitCleanSelfTest,
 		&NsRunLockstepWaitStallSelfTest,
 		&NsRunLockstepWaitDropSelfTest,

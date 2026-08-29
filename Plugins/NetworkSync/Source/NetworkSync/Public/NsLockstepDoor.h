@@ -10,6 +10,9 @@ struct NETWORKSYNC_API FNsDoorOpen
 	int32 Open = 0;
 };
 
+NETWORKSYNC_API void NsBroadcastDoorOpen(INsNet& Net, int32 Open);
+NETWORKSYNC_API void NsApplyDoorOpen(FNsDoorOpen& Door, const FNsPacket& Packet);
+
 class NETWORKSYNC_API FNsLockstepDoorServer
 {
 public:

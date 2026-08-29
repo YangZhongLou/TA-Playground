@@ -3,13 +3,26 @@
 #include "NsLockstepDoor.h"
 #include "NsPump.h"
 
-void FNsLockstepDoorServer::BroadcastDoorOpen(INsNet& Net) const
+void NsBroadcastDoorOpen(INsNet& Net, int32 Open)
 {
 	FNsPacket Pkt;
 	Pkt.Type = ENsMsg::S2CDoorOpen;
-	Pkt.DoorOpen = Door.Open;
+	Pkt.DoorOpen = Open;
 	Net.Send(ENsAddr::Sv, ENsAddr::C0, Pkt);
 	Net.Send(ENsAddr::Sv, ENsAddr::C1, Pkt);
+}
+
+void NsApplyDoorOpen(FNsDoorOpen& Door, const FNsPacket& Packet)
+{
+	if (Packet.Type == ENsMsg::S2CDoorOpen)
+	{
+		Door.Open = Packet.DoorOpen;
+	}
+}
+
+void FNsLockstepDoorServer::BroadcastDoorOpen(INsNet& Net) const
+{
+	NsBroadcastDoorOpen(Net, Door.Open);
 }
 
 void FNsLockstepDoorServer::SetOpen(INsNet& Net, int32 Open)
@@ -40,7 +53,7 @@ void NsPumpLockstepDoorClient(INsNet& Net, FNsLockstepDoorClient& C, bool bWait)
 		}
 		else if (P.Type == ENsMsg::S2CDoorOpen)
 		{
-			C.Door.Open = P.DoorOpen;
+			NsApplyDoorOpen(C.Door, P);
 		}
 	}
 	C.Ls.Logic(Net);

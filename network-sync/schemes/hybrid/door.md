@@ -6,7 +6,7 @@
 门**不得**进入 `World.Step`。若开关挡住走路，它是锁步输入，不是本包字段。
 
 不要实例化 `FNsStateSync*`。那份快照带着 pawn `X`。
-第一版只走 `INsNet` 上的门整数，不走 `UNetDriver` / `ANsDoor`。Manager 仍是四套 `ENsScheme`，不新增方案枚举。
+第一版只走 `INsNet` 上的门整数，不走 `UNetDriver` / `ANsDoor`。Manager 仍是四套 `ENsScheme`，不新增方案枚举。乐观演示把 `S2CDoorOpen` 叠在锁步 / 停拍拉齐泵上。
 
 规格：[../../impl/hybrid/door.md](../../impl/hybrid/door.md)。
 代码：`NsLockstepDoor.*`。组合 `FNsLockstep*`。不要叫 `NsHybrid`。

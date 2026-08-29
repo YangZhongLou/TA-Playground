@@ -23,6 +23,9 @@ void ANsNetManager::InitProtocols()
 	LsC0 = FNsLockstepClient();
 	LsC1 = FNsLockstepClient();
 	LsResync = FNsLockstepResync();
+	DoorSv = FNsDoorOpen();
+	DoorC0 = FNsDoorOpen();
+	DoorC1 = FNsDoorOpen();
 	WaitSv = FNsLockstepWaitServer();
 	WaitC0 = FNsLockstepWaitClient();
 	WaitC1 = FNsLockstepWaitClient();
@@ -470,6 +473,14 @@ void ANsNetManager::TickLockstep()
 	{
 		return;
 	}
+	if (RunsServer())
+	{
+		const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+		if (PC && PC->WasInputKeyJustPressed(EKeys::F))
+		{
+			DoorSv.Open = DoorSv.Open ? 0 : 1;
+		}
+	}
 	AccumMs += GetWorld()->GetDeltaSeconds() * 1000.0;
 	while (AccumMs >= Ns::LogicDtMs)
 	{
@@ -496,27 +507,28 @@ void ANsNetManager::TickLockstep()
 			{
 				NsPumpLockstepServer(Wire(), LsSv);
 			}
+			NsBroadcastDoorOpen(Wire(), DoorSv.Open);
 		}
 		if (RunsC0())
 		{
 			if (bResync)
 			{
-				NsPumpLockstepResyncClient(Wire(), LsC0, LsResync);
+				NsPumpLockstepResyncClient(Wire(), LsC0, LsResync, false, &DoorC0);
 			}
 			else
 			{
-				NsPumpLockstepClient(Wire(), LsC0);
+				NsPumpLockstepClient(Wire(), LsC0, false, &DoorC0);
 			}
 		}
 		if (RunsC1())
 		{
 			if (bResync)
 			{
-				NsPumpLockstepResyncClient(Wire(), LsC1, LsResync);
+				NsPumpLockstepResyncClient(Wire(), LsC1, LsResync, false, &DoorC1);
 			}
 			else
 			{
-				NsPumpLockstepClient(Wire(), LsC1);
+				NsPumpLockstepClient(Wire(), LsC1, false, &DoorC1);
 			}
 		}
 
@@ -597,6 +609,26 @@ void ANsNetManager::DrawPawns() const
 	}
 	DrawDebugSphere(World, GetPawnLocation(0), 24.f, 8, FColor::Cyan, false, -1.f, 0, 1.5f);
 	DrawDebugSphere(World, GetPawnLocation(1), 24.f, 8, FColor::Orange, false, -1.f, 0, 1.5f);
+	if (Scheme == ENsScheme::Lockstep && AppliedLockstepKind == ENsLockstepKind::Optimistic)
+	{
+		DrawLockstepDoor();
+	}
+}
+
+void ANsNetManager::DrawLockstepDoor() const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	const int32 Open = (bUseUdp && UdpRole == ENsUdpRole::Client) ? DoorC1.Open : DoorC0.Open;
+	const FVector Loc = GetActorLocation() + FVector(0.f, 160.f, 40.f);
+	const FColor Color = Open ? FColor::Green : FColor::Red;
+	DrawDebugBox(World, Loc, FVector(20.f, 60.f, 80.f), Color, false, -1.f, 0, 2.f);
+	DrawDebugString(World, Loc + FVector(0.f, 0.f, 100.f),
+		Open ? TEXT("Door OPEN (F)") : TEXT("Door CLOSED (F)"),
+		nullptr, FColor::White, 0.f, false, 1.1f);
 }
 
 void ANsNetManager::SpawnReplicatedDemo()

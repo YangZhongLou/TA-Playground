@@ -596,3 +596,50 @@ FNsSelfTestResult NsRunLockstepDoorNotInStepSelfTest()
 	}
 	return HyOk(TEXT("lockstep-door-gate-not-in-f"));
 }
+
+FNsSelfTestResult NsRunLockstepDoorComposeSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	FNsLockstepClient C1;
+	HyInitLs(C0, C1);
+	HyWarmLockstep(Net, Sv, C0, C1, 24);
+	const int32 X0 = C0.World.X[0];
+	FNsDoorOpen DoorC0;
+	FNsDoorOpen DoorC1;
+	NsBroadcastDoorOpen(Net, 1);
+	FNsLockstepResync Idle;
+	NsPumpLockstepResyncClient(Net, C0, Idle, false, &DoorC0);
+	NsPumpLockstepResyncClient(Net, C1, Idle, false, &DoorC1);
+	if (DoorC0.Open != 1 || DoorC1.Open != 1)
+	{
+		return HyFail(TEXT("lockstep-door-compose: open not applied"));
+	}
+	if (C0.World.X[0] != X0)
+	{
+		return HyFail(TEXT("lockstep-door-compose: open wrote X"));
+	}
+
+	if (!HyForceDesync(Sv))
+	{
+		return HyFail(TEXT("lockstep-door-compose: no checksum record"));
+	}
+	FNsLockstepResync Repair;
+	NsPumpLockstepResyncServer(Net, Sv, Repair);
+	NsBroadcastDoorOpen(Net, 0);
+	NsPumpLockstepResyncClient(Net, C0, Repair, false, &DoorC0);
+	NsPumpLockstepResyncClient(Net, C1, Repair, false, &DoorC1);
+	if (!HyAligned(Sv, Repair, C0, C1))
+	{
+		return HyFail(TEXT("lockstep-door-compose: halt align"));
+	}
+	if (DoorC0.Open != 0 || DoorC1.Open != 0)
+	{
+		return HyFail(TEXT("lockstep-door-compose: halt ignored door"));
+	}
+	return HyOk(TEXT("lockstep-door-compose"));
+}

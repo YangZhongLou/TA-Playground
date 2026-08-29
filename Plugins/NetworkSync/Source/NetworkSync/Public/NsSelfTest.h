@@ -86,6 +86,7 @@ NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDoorDropOpenSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDoorDropFrameSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDoorIgnoreSnapSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDoorNotInStepSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDoorComposeSelfTest();
 
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepWaitCleanSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepWaitStallSelfTest();

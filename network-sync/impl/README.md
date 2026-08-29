@@ -50,7 +50,7 @@
 1. 控制台 `ns.SelfTest` — 单元 + 三套协议 + UDP + 压力长跑，日志 `NetworkSync self-test OK`。
 2. `ns.DropRate [0-1] [count]` — 测量假网络实际丢包率（默认 0.1 / 2000 包）。
 3. 自动化：`NetworkSync.*`（Session Frontend）。
-4. PIE 控制台 `ns.SpawnDemo` — 生成 `ANsNetManager`。A/D 控玩家 0，方向键控玩家 1。
+4. PIE 控制台 `ns.SpawnDemo` — 生成 `ANsNetManager`。A/D 控玩家 0，方向键控玩家 1。乐观锁步按 `F` 切 FakeNet 门。
 5. 在 Actor 上改 `Scheme`：Lockstep / StateSync / Rollback / Replication（热切会重置协议、时钟、假网络队列，并按方案重绑 UDP）。
    Lockstep 再选 `LockstepKind`（乐观 / 等齐 / 通信回合 / delay）。未实现的 Kind 不会偷偷跑乐观循环。乐观假网络 / LocalMesh 走停拍拉齐泵。
 6. 勾选 `bUseUdp`：`LocalMesh` 本机三端口；`Host`/`Client` 填 `UdpRemoteHost` 做两进程。
