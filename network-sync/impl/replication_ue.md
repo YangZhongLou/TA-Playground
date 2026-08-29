@@ -5,6 +5,7 @@
 
 整数复制：`ANsReplicatedActor`，按 `E` 增加 `Counter`。
 门：`ANsDoor`，按 `F` 切换 `bOpen`。Scheme 选 Replication 或 `ns.SpawnDemo` 后改 Scheme。
+离开 Replication 时 Manager 会 Destroy 这两个 Actor。
 
 下面仍给出门的最小集。先 Listen Server 开两份编辑器。
 

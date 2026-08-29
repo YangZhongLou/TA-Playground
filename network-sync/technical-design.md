@@ -219,8 +219,8 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 ## 运行时
 
 `ANsNetManager` 每套协议用自己的固定步累加器，不跟渲染帧 1:1 步进。
-运行中改 `Scheme` 会 `InitProtocols()` 清零锁步/状态/回滚对象与累加器，再按新方案跑。
-切到 Replication 会再 spawn 演示 Actor。
+运行中改 `Scheme` 会 `ApplyScheme`：重置协议对象、`INsNet::ResetSession`（假网络队列与序号、`Now=0`）、若勾选 UDP 则按新方案重新 `BindUdp`。
+切到 Replication 会 spawn 演示 Actor；切走会 Destroy。
 
 | Scheme | 玩家 0 | 玩家 1 | 画面 |
 | --- | --- | --- | --- |
@@ -246,10 +246,11 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | --- | --- | --- |
 | 内核 | `World.*` | 确定性、clamp、Reset |
 | 编解码 | `Codec.*` | 往返（含 Frame/Checksum/JoinSnap）、拒收、MTU 拆包（S2C/Join/C2S/P2P） |
-| 传输 | `FakeNet.*`、`Udp.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程、突发、UDP 锁步/状态同步/回滚 |
+| 传输 | `FakeNet.*`、`Udp.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程锁步/状态同步/回滚、突发 |
 | 锁步 | `Lockstep.*` | 干净、Drop=0.1/0.15、Join、LateJoin、空洞不跳帧、Join 分片不擦未来 Buf、分叉 |
-| 状态同步 | `StateSync.*` | 和解、倒带、nack 全量、Inbox 空洞、Inbox 上限、旧快照忽略、Src 身份 |
+| 状态同步 | `StateSync.*` | 和解、倒带、nack 全量、Inbox 空洞、Inbox 上限、未确认窗、旧快照忽略、Src 身份 |
 | 回滚 | `Rollback.*` | 干净、WAIT、Confirmed 不跳空洞（前缀/中间） |
+| 运行时 | `Runtime.SchemeSwitch` | 热切后锁步不追 `Now`、队列清空 |
 | 复制 | `Actors.Cdo` | Door / Counter RPC |
 | 压力 | `Stress.*` | 长跑限时（World / Codec / FakeNet / 三套协议） |
 

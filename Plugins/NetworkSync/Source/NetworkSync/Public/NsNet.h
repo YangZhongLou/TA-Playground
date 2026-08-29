@@ -23,4 +23,5 @@ public:
 	virtual void Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet) = 0;
 	virtual void Drain(ENsAddr Dst, TArray<FNsPacket>& Out) = 0;
 	virtual void Advance(double Ms) { Now += Ms; }
+	virtual void ResetSession() { Now = 0.0; }
 };

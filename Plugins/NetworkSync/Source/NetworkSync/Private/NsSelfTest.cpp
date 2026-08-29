@@ -724,6 +724,115 @@ FNsSelfTestResult NsRunUdpSplitLockstepSelfTest()
 	return Ok;
 }
 
+FNsSelfTestResult NsRunUdpSplitStateSyncSelfTest()
+{
+	FNsUdpNet Host;
+	FNsUdpNet Client;
+	if (!Host.Bind(ENsAddr::Sv, 0, false) || !Host.Bind(ENsAddr::C0, 0, false)
+		|| !Client.Bind(ENsAddr::C1, 0, false))
+	{
+		return Fail(TEXT("udp-split-state: bind failed"));
+	}
+	if (!Host.SetPeer(ENsAddr::C1, TEXT("127.0.0.1"), Client.BoundPort(ENsAddr::C1))
+		|| !Client.SetPeer(ENsAddr::Sv, TEXT("127.0.0.1"), Host.BoundPort(ENsAddr::Sv))
+		|| !Client.SetPeer(ENsAddr::C0, TEXT("127.0.0.1"), Host.BoundPort(ENsAddr::C0)))
+	{
+		return Fail(TEXT("udp-split-state: set peer failed"));
+	}
+	FNsStateSyncServer Sv;
+	FNsStateSyncClient C0;
+	C0.PlayerId = 0;
+	C0.Addr = ENsAddr::C0;
+	FNsStateSyncClient C1;
+	C1.PlayerId = 1;
+	C1.Addr = ENsAddr::C1;
+	const int8 Script[] = {1, 1, 0, -1, -1, 0};
+	for (int32 S = 0; S < 40; ++S)
+	{
+		C0.LocalTick(Host, Script[S % 6]);
+		C1.LocalTick(Client, Script[(S + 3) % 6]);
+		NsPumpStateServer(Host, Sv, true);
+		NsPumpStateClient(Host, C0, true);
+		NsPumpStateClient(Client, C1, true);
+		Host.Advance(Ns::SimDtMs);
+		Client.Advance(Ns::SimDtMs);
+	}
+	for (int32 i = 0; i < 16; ++i)
+	{
+		NsPumpStateServer(Host, Sv, true);
+		NsPumpStateClient(Host, C0, true);
+		NsPumpStateClient(Client, C1, true);
+		Host.Advance(Ns::SimDtMs);
+		Client.Advance(Ns::SimDtMs);
+	}
+	if (C0.PredX != Sv.Pawns[0].X || C1.PredX != Sv.Pawns[1].X)
+	{
+		return FailStr(FString::Printf(TEXT("udp-split-state: pred=(%d,%d) sv=(%d,%d)"),
+			C0.PredX, C1.PredX, Sv.Pawns[0].X, Sv.Pawns[1].X));
+	}
+	FNsSelfTestResult Ok;
+	Ok.bOk = true;
+	Ok.Detail = FString::Printf(TEXT("udp-split-state tick=%d x=(%d,%d)"),
+		Sv.Tick, Sv.Pawns[0].X, Sv.Pawns[1].X);
+	return Ok;
+}
+
+FNsSelfTestResult NsRunUdpSplitRollbackSelfTest()
+{
+	FNsUdpNet Host;
+	FNsUdpNet Client;
+	if (!Host.Bind(ENsAddr::C0, 0, false) || !Client.Bind(ENsAddr::C1, 0, false))
+	{
+		return Fail(TEXT("udp-split-rollback: bind failed"));
+	}
+	if (!Host.SetPeer(ENsAddr::C1, TEXT("127.0.0.1"), Client.BoundPort(ENsAddr::C1))
+		|| !Client.SetPeer(ENsAddr::C0, TEXT("127.0.0.1"), Host.BoundPort(ENsAddr::C0)))
+	{
+		return Fail(TEXT("udp-split-rollback: set peer failed"));
+	}
+	FNsRollbackPeer A;
+	A.PlayerId = 0;
+	A.Addr = ENsAddr::C0;
+	A.Other = ENsAddr::C1;
+	FNsRollbackPeer B;
+	B.PlayerId = 1;
+	B.Addr = ENsAddr::C1;
+	B.Other = ENsAddr::C0;
+	const int8 S0[] = {1, 1, 1, 0, -1, -1, 0, 1};
+	const int8 S1[] = {0, -1, -1, 1, 1, 0, 0, -1};
+	for (int32 S = 0; S < 48; ++S)
+	{
+		A.Advance(Host, S0[S % 8]);
+		B.Advance(Client, S1[S % 8]);
+		NsPumpRollbackPeer(Host, A, true);
+		NsPumpRollbackPeer(Client, B, true);
+		Host.Advance(Ns::RollbackDtMs);
+		Client.Advance(Ns::RollbackDtMs);
+	}
+	for (int32 i = 0; i < 24; ++i)
+	{
+		A.Advance(Host, 0);
+		B.Advance(Client, 0);
+		NsPumpRollbackPeer(Host, A, true);
+		NsPumpRollbackPeer(Client, B, true);
+		Host.Advance(Ns::RollbackDtMs);
+		Client.Advance(Ns::RollbackDtMs);
+	}
+	if (!A.World.Equals(B.World))
+	{
+		return Fail(TEXT("udp-split-rollback: peers diverged"));
+	}
+	if (A.bWaiting || B.bWaiting)
+	{
+		return Fail(TEXT("udp-split-rollback: still waiting"));
+	}
+	FNsSelfTestResult Ok;
+	Ok.bOk = true;
+	Ok.Detail = FString::Printf(TEXT("udp-split-rollback frame=%d x=(%d,%d)"),
+		A.Frame, A.World.X[0], A.World.X[1]);
+	return Ok;
+}
+
 static FNsSelfTestResult RunFakeLockstep(float RttMs, float Drop, float JitterMs, int32 Frames, uint32 Seed,
 	int32 Cooldown, const TCHAR* Tag)
 {
@@ -1307,6 +1416,79 @@ FNsSelfTestResult NsRunLockstepDesyncSelfTest()
 	return OkStr(TEXT("lockstep-desync flagged"));
 }
 
+FNsSelfTestResult NsRunSchemeSwitchSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	C0.PlayerId = 0;
+	C0.Addr = ENsAddr::C0;
+	FNsLockstepClient C1;
+	C1.PlayerId = 1;
+	C1.Addr = ENsAddr::C1;
+	for (int32 S = 0; S < 45; ++S)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C0);
+		NsPumpLockstepClient(Net, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+	if (Sv.Frame < 20)
+	{
+		return FailStr(FString::Printf(TEXT("scheme-switch: lockstep frame=%d"), Sv.Frame));
+	}
+
+	Net.RttMs = 80.f;
+	C0.SendInput(Net, 1);
+	Net.ResetSession();
+	if (Net.Now != 0.0)
+	{
+		return Fail(TEXT("scheme-switch: Now not cleared"));
+	}
+	TArray<FNsPacket> Leftover;
+	Net.Drain(ENsAddr::Sv, Leftover);
+	if (Leftover.Num() != 0)
+	{
+		return Fail(TEXT("scheme-switch: queue survived ResetSession"));
+	}
+
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepServer Fresh;
+	NsPumpLockstepServer(Net, Fresh);
+	if (Fresh.Frame > 2)
+	{
+		return FailStr(FString::Printf(TEXT("scheme-switch: lockstep stormed frame=%d"), Fresh.Frame));
+	}
+
+	FNsStateSyncServer Ss;
+	FNsStateSyncClient Sc0;
+	Sc0.PlayerId = 0;
+	Sc0.Addr = ENsAddr::C0;
+	FNsStateSyncClient Sc1;
+	Sc1.PlayerId = 1;
+	Sc1.Addr = ENsAddr::C1;
+	for (int32 S = 0; S < 24; ++S)
+	{
+		Sc0.LocalTick(Net, 1);
+		Sc1.LocalTick(Net, 0);
+		NsPumpStateServer(Net, Ss);
+		NsPumpStateClient(Net, Sc0);
+		NsPumpStateClient(Net, Sc1);
+		Net.Advance(Ns::SimDtMs);
+	}
+	if (Sc0.PredX != Ss.Pawns[0].X)
+	{
+		return FailStr(FString::Printf(TEXT("scheme-switch: state pred=%d sv=%d"), Sc0.PredX, Ss.Pawns[0].X));
+	}
+	return OkStr(FString::Printf(TEXT("scheme-switch lockstep=%d then state tick=%d"), Sv.Frame, Ss.Tick));
+}
+
 FNsSelfTestResult NsRunLockstepStressSelfTest()
 {
 	const double T0 = FPlatformTime::Seconds();
@@ -1455,6 +1637,36 @@ FNsSelfTestResult NsRunStateSyncInboxCapSelfTest()
 		return FailStr(FString::Printf(TEXT("state-inbox-cap: in-window seq lost last=%d"), Sv.Pawns[0].LastSeq));
 	}
 	return OkStr(TEXT("state-inbox cap rejects far seq"));
+}
+
+FNsSelfTestResult NsRunStateSyncUnackedWindowSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsStateSyncClient C;
+	C.PlayerId = 0;
+	C.Addr = ENsAddr::C0;
+	const int32 Ticks = Ns::InputWindow + 12;
+	for (int32 i = 0; i < Ticks; ++i)
+	{
+		C.LocalTick(Net, 1);
+	}
+	if (C.UnackedSeq.Num() != Ns::InputWindow || C.UnackedDx.Num() != Ns::InputWindow)
+	{
+		return FailStr(FString::Printf(TEXT("state-unacked: n=%d want %d"),
+			C.UnackedSeq.Num(), Ns::InputWindow));
+	}
+	if (C.Seq != Ticks)
+	{
+		return FailStr(FString::Printf(TEXT("state-unacked: seq=%d"), C.Seq));
+	}
+	if (C.PredX != Ticks * Ns::StateSpeed)
+	{
+		return FailStr(FString::Printf(TEXT("state-unacked: pred=%d"), C.PredX));
+	}
+	return OkStr(TEXT("state-unacked window clamped"));
 }
 
 FNsSelfTestResult NsRunStateSyncOldSnapSelfTest()
@@ -1991,12 +2203,14 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunLockstepNoSkipSelfTest,
 		&NsRunLockstepJoinFragSelfTest,
 		&NsRunLockstepDesyncSelfTest,
+		&NsRunSchemeSwitchSelfTest,
 		&NsRunStateSyncSelfTest,
 		&NsRunStateSyncCleanSelfTest,
 		&NsRunStateSyncRewindSelfTest,
 		&NsRunStateSyncNackSelfTest,
 		&NsRunStateSyncInboxHoleSelfTest,
 		&NsRunStateSyncInboxCapSelfTest,
+		&NsRunStateSyncUnackedWindowSelfTest,
 		&NsRunStateSyncOldSnapSelfTest,
 		&NsRunStateSyncSpoofSelfTest,
 		&NsRunRollbackSelfTest,
@@ -2010,6 +2224,8 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunUdpRollbackSelfTest,
 		&NsRunUdpPeersSelfTest,
 		&NsRunUdpSplitLockstepSelfTest,
+		&NsRunUdpSplitStateSyncSelfTest,
+		&NsRunUdpSplitRollbackSelfTest,
 		&NsRunUdpBurstSelfTest,
 		&NsRunWorldStressSelfTest,
 		&NsRunCodecStressSelfTest,

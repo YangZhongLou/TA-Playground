@@ -76,6 +76,13 @@ void FNsUdpNet::Close()
 		PeerHosts[i].Reset();
 		PeerPorts[i] = 0;
 	}
+	ResetSession();
+}
+
+void FNsUdpNet::ResetSession()
+{
+	Now = 0.0;
+	Seq = FNsSeqWindow();
 }
 
 bool FNsUdpNet::Bind(ENsAddr Addr, int32 Port, bool bAnyAddress)

@@ -47,6 +47,32 @@ void ANsNetManager::InitProtocols()
 	RbB.Other = ENsAddr::C0;
 }
 
+void ANsNetManager::ResetWire()
+{
+	Fake.ResetSession();
+	NetLink = &Fake;
+	if (bUseUdp && BindUdp())
+	{
+		NetLink = &Udp;
+	}
+	LsSv.NextMs = Wire().Now;
+}
+
+void ANsNetManager::ApplyScheme(ENsScheme NewScheme)
+{
+	InitProtocols();
+	AppliedScheme = NewScheme;
+	ResetWire();
+	if (NewScheme == ENsScheme::Replication)
+	{
+		SpawnReplicatedDemo();
+	}
+	else
+	{
+		DestroyReplicatedDemo();
+	}
+}
+
 void ANsNetManager::BeginPlay()
 {
 	Super::BeginPlay();
@@ -55,21 +81,7 @@ void ANsNetManager::BeginPlay()
 	Fake.Drop = 0.05f;
 	Fake.JitterMs = 6.f;
 	Fake.Rng.Initialize(1);
-	NetLink = &Fake;
-	if (bUseUdp)
-	{
-		if (BindUdp())
-		{
-			NetLink = &Udp;
-		}
-	}
-
-	InitProtocols();
-	AppliedScheme = Scheme;
-	if (Scheme == ENsScheme::Replication)
-	{
-		SpawnReplicatedDemo();
-	}
+	ApplyScheme(Scheme);
 }
 
 INsNet& ANsNetManager::Wire()
@@ -102,7 +114,7 @@ bool ANsNetManager::BindUdp()
 	const int32 Base = (UdpBasePort > 0) ? UdpBasePort : 27000;
 	const int32 RemoteBase = (UdpRemoteBasePort > 0) ? UdpRemoteBasePort : Base;
 	const TCHAR* Remote = UdpRemoteHost.IsEmpty() ? TEXT("127.0.0.1") : *UdpRemoteHost;
-	if (Scheme == ENsScheme::Rollback)
+	if (AppliedScheme == ENsScheme::Rollback)
 	{
 		if (UdpRole == ENsUdpRole::Host)
 		{
@@ -136,12 +148,7 @@ void ANsNetManager::Tick(float DeltaSeconds)
 
 	if (Scheme != AppliedScheme)
 	{
-		InitProtocols();
-		AppliedScheme = Scheme;
-		if (Scheme == ENsScheme::Replication)
-		{
-			SpawnReplicatedDemo();
-		}
+		ApplyScheme(Scheme);
 	}
 
 	switch (Scheme)
@@ -398,4 +405,18 @@ void ANsNetManager::SpawnReplicatedDemo()
 		FRotator::ZeroRotator,
 		Params);
 	DoorActor = Door;
+}
+
+void ANsNetManager::DestroyReplicatedDemo()
+{
+	if (AActor* Rep = RepActor.Get())
+	{
+		Rep->Destroy();
+	}
+	RepActor.Reset();
+	if (AActor* Door = DoorActor.Get())
+	{
+		Door->Destroy();
+	}
+	DoorActor.Reset();
 }

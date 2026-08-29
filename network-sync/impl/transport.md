@@ -82,6 +82,8 @@ void OnRecvSeq(int32 S)
 
 两份编辑器：都勾 `bUseUdp`，一份 `Host`、一份 `Client`，同一 `UdpBasePort`（如 27000），
 `UdpRemoteHost` 填对端 IPv4。局域网勾 `bUdpLan`。
+锁步 / 状态同步的 Host 绑 Sv+C0；回滚 Host 只绑 C0，对端 C1。
+自动化：`NetworkSync.Udp.Split`（锁步）、`.SplitState`、`.SplitRollback`。
 
 第一周把 `Drop` 设 0、`RttMs` 设 80，只验证逻辑。第二周 `Drop=0.05`。
 `ns.SelfTest` 三套协议分别开了 0.1 / 0.05 / 0.05 丢包。

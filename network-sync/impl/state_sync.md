@@ -90,6 +90,8 @@ void Sim(INsNet& Net)
 `OnInput`：`seq <= LastSeq` 直接忽略。`seq > LastSeq + MaxInboxAhead`（`MaxInboxAhead = HistoryTicks`）也忽略。同号再来则覆盖 Inbox。模拟只走 `LastSeq+1`，因此跳号不会被「最新一条」吞掉。
 缺 `LastSeq+1` 时该玩家本拍不加位移，直到缺号到达。
 
+客户端 `UnackedSeq` / `UnackedDx` 只保留最近 `InputWindow` 条；`PredX` 仍按每拍累加。发送窗口与内存窗口一致。
+
 ## 客户端：别人怎么画
 
 见 `FNsStateSyncClient::OnSnap` / `UpdateRemoteDraw`。

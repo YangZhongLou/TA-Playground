@@ -75,7 +75,10 @@ private:
 	void TickRollback();
 	void DrawPawns() const;
 	void SpawnReplicatedDemo();
+	void DestroyReplicatedDemo();
 	void InitProtocols();
+	void ResetWire();
+	void ApplyScheme(ENsScheme NewScheme);
 	INsNet& Wire();
 	bool RunsServer() const;
 	bool RunsC0() const;

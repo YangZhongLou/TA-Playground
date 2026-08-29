@@ -36,6 +36,13 @@ void FNsFakeNet::Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet)
 	}
 }
 
+void FNsFakeNet::ResetSession()
+{
+	Now = 0.0;
+	Queue.Reset();
+	Seq = FNsSeqWindow();
+}
+
 void FNsFakeNet::Drain(ENsAddr Dst, TArray<FNsPacket>& Out)
 {
 	Out.Reset();

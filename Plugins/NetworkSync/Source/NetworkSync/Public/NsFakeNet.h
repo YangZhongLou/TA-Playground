@@ -15,6 +15,7 @@ public:
 
 	virtual void Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet) override;
 	virtual void Drain(ENsAddr Dst, TArray<FNsPacket>& Out) override;
+	virtual void ResetSession() override;
 
 private:
 	TArray<FNsPacket> Queue;

@@ -128,6 +128,11 @@ void FNsStateSyncClient::LocalTick(INsNet& Net, int8 Dx)
 	const int8 D = NsClampDx(Dx);
 	UnackedSeq.Add(Seq);
 	UnackedDx.Add(D);
+	while (UnackedSeq.Num() > Ns::InputWindow)
+	{
+		UnackedSeq.RemoveAt(0);
+		UnackedDx.RemoveAt(0);
+	}
 	PredX += static_cast<int32>(D) * Ns::StateSpeed;
 	const int32 Start = FMath::Max(0, UnackedSeq.Num() - Ns::InputWindow);
 	FNsPacket Pkt;
