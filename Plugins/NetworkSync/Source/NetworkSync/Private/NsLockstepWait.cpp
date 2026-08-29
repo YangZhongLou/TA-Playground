@@ -54,6 +54,25 @@ void FNsLockstepWaitServer::Tick(INsNet& Net)
 	{
 		Checksums.Add(Frame, World.Checksum());
 	}
+	if (Frame > 0 && (Frame % Ns::JoinSnapEvery) == 0)
+	{
+		SnapFrame = Frame;
+		SnapWorld = World;
+		const int32 KeepFrom = FMath::Max(0, SnapFrame - Ns::RedundantFrames);
+		TArray<int32> Dead;
+		for (const TPair<int32, FNsInputs>& Kv : Hist)
+		{
+			if (Kv.Key < KeepFrom)
+			{
+				Dead.Add(Kv.Key);
+			}
+		}
+		for (int32 K : Dead)
+		{
+			Hist.Remove(K);
+			Checksums.Remove(K);
+		}
+	}
 
 	TMap<int32, FNsInputs> Packed;
 	const int32 First = FMath::Max(0, Frame - Ns::RedundantFrames);
@@ -70,19 +89,10 @@ void FNsLockstepWaitServer::Tick(INsNet& Net)
 	Pkt.Frames = Packed;
 	Net.Send(ENsAddr::Sv, ENsAddr::C0, Pkt);
 	Net.Send(ENsAddr::Sv, ENsAddr::C1, Pkt);
-
-	const int32 KeepFrom = First;
-	TArray<int32> Dead;
-	for (const TPair<int32, FNsInputs>& Kv : Hist)
+	if (Frame > 0 && (Frame % (Ns::RedundantFrames + 1)) == 0)
 	{
-		if (Kv.Key < KeepFrom)
-		{
-			Dead.Add(Kv.Key);
-		}
-	}
-	for (int32 K : Dead)
-	{
-		Hist.Remove(K);
+		SendJoin(Net, ENsAddr::C0);
+		SendJoin(Net, ENsAddr::C1);
 	}
 
 	Got[0] = false;
@@ -90,6 +100,33 @@ void FNsLockstepWaitServer::Tick(INsNet& Net)
 	Slot = FNsInputs();
 	++Frame;
 	FrameStartMs = Net.Now;
+}
+
+void FNsLockstepWaitServer::SendJoin(INsNet& Net, ENsAddr Dst) const
+{
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::S2CJoinSnap;
+	if (SnapFrame >= 0)
+	{
+		Pkt.Tick = SnapFrame + 1;
+		Pkt.SnapX[0] = SnapWorld.X[0];
+		Pkt.SnapX[1] = SnapWorld.X[1];
+		Pkt.SnapRng = SnapWorld.Rng;
+	}
+	else
+	{
+		Pkt.Tick = 0;
+		Pkt.SnapRng = 1;
+	}
+	for (const TPair<int32, FNsInputs>& Kv : Hist)
+	{
+		if (Kv.Key >= Pkt.Tick)
+		{
+			Pkt.Frames.Add(Kv.Key, Kv.Value);
+		}
+	}
+	Net.Send(ENsAddr::Sv, Dst, Pkt);
+	Net.Send(ENsAddr::Sv, Dst, Pkt);
 }
 
 void FNsLockstepWaitClient::SendInput(INsNet& Net, int8 Dx)
@@ -113,6 +150,32 @@ void FNsLockstepWaitClient::OnS2C(const TMap<int32, FNsInputs>& Frames)
 			Buf.Add(Kv.Key, Kv.Value);
 		}
 	}
+}
+
+void FNsLockstepWaitClient::ApplyJoin(const FNsPacket& Packet)
+{
+	if (Packet.Tick > ExecFrame)
+	{
+		World.X[0] = Packet.SnapX[0];
+		World.X[1] = Packet.SnapX[1];
+		World.Rng = Packet.SnapRng;
+		PrevX[0] = World.X[0];
+		PrevX[1] = World.X[1];
+		ExecFrame = Packet.Tick;
+		TArray<int32> Dead;
+		for (const TPair<int32, FNsInputs>& Kv : Buf)
+		{
+			if (Kv.Key < ExecFrame)
+			{
+				Dead.Add(Kv.Key);
+			}
+		}
+		for (int32 K : Dead)
+		{
+			Buf.Remove(K);
+		}
+	}
+	OnS2C(Packet.Frames);
 }
 
 void FNsLockstepWaitClient::Logic(INsNet& Net)
@@ -165,7 +228,11 @@ void NsPumpLockstepWaitClient(INsNet& Net, FNsLockstepWaitClient& C, bool bWait)
 	NsDrain(Net, C.Addr, ToC, bWait);
 	for (const FNsPacket& P : ToC)
 	{
-		if (P.Type == ENsMsg::S2CFrame)
+		if (P.Type == ENsMsg::S2CJoinSnap)
+		{
+			C.ApplyJoin(P);
+		}
+		else if (P.Type == ENsMsg::S2CFrame)
 		{
 			C.OnS2C(P.Frames);
 		}

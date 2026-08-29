@@ -253,7 +253,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | 内核 | `World.*` | 确定性、clamp、Reset |
 | 编解码 | `Codec.*` | 往返（含 Frame/Checksum/JoinSnap）、拒收、MTU 拆包（S2C/Join/C2S/P2P） |
 | 传输 | `FakeNet.*`、`Udp.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程锁步/状态同步/回滚、突发 |
-| 锁步 | `Lockstep.*` | 乐观：干净、Drop、Join、空洞、分叉。等齐：`Lockstep.Wait.*`。通信回合：`Lockstep.Turn.*`（含 Speed）。delay：`Lockstep.Delay.*` |
+| 锁步 | `Lockstep.*` | 乐观：干净、Drop、Join、空洞、分叉。等齐：`Lockstep.Wait.*`（含 Join）。通信回合：`Lockstep.Turn.*`（含 Speed）。delay：`Lockstep.Delay.*` |
 | 结合 | `Lockstep.Resync.*` / `LockstepDoor.*` | 停拍强制回跳；FakeNet 门；检查点用 `Lockstep.Join*`；切段 `SchemeSwitch` 只测时钟 |
 | 状态同步 | `StateSync.*` | 和解、倒带、nack 全量、Inbox 空洞、Inbox 上限、未确认窗、旧快照忽略、Src 身份 |
 | 回滚 | `Rollback.*` | 干净、WAIT、Confirmed 不跳空洞（前缀/中间） |

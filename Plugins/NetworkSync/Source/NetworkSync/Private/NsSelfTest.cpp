@@ -2241,6 +2241,7 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunLockstepWaitCleanSelfTest,
 		&NsRunLockstepWaitStallSelfTest,
 		&NsRunLockstepWaitDropSelfTest,
+		&NsRunLockstepWaitJoinSelfTest,
 		&NsRunLockstepTurnCleanSelfTest,
 		&NsRunLockstepTurnLateSelfTest,
 		&NsRunLockstepTurnDropSelfTest,

@@ -183,3 +183,89 @@ FNsSelfTestResult NsRunLockstepWaitDropSelfTest()
 	}
 	return WaitOk(FString::Printf(TEXT("lockstep-wait-drop frames=%d"), C0.ExecFrame));
 }
+
+FNsSelfTestResult NsRunLockstepWaitJoinSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepWaitServer Sv;
+	FNsLockstepWaitClient C0;
+	FNsLockstepWaitClient C1;
+	WaitInit(C0, C1);
+
+	for (int32 S = 0; S < 5; ++S)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		WaitPump(Net, Sv, C0, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+	if (C1.ExecFrame != 5)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-join: warmup exec=%d"), C1.ExecFrame));
+	}
+
+	for (int32 S = 0; S < 20; ++S)
+	{
+		C0.SendInput(Net, 1);
+		Net.Advance(static_cast<double>(NsLockstepWaitStallMs));
+		NsPumpLockstepWaitServer(Net, Sv);
+		NsPumpLockstepWaitClient(Net, C0);
+		TArray<FNsPacket> Dropped;
+		Net.Drain(ENsAddr::C1, Dropped);
+	}
+	if (C1.ExecFrame != 5)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-join: silent client moved exec=%d"), C1.ExecFrame));
+	}
+	if (Sv.Frame < 5 + Ns::RedundantFrames + 2)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-join: server did not pull ahead frame=%d"), Sv.Frame));
+	}
+
+	C0.SendInput(Net, 1);
+	NsPumpLockstepWaitServer(Net, Sv);
+	NsPumpLockstepWaitClient(Net, C0);
+	NsPumpLockstepWaitClient(Net, C1);
+	if (C1.ExecFrame != 5)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-join: redundant window caught up exec=%d"), C1.ExecFrame));
+	}
+
+	Sv.SendJoin(Net, C1.Addr);
+	NsPumpLockstepWaitClient(Net, C1);
+	if (C1.ExecFrame != Sv.Frame)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-join: after snap sv=%d c1=%d"), Sv.Frame, C1.ExecFrame));
+	}
+	if (!C0.World.Equals(C1.World) || !C0.World.Equals(Sv.World))
+	{
+		return WaitFail(TEXT("lockstep-wait-join: worlds after snap"));
+	}
+
+	for (int32 S = 0; S < 8; ++S)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		WaitPump(Net, Sv, C0, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+	if (C1.ExecFrame != Sv.Frame || C0.ExecFrame != Sv.Frame)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-join: resume sv=%d c0=%d c1=%d"),
+			Sv.Frame, C0.ExecFrame, C1.ExecFrame));
+	}
+	if (!C0.World.Equals(C1.World) || !C0.World.Equals(Sv.World))
+	{
+		return WaitFail(TEXT("lockstep-wait-join: worlds after resume"));
+	}
+	return WaitOk(FString::Printf(TEXT("lockstep-wait-join frame=%d"), Sv.Frame));
+}
