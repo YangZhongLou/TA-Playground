@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "NsFakeNet.h"
 #include "NsLockstep.h"
+#include "NsLockstepResync.h"
 #include "NsLockstepWait.h"
 #include "NsLockstepTurn.h"
 #include "NsLockstepDelay.h"
@@ -106,6 +107,7 @@ private:
 	FNsLockstepServer LsSv;
 	FNsLockstepClient LsC0;
 	FNsLockstepClient LsC1;
+	FNsLockstepResync LsResync;
 	FNsLockstepWaitServer WaitSv;
 	FNsLockstepWaitClient WaitC0;
 	FNsLockstepWaitClient WaitC1;

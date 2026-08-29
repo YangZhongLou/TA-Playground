@@ -41,13 +41,14 @@ static void HyInitLs(FNsLockstepClient& C0, FNsLockstepClient& C1)
 
 static void HyWarmLockstep(FNsFakeNet& Net, FNsLockstepServer& Sv, FNsLockstepClient& C0, FNsLockstepClient& C1, int32 Steps)
 {
+	FNsLockstepResync Warm;
 	for (int32 S = 0; S < Steps; ++S)
 	{
 		C0.SendInput(Net, 1);
 		C1.SendInput(Net, -1);
-		NsPumpLockstepServer(Net, Sv);
-		NsPumpLockstepClient(Net, C0);
-		NsPumpLockstepClient(Net, C1);
+		NsPumpLockstepResyncServer(Net, Sv, Warm);
+		NsPumpLockstepResyncClient(Net, C0, Warm);
+		NsPumpLockstepResyncClient(Net, C1, Warm);
 		Net.Advance(Ns::LogicDtMs);
 	}
 }
@@ -382,6 +383,34 @@ FNsSelfTestResult NsRunLockstepResyncResumeSelfTest()
 		return HyFail(TEXT("lockstep-resync-resume: worlds"));
 	}
 	return HyOk(FString::Printf(TEXT("lockstep-resync-resume frame=%d"), Sv.Frame));
+}
+
+FNsSelfTestResult NsRunLockstepResyncCleanSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	FNsLockstepClient C1;
+	HyInitLs(C0, C1);
+	HyWarmLockstep(Net, Sv, C0, C1, 40);
+	if (Sv.Frame != 40 || C0.ExecFrame != 40 || C1.ExecFrame != 40)
+	{
+		return HyFailStr(FString::Printf(
+			TEXT("lockstep-resync-clean: frame sv=%d c0=%d c1=%d"),
+			Sv.Frame, C0.ExecFrame, C1.ExecFrame));
+	}
+	if (!C0.World.Equals(C1.World) || !C0.World.Equals(Sv.World))
+	{
+		return HyFail(TEXT("lockstep-resync-clean: worlds"));
+	}
+	if (Sv.bDesync || Sv.ChecksumOk <= 0)
+	{
+		return HyFail(TEXT("lockstep-resync-clean: checksum"));
+	}
+	return HyOk(TEXT("lockstep-resync-clean"));
 }
 
 static void DoorInit(FNsLockstepDoorServer& Sv, FNsLockstepDoorClient& C0, FNsLockstepDoorClient& C1)

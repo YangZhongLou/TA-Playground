@@ -12,6 +12,7 @@
 
 规格：[../../impl/hybrid/resync.md](../../impl/hybrid/resync.md)。
 代码：`NsLockstepResync.*`。泵在 `bDesync` 时不调用 `Tick`。禁止改 `NsLockstep.cpp` 的打拍循环。
+`ANsNetManager` 乐观假网络 / LocalMesh 走这套泵，不新增 `ENsScheme`。
 
 | 平时 | 分叉后 | 对齐 ack 后 |
 | --- | --- | --- |

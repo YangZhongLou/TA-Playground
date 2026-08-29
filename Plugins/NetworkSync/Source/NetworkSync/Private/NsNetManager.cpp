@@ -22,6 +22,7 @@ void ANsNetManager::InitProtocols()
 	LsSv = FNsLockstepServer();
 	LsC0 = FNsLockstepClient();
 	LsC1 = FNsLockstepClient();
+	LsResync = FNsLockstepResync();
 	WaitSv = FNsLockstepWaitServer();
 	WaitC0 = FNsLockstepWaitClient();
 	WaitC1 = FNsLockstepWaitClient();
@@ -484,17 +485,39 @@ void ANsNetManager::TickLockstep()
 			LsC1.SendInput(Wire(), ReadDx(bClientOnly));
 		}
 
+		const bool bResync = !bUseUdp || UdpRole == ENsUdpRole::LocalMesh;
 		if (RunsServer())
 		{
-			NsPumpLockstepServer(Wire(), LsSv);
+			if (bResync)
+			{
+				NsPumpLockstepResyncServer(Wire(), LsSv, LsResync);
+			}
+			else
+			{
+				NsPumpLockstepServer(Wire(), LsSv);
+			}
 		}
 		if (RunsC0())
 		{
-			NsPumpLockstepClient(Wire(), LsC0);
+			if (bResync)
+			{
+				NsPumpLockstepResyncClient(Wire(), LsC0, LsResync);
+			}
+			else
+			{
+				NsPumpLockstepClient(Wire(), LsC0);
+			}
 		}
 		if (RunsC1())
 		{
-			NsPumpLockstepClient(Wire(), LsC1);
+			if (bResync)
+			{
+				NsPumpLockstepResyncClient(Wire(), LsC1, LsResync);
+			}
+			else
+			{
+				NsPumpLockstepClient(Wire(), LsC1);
+			}
 		}
 
 		Wire().Advance(Ns::LogicDtMs);

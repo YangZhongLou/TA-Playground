@@ -52,6 +52,8 @@
 
 逻辑 bug 拉齐后仍会分叉；Resume 后若 checksum 再对不上，再次停拍。
 
+热切 `ApplyScheme` 会重建 `LsResync`。分进程 `Host` / `Client` 两端各有一份 `FNsLockstepResync`，C1 看不到 `bCaptured`，那些角色仍走 `NsPumpLockstep*`。
+
 第一版不做按视野裁快照，不做踢人替代。恢复打拍是本包第二里程碑，已做。
 
 ## 禁令
@@ -75,3 +77,4 @@
 7. 对齐后再注入 `Tick=0` 的空 Join、或同 Tick 但带 `Frames` 的 Join：世界仍是 `LiveSnap`。
 8. 丢掉全部 `S2CJoinSnap`：33 个泵后 `bGiveUp`，`Frame` 不再增加。
 9. 对齐且两槽 checksum ack 后：`bResumed`，再过一个 `LogicDtMs` 后 `Frame` 增加，两端 `World` 同位。Ack 当拍 `Frame` 仍等于 `LiveSnapTick`。
+10. `NetworkSync.Lockstep.Resync.Clean`：Manager 同序泵（SendInput → Resync 泵 → Advance）40 拍对齐且 checksum 通过。
