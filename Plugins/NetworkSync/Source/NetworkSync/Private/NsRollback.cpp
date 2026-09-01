@@ -66,6 +66,13 @@ void FNsRollbackPeer::RaiseConfirmed()
 
 void FNsRollbackPeer::AdvanceLocal(int8 Dx, TMap<int32, int8>& OutPacked)
 {
+	OutPacked.Reset();
+	if (bNeedsResync)
+	{
+		bWaiting = true;
+		++WaitCount;
+		return;
+	}
 	RaiseConfirmed();
 	if (Frame - Confirmed > Ns::MaxRollback)
 	{
@@ -107,6 +114,23 @@ void FNsRollbackPeer::OnRemote(const TMap<int32, int8>& Packed)
 	{
 		const int32 F = PairIt.Key;
 		const int8 Dx = NsClampDx(PairIt.Value);
+		if (const int8* Existing = RealRemote.Find(F))
+		{
+			if (*Existing != Dx)
+			{
+				bNeedsResync = true;
+				bWaiting = true;
+				bConfirm = false;
+			}
+			continue;
+		}
+		if (F <= Confirmed && !Pred.Contains(F))
+		{
+			bNeedsResync = true;
+			bWaiting = true;
+			bConfirm = false;
+			continue;
+		}
 		RealRemote.Add(F, Dx);
 		if (const FNsInputs* Guess = Pred.Find(F))
 		{
@@ -130,11 +154,13 @@ bool FNsRollbackPeer::RollbackFrom(int32 F)
 {
 	if (Frame - F > Ns::MaxRollback)
 	{
+		bNeedsResync = true;
 		bWaiting = true;
 		return false;
 	}
 	if (!Saves.Contains(F))
 	{
+		bNeedsResync = true;
 		bWaiting = true;
 		return false;
 	}

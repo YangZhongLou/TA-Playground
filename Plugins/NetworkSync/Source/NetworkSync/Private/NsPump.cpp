@@ -4,6 +4,43 @@
 #include "NsLockstepDoor.h"
 #include "HAL/PlatformProcess.h"
 
+namespace
+{
+bool NsRouteAllowed(const FNsPacket& Packet)
+{
+	const bool bFromClient = Packet.Src == ENsAddr::C0 || Packet.Src == ENsAddr::C1;
+	const bool bToClient = Packet.Dst == ENsAddr::C0 || Packet.Dst == ENsAddr::C1;
+	switch (Packet.Type)
+	{
+	case ENsMsg::C2SInput:
+	case ENsMsg::C2SSnapAck:
+	case ENsMsg::C2SChecksum:
+		return bFromClient && Packet.Dst == ENsAddr::Sv;
+	case ENsMsg::S2CFrame:
+	case ENsMsg::S2CSnapshot:
+	case ENsMsg::S2CJoinSnap:
+	case ENsMsg::S2CDoorOpen:
+		return Packet.Src == ENsAddr::Sv && bToClient;
+	case ENsMsg::P2PInput:
+		return (Packet.Src == ENsAddr::C0 && Packet.Dst == ENsAddr::C1)
+			|| (Packet.Src == ENsAddr::C1 && Packet.Dst == ENsAddr::C0);
+	default:
+		return false;
+	}
+}
+
+void NsAppendAllowed(ENsAddr Dst, const TArray<FNsPacket>& Batch, TArray<FNsPacket>& Out)
+{
+	for (const FNsPacket& Packet : Batch)
+	{
+		if (Packet.Dst == Dst && NsRouteAllowed(Packet))
+		{
+			Out.Add(Packet);
+		}
+	}
+}
+}
+
 void NsDrain(INsNet& Net, ENsAddr Dst, TArray<FNsPacket>& Out, bool bWait)
 {
 	Out.Reset();
@@ -12,7 +49,7 @@ void NsDrain(INsNet& Net, ENsAddr Dst, TArray<FNsPacket>& Out, bool bWait)
 	{
 		TArray<FNsPacket> Batch;
 		Net.Drain(Dst, Batch);
-		Out.Append(Batch);
+		NsAppendAllowed(Dst, Batch, Out);
 		if (Out.Num() > 0)
 		{
 			for (int32 j = 0; j < 8; ++j)
@@ -22,7 +59,7 @@ void NsDrain(INsNet& Net, ENsAddr Dst, TArray<FNsPacket>& Out, bool bWait)
 				{
 					break;
 				}
-				Out.Append(Batch);
+				NsAppendAllowed(Dst, Batch, Out);
 			}
 			return;
 		}

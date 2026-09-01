@@ -6,16 +6,20 @@
 
 ### 执行命令
 
+在仓库根目录执行：
+
 ```powershell
+$ProjectPath = (Resolve-Path ".\TA-Playground.uproject").Path
+
 # 1. 编译
 & "C:\Program Files\Epic Games\UE_5.8\Engine\Build\BatchFiles\Build.bat" `
   -Target="TAPlaygroundEditor Win64 Development" `
-  -Project="D:\Playground\TA-Playground\TA-Playground.uproject" `
+  -Project="$ProjectPath" `
   -WaitMutex -FromMsBuild
 
 # 2. 跑测试 (headless)
 & "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" `
-  "D:\Playground\TA-Playground\TA-Playground.uproject" `
+  "$ProjectPath" `
   -ExecCmds="Automation RunTests Hexagon; Quit" `
   -NullRHI -Unattended -NoSplash -Log
 

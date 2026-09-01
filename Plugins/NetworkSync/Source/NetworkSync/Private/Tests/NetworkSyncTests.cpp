@@ -8,6 +8,7 @@
 #include "NsFakeNet.h"
 #include "NsCodec.h"
 #include "NsDoor.h"
+#include "NsNetManager.h"
 #include "NsReplicatedActor.h"
 #include "UObject/Package.h"
 
@@ -101,6 +102,7 @@ bool FNsCodec_RoundTrip::RunTest(const FString& Parameters)
 {
 	FNsPacket Src;
 	Src.Type = ENsMsg::S2CFrame;
+	Src.Session = 0x12345678u;
 	Src.Seq = 9;
 	Src.Ack = 4;
 	Src.AckBits = 0xA5A5A5A5u;
@@ -118,6 +120,7 @@ bool FNsCodec_RoundTrip::RunTest(const FString& Parameters)
 	FNsPacket Dst;
 	TestTrue(TEXT("decode"), NsDecodePacket(Bytes, Dst));
 	TestEqual(TEXT("type"), static_cast<uint8>(Dst.Type), static_cast<uint8>(ENsMsg::S2CFrame));
+	TestEqual(TEXT("session"), Dst.Session, 0x12345678u);
 	TestEqual(TEXT("seq"), Dst.Seq, 9);
 	TestEqual(TEXT("ack"), Dst.Ack, 4);
 	TestEqual(TEXT("ackbits"), Dst.AckBits, 0xA5A5A5A5u);
@@ -226,6 +229,7 @@ NS_WRAP(FNsWorld_Contract, "NetworkSync.World.Contract", NsRunWorldContractSelfT
 NS_WRAP(FNsCodec_Contract, "NetworkSync.Codec.Contract", NsRunCodecContractSelfTest, NsAutoFlags)
 NS_WRAP(FNsCodec_Mtu, "NetworkSync.Codec.Mtu", NsRunMtuSelfTest, NsAutoFlags)
 NS_WRAP(FNsSeqWindow_Dup, "NetworkSync.FakeNet.SeqWindow", NsRunSeqWindowSelfTest, NsAutoFlags)
+NS_WRAP(FNsRouteGuard, "NetworkSync.FakeNet.RouteGuard", NsRunRouteGuardSelfTest, NsAutoFlags)
 NS_WRAP(FNsFakeNet_DropDelay, "NetworkSync.FakeNet.DropDelay", NsRunFakeNetContractSelfTest, NsAutoFlags)
 NS_WRAP(FNsFakeNet_DropRate, "NetworkSync.FakeNet.DropRate", NsRunFakeNetDropRateSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_Clean, "NetworkSync.Lockstep.Clean", NsRunLockstepCleanSelfTest, NsAutoFlags)
@@ -260,26 +264,32 @@ NS_WRAP(FNsLockstep_TurnLate, "NetworkSync.Lockstep.Turn.Late", NsRunLockstepTur
 NS_WRAP(FNsLockstep_TurnDrop, "NetworkSync.Lockstep.Turn.Drop", NsRunLockstepTurnDropSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_TurnSpeed, "NetworkSync.Lockstep.Turn.Speed", NsRunLockstepTurnSpeedSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_TurnLenDrop, "NetworkSync.Lockstep.Turn.LenDrop", NsRunLockstepTurnLenDropSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_TurnLongRun, "NetworkSync.Lockstep.Turn.LongRun", NsRunLockstepTurnLongRunSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_DelayClean, "NetworkSync.Lockstep.Delay.Clean", NsRunLockstepDelayCleanSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_DelayRtt, "NetworkSync.Lockstep.Delay.Rtt", NsRunLockstepDelayRttSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_DelayHighRtt, "NetworkSync.Lockstep.Delay.HighRtt", NsRunLockstepDelayHighRttSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_DelayRecovery, "NetworkSync.Lockstep.Delay.Recovery", NsRunLockstepDelayRecoverySelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_Clean, "NetworkSync.StateSync.Clean", NsRunStateSyncCleanSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_Rewind, "NetworkSync.StateSync.Rewind", NsRunStateSyncRewindSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_Nack, "NetworkSync.StateSync.Nack", NsRunStateSyncNackSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_InboxHole, "NetworkSync.StateSync.InboxHole", NsRunStateSyncInboxHoleSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_InboxCap, "NetworkSync.StateSync.InboxCap", NsRunStateSyncInboxCapSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_Unacked, "NetworkSync.StateSync.UnackedWindow", NsRunStateSyncUnackedWindowSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_LongOutage, "NetworkSync.StateSync.LongOutage", NsRunStateSyncLongOutageSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_ClockOffset, "NetworkSync.StateSync.ClockOffset", NsRunStateSyncClockOffsetSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_OldSnap, "NetworkSync.StateSync.OldSnap", NsRunStateSyncOldSnapSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_Spoof, "NetworkSync.StateSync.Spoof", NsRunStateSyncSpoofSelfTest, NsAutoFlags)
 NS_WRAP(FNsRollback_Clean, "NetworkSync.Rollback.Clean", NsRunRollbackCleanSelfTest, NsAutoFlags)
 NS_WRAP(FNsRollback_Wait, "NetworkSync.Rollback.Wait", NsRunRollbackWaitSelfTest, NsAutoFlags)
 NS_WRAP(FNsRollback_Hole, "NetworkSync.Rollback.Hole", NsRunRollbackHoleSelfTest, NsAutoFlags)
 NS_WRAP(FNsRollback_MidHole, "NetworkSync.Rollback.MidHole", NsRunRollbackMidHoleSelfTest, NsAutoFlags)
+NS_WRAP(FNsRollback_Conflict, "NetworkSync.Rollback.Conflict", NsRunRollbackConflictingInputSelfTest, NsAutoFlags)
 NS_WRAP(FNsUdp_Burst, "NetworkSync.Udp.Burst", NsRunUdpBurstSelfTest, NsAutoFlags)
 NS_WRAP(FNsUdp_StateSync, "NetworkSync.Udp.StateSync", NsRunUdpStateSyncSelfTest, NsAutoFlags)
 NS_WRAP(FNsUdp_Rollback, "NetworkSync.Udp.Rollback", NsRunUdpRollbackSelfTest, NsAutoFlags)
 NS_WRAP(FNsUdp_SplitState, "NetworkSync.Udp.SplitState", NsRunUdpSplitStateSyncSelfTest, NsAutoFlags)
 NS_WRAP(FNsUdp_SplitRollback, "NetworkSync.Udp.SplitRollback", NsRunUdpSplitRollbackSelfTest, NsAutoFlags)
+NS_WRAP(FNsUdp_SessionRestart, "NetworkSync.Udp.SessionRestart", NsRunUdpSessionRestartSelfTest, NsAutoFlags)
 
 NS_WRAP(FNsWorld_Stress, "NetworkSync.Stress.World", NsRunWorldStressSelfTest, NsAutoFlags)
 NS_WRAP(FNsCodec_Stress, "NetworkSync.Stress.Codec", NsRunCodecStressSelfTest, NsAutoFlags)
@@ -308,6 +318,10 @@ bool FNsActors_Cdo::RunTest(const FString& Parameters)
 	Counter->ServerBump_Implementation();
 	Counter->ServerBump_Implementation();
 	TestEqual(TEXT("counter bump"), Counter->Counter, 2);
+
+	ANsNetManager* Manager = NewObject<ANsNetManager>(Pkg);
+	TestNotNull(TEXT("manager"), Manager);
+	TestEqual(TEXT("invalid player id"), Manager->GetPawnLocation(-1), Manager->GetActorLocation());
 	return true;
 }
 

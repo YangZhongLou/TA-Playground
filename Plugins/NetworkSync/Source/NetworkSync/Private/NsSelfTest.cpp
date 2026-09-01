@@ -1314,6 +1314,76 @@ FNsSelfTestResult NsRunSeqWindowSelfTest()
 	return OkStr(TEXT("seq window dup+stamp+hole"));
 }
 
+FNsSelfTestResult NsRunRouteGuardSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsStateSyncClient C;
+	C.PlayerId = 0;
+	C.Addr = ENsAddr::C0;
+
+	FNsPacket Snapshot;
+	Snapshot.Type = ENsMsg::S2CSnapshot;
+	Snapshot.Tick = 3;
+	Snapshot.SnapX[0] = 99;
+	Net.Send(ENsAddr::C1, ENsAddr::C0, Snapshot);
+	NsPumpStateClient(Net, C);
+	if (C.LastAckedTick != 0 || C.PredX != 0)
+	{
+		return Fail(TEXT("route-guard: client accepted peer-forged snapshot"));
+	}
+
+	Snapshot.Tick = 4;
+	Snapshot.SnapX[0] = 12;
+	Net.Send(ENsAddr::Sv, ENsAddr::C0, Snapshot);
+	NsPumpStateClient(Net, C);
+	if (C.LastAckedTick != 4 || C.PredX != 12)
+	{
+		return Fail(TEXT("route-guard: valid server snapshot rejected"));
+	}
+	return OkStr(TEXT("route guard source+type"));
+}
+
+FNsSelfTestResult NsRunUdpSessionRestartSelfTest()
+{
+	FNsUdpNet Host;
+	FNsUdpNet Client;
+	if (!Host.Bind(ENsAddr::Sv, 0, false) || !Client.Bind(ENsAddr::C0, 0, false))
+	{
+		return Fail(TEXT("udp-session: bind failed"));
+	}
+	if (!Host.SetPeer(ENsAddr::C0, TEXT("127.0.0.1"), Client.BoundPort(ENsAddr::C0))
+		|| !Client.SetPeer(ENsAddr::Sv, TEXT("127.0.0.1"), Host.BoundPort(ENsAddr::Sv)))
+	{
+		return Fail(TEXT("udp-session: peer setup failed"));
+	}
+
+	FNsPacket Input;
+	Input.Type = ENsMsg::C2SInput;
+	for (int32 i = 0; i < 40; ++i)
+	{
+		Client.Send(ENsAddr::C0, ENsAddr::Sv, Input);
+	}
+	TArray<FNsPacket> Warm;
+	NsDrain(Host, ENsAddr::Sv, Warm, true);
+	if (Warm.Num() < 33)
+	{
+		return FailStr(FString::Printf(TEXT("udp-session: warmup got=%d"), Warm.Num()));
+	}
+
+	Client.ResetSession();
+	Client.Send(ENsAddr::C0, ENsAddr::Sv, Input);
+	TArray<FNsPacket> Restarted;
+	NsDrain(Host, ENsAddr::Sv, Restarted, true);
+	if (Restarted.Num() != 1)
+	{
+		return FailStr(FString::Printf(TEXT("udp-session: restart got=%d"), Restarted.Num()));
+	}
+	return OkStr(TEXT("udp session restart accepted"));
+}
+
 FNsSelfTestResult NsRunFakeNetContractSelfTest()
 {
 	{
@@ -1688,10 +1758,10 @@ FNsSelfTestResult NsRunStateSyncUnackedWindowSelfTest()
 	{
 		C.LocalTick(Net, 1);
 	}
-	if (C.UnackedSeq.Num() != Ns::InputWindow || C.UnackedDx.Num() != Ns::InputWindow)
+	if (C.UnackedSeq.Num() != Ticks || C.UnackedDx.Num() != Ticks)
 	{
 		return FailStr(FString::Printf(TEXT("state-unacked: n=%d want %d"),
-			C.UnackedSeq.Num(), Ns::InputWindow));
+			C.UnackedSeq.Num(), Ticks));
 	}
 	if (C.Seq != Ticks)
 	{
@@ -1701,7 +1771,59 @@ FNsSelfTestResult NsRunStateSyncUnackedWindowSelfTest()
 	{
 		return FailStr(FString::Printf(TEXT("state-unacked: pred=%d"), C.PredX));
 	}
-	return OkStr(TEXT("state-unacked window clamped"));
+	return OkStr(TEXT("state-unacked retained until ack"));
+}
+
+FNsSelfTestResult NsRunStateSyncLongOutageSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 1.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsStateSyncServer Sv;
+	FNsStateSyncClient C;
+	C.PlayerId = 0;
+	C.Addr = ENsAddr::C0;
+
+	for (int32 i = 0; i < Ns::InputWindow + 4; ++i)
+	{
+		C.LocalTick(Net, 1);
+	}
+	Net.Drop = 0.f;
+	C.LocalTick(Net, 1);
+	NsPumpStateServer(Net, Sv);
+	if (Sv.Pawns[0].LastSeq <= 0)
+	{
+		return Fail(TEXT("state-outage: oldest missing input was not retransmitted"));
+	}
+	return OkStr(FString::Printf(TEXT("state-outage recovered seq=%d"), Sv.Pawns[0].LastSeq));
+}
+
+FNsSelfTestResult NsRunStateSyncClockOffsetSelfTest()
+{
+	FNsFakeNet Net;
+	FNsStateSyncClient C;
+	C.PlayerId = 1;
+	C.Addr = ENsAddr::C1;
+
+	Net.Now = 5000.0;
+	FNsPacket First;
+	First.Type = ENsMsg::S2CSnapshot;
+	First.Tick = 100;
+	First.SnapX[0] = 0;
+	C.OnSnap(Net, First);
+
+	Net.Now = 5048.0;
+	FNsPacket Second = First;
+	Second.Tick = 103;
+	Second.SnapX[0] = 48;
+	C.OnSnap(Net, Second);
+	C.UpdateRemoteDraw(5124.0);
+	if (C.RemoteDrawn != 24)
+	{
+		return FailStr(FString::Printf(TEXT("state-clock: drawn=%d want 24"), C.RemoteDrawn));
+	}
+	return OkStr(TEXT("state clock offset interpolation"));
 }
 
 FNsSelfTestResult NsRunStateSyncOldSnapSelfTest()
@@ -1862,6 +1984,34 @@ FNsSelfTestResult NsRunRollbackMidHoleSelfTest()
 		return FailStr(FString::Printf(TEXT("rollback-midhole: confirmed=%d want 1"), A.Confirmed));
 	}
 	return OkStr(FString::Printf(TEXT("rollback-midhole confirmed=%d"), A.Confirmed));
+}
+
+FNsSelfTestResult NsRunRollbackConflictingInputSelfTest()
+{
+	FNsRollbackPeer A;
+	A.PlayerId = 0;
+	A.Addr = ENsAddr::C0;
+	TMap<int32, int8> Packed;
+	for (int32 i = 0; i < 16; ++i)
+	{
+		TMap<int32, int8> Remote;
+		Remote.Add(i, 0);
+		A.OnRemote(Remote);
+		A.AdvanceLocal(1, Packed);
+	}
+
+	const int32 FrameBefore = A.Frame;
+	TMap<int32, int8> Conflict;
+	Conflict.Add(1, 1);
+	A.OnRemote(Conflict);
+	A.AdvanceLocal(1, Packed);
+	if (!A.bWaiting || A.Frame != FrameBefore)
+	{
+		return FailStr(FString::Printf(
+			TEXT("rollback-conflict: resumed frame=%d before=%d waiting=%d"),
+			A.Frame, FrameBefore, A.bWaiting ? 1 : 0));
+	}
+	return OkStr(TEXT("rollback conflicting input halted"));
 }
 
 FNsSelfTestResult NsRunRollbackStressSelfTest()
@@ -2047,7 +2197,7 @@ FNsSelfTestResult NsRunMtuSelfTest()
 		Frame.Frames.Add(i + 1, In);
 	}
 	const int32 Typical = NsWireBytes(Frame);
-	if (Typical != 49)
+	if (Typical != 53)
 	{
 		return FailStr(FString::Printf(TEXT("mtu: typical S2CFrame %d"), Typical));
 	}
@@ -2059,7 +2209,7 @@ FNsSelfTestResult NsRunMtuSelfTest()
 
 	FNsPacket Snap;
 	Snap.Type = ENsMsg::S2CSnapshot;
-	if (NsWireBytes(Snap) != 41)
+	if (NsWireBytes(Snap) != 45)
 	{
 		return Fail(TEXT("mtu: snapshot size"));
 	}
@@ -2072,7 +2222,7 @@ FNsSelfTestResult NsRunMtuSelfTest()
 		Join.Frames.Add(76 + i, In);
 	}
 	const int32 JoinWire = NsWireBytes(Join);
-	if (JoinWire != 20 + 17 + 6 * Ns::JoinSnapEvery || JoinWire > Ns::MaxPacketBytes)
+	if (JoinWire != Ns::HeaderBytes + 17 + 6 * Ns::JoinSnapEvery || JoinWire > Ns::MaxPacketBytes)
 	{
 		return FailStr(FString::Printf(TEXT("mtu: join %d"), JoinWire));
 	}
@@ -2080,7 +2230,7 @@ FNsSelfTestResult NsRunMtuSelfTest()
 	FNsPacket Gate;
 	Gate.Type = ENsMsg::S2CDoorOpen;
 	Gate.DoorOpen = 1;
-	if (NsWireBytes(Gate) != 24)
+	if (NsWireBytes(Gate) != Ns::HeaderBytes + 4)
 	{
 		return Fail(TEXT("mtu: gate size"));
 	}
@@ -2235,6 +2385,7 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunWorldContractSelfTest,
 		&NsRunCodecContractSelfTest,
 		&NsRunSeqWindowSelfTest,
+		&NsRunRouteGuardSelfTest,
 		&NsRunFakeNetContractSelfTest,
 		&NsRunFakeNetDropRateSelfTest,
 		&NsRunMtuSelfTest,
@@ -2272,9 +2423,11 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunLockstepTurnDropSelfTest,
 		&NsRunLockstepTurnSpeedSelfTest,
 		&NsRunLockstepTurnLenDropSelfTest,
+		&NsRunLockstepTurnLongRunSelfTest,
 		&NsRunLockstepDelayCleanSelfTest,
 		&NsRunLockstepDelayRttSelfTest,
 		&NsRunLockstepDelayHighRttSelfTest,
+		&NsRunLockstepDelayRecoverySelfTest,
 		&NsRunStateSyncSelfTest,
 		&NsRunStateSyncCleanSelfTest,
 		&NsRunStateSyncRewindSelfTest,
@@ -2282,6 +2435,8 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunStateSyncInboxHoleSelfTest,
 		&NsRunStateSyncInboxCapSelfTest,
 		&NsRunStateSyncUnackedWindowSelfTest,
+		&NsRunStateSyncLongOutageSelfTest,
+		&NsRunStateSyncClockOffsetSelfTest,
 		&NsRunStateSyncOldSnapSelfTest,
 		&NsRunStateSyncSpoofSelfTest,
 		&NsRunRollbackSelfTest,
@@ -2289,6 +2444,7 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunRollbackWaitSelfTest,
 		&NsRunRollbackHoleSelfTest,
 		&NsRunRollbackMidHoleSelfTest,
+		&NsRunRollbackConflictingInputSelfTest,
 		&NsRunUdpLoopbackSelfTest,
 		&NsRunUdpLockstepSelfTest,
 		&NsRunUdpStateSyncSelfTest,
@@ -2298,6 +2454,7 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunUdpSplitStateSyncSelfTest,
 		&NsRunUdpSplitRollbackSelfTest,
 		&NsRunUdpBurstSelfTest,
+		&NsRunUdpSessionRestartSelfTest,
 		&NsRunWorldStressSelfTest,
 		&NsRunCodecStressSelfTest,
 		&NsRunFakeNetStressSelfTest,

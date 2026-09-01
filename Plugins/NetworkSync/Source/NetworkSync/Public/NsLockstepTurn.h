@@ -31,25 +31,12 @@ inline int32 NsLockstepTurnFrameStart(const TMap<int32, int32>& TurnLen, int32 T
 	return Start;
 }
 
-inline int32 NsLockstepTurnOfFrame(const TMap<int32, int32>& TurnLen, int32 LogicFrame, int32 LiveFpt)
-{
-	int32 Start = 0;
-	for (int32 T = 0; T < LogicFrame + NsLockstepTurnFptMax; ++T)
-	{
-		const int32 Len = NsLockstepTurnLen(TurnLen, T, LiveFpt);
-		if (LogicFrame < Start + Len)
-		{
-			return T;
-		}
-		Start += Len;
-	}
-	return 0;
-}
-
 class NETWORKSYNC_API FNsLockstepTurnServer
 {
 public:
 	int32 Frame = 0;
+	int32 ExecTurn = 0;
+	int32 ExecTurnStart = 0;
 	int32 CollectTurn = 0;
 	int32 FramesPerTurn = NsLockstepTurnFrames;
 	bool Got[Ns::PlayerCount] = {};
@@ -71,6 +58,8 @@ public:
 	int32 PlayerId = 0;
 	ENsAddr Addr = ENsAddr::C0;
 	int32 ExecFrame = 0;
+	int32 ExecTurn = 0;
+	int32 ExecTurnStart = 0;
 	int32 SendTurn = 0;
 	int32 FramesPerTurn = NsLockstepTurnFrames;
 	TMap<int32, FNsInputs> Cmds;

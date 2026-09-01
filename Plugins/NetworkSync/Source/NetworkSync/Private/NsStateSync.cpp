@@ -122,28 +122,34 @@ void FNsStateSyncServer::Sim(INsNet& Net)
 	}
 }
 
-void FNsStateSyncClient::LocalTick(INsNet& Net, int8 Dx)
+void FNsStateSyncClient::SendUnacked(INsNet& Net) const
 {
-	++Seq;
-	const int8 D = NsClampDx(Dx);
-	UnackedSeq.Add(Seq);
-	UnackedDx.Add(D);
-	while (UnackedSeq.Num() > Ns::InputWindow)
-	{
-		UnackedSeq.RemoveAt(0);
-		UnackedDx.RemoveAt(0);
-	}
-	PredX += static_cast<int32>(D) * Ns::StateSpeed;
-	const int32 Start = FMath::Max(0, UnackedSeq.Num() - Ns::InputWindow);
 	FNsPacket Pkt;
 	Pkt.Type = ENsMsg::C2SInput;
 	Pkt.PlayerId = PlayerId;
-	for (int32 i = Start; i < UnackedSeq.Num(); ++i)
+	const int32 SendCount = FMath::Min(UnackedSeq.Num(), Ns::InputWindow);
+	for (int32 i = 0; i < SendCount; ++i)
 	{
 		Pkt.SeqWindow.Add(UnackedSeq[i]);
 		Pkt.DxWindow.Add(UnackedDx[i]);
 	}
-	Net.Send(Addr, ENsAddr::Sv, Pkt);
+	if (SendCount > 0)
+	{
+		Net.Send(Addr, ENsAddr::Sv, Pkt);
+	}
+}
+
+void FNsStateSyncClient::LocalTick(INsNet& Net, int8 Dx)
+{
+	const int8 D = NsClampDx(Dx);
+	if (UnackedSeq.Num() < Ns::MaxInboxAhead)
+	{
+		++Seq;
+		UnackedSeq.Add(Seq);
+		UnackedDx.Add(D);
+		PredX += static_cast<int32>(D) * Ns::StateSpeed;
+	}
+	SendUnacked(Net);
 }
 
 void FNsStateSyncClient::OnSnap(INsNet& Net, const FNsPacket& P)
@@ -175,6 +181,12 @@ void FNsStateSyncClient::OnSnap(INsNet& Net, const FNsPacket& P)
 		Xs[0] = *B0 + P.SnapX[0];
 		Xs[1] = *B1 + P.SnapX[1];
 		bGotDelta = true;
+	}
+	const double OffsetSample = Net.Now - static_cast<double>(P.Tick) * Ns::SimDtMs;
+	if (!bHasServerTimeOffset || OffsetSample < ServerTimeOffsetMs)
+	{
+		ServerTimeOffsetMs = OffsetSample;
+		bHasServerTimeOffset = true;
 	}
 	Store0.Add(P.Tick, Xs[0]);
 	Store1.Add(P.Tick, Xs[1]);
@@ -231,6 +243,7 @@ void FNsStateSyncClient::OnSnap(INsNet& Net, const FNsPacket& P)
 	Ack.Tick = P.Tick;
 	Net.Send(Addr, ENsAddr::Sv, Ack);
 	Net.Send(Addr, ENsAddr::Sv, Ack);
+	SendUnacked(Net);
 }
 
 void FNsStateSyncClient::UpdateRemoteDraw(double NowMs)
@@ -243,7 +256,8 @@ void FNsStateSyncClient::UpdateRemoteDraw(double NowMs)
 	auto XAt = [this, Other](int32 i) { return (Other == 0) ? SnapX0[i] : SnapX1[i]; };
 	const double FirstT = static_cast<double>(SnapTick[0]) * Ns::SimDtMs;
 	const double LastT = static_cast<double>(SnapTick.Last()) * Ns::SimDtMs;
-	const double TShow = NowMs - Ns::InterpDelayMs;
+	const double ServerNowMs = NowMs - (bHasServerTimeOffset ? ServerTimeOffsetMs : 0.0);
+	const double TShow = ServerNowMs - Ns::InterpDelayMs;
 	if (SnapTick.Num() == 1 || TShow <= FirstT)
 	{
 		RemoteDrawn = XAt(0);

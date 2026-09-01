@@ -54,7 +54,7 @@ void FNsFakeNet::Drain(ENsAddr Dst, TArray<FNsPacket>& Out)
 	{
 		if (Queue[i].Dst == Dst && Queue[i].DeliverAt <= Now)
 		{
-			if (Seq.Accept(Dst, Queue[i].Src, Queue[i].Seq))
+			if (Seq.Accept(Dst, Queue[i].Src, Queue[i].Session, Queue[i].Seq))
 			{
 				Out.Add(Queue[i]);
 			}

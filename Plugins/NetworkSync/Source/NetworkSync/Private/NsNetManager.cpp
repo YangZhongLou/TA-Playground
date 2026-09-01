@@ -204,6 +204,10 @@ void ANsNetManager::Tick(float DeltaSeconds)
 
 FVector ANsNetManager::GetPawnLocation(int32 PlayerId) const
 {
+	if (PlayerId < 0 || PlayerId >= Ns::PlayerCount)
+	{
+		return GetActorLocation();
+	}
 	float X = 0.f;
 	const float Alpha = FMath::Clamp(static_cast<float>(AccumMs / Ns::LogicDtMs), 0.f, 1.f);
 	switch (Scheme)

@@ -49,10 +49,15 @@ public:
 	TMap<int32, int32> Store1;
 	int32 RemoteDrawn = 0;
 	int32 LastAckedTick = 0;
+	double ServerTimeOffsetMs = 0.0;
 	bool bHasRemote = false;
 	bool bGotDelta = false;
+	bool bHasServerTimeOffset = false;
 
 	void LocalTick(INsNet& Net, int8 Dx);
 	void OnSnap(INsNet& Net, const FNsPacket& P);
 	void UpdateRemoteDraw(double NowMs);
+
+private:
+	void SendUnacked(INsNet& Net) const;
 };

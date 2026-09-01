@@ -399,3 +399,31 @@ FNsSelfTestResult NsRunLockstepTurnLenDropSelfTest()
 	}
 	return TurnOk(FString::Printf(TEXT("lockstep-turn-lendrop fpt=%d closed=%d"), Sv.FramesPerTurn, Closed));
 }
+
+FNsSelfTestResult NsRunLockstepTurnLongRunSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepTurnServer Sv;
+	FNsLockstepTurnClient C0;
+	FNsLockstepTurnClient C1;
+	TurnInit(C0, C1);
+
+	for (int32 S = 0; S < 300; ++S)
+	{
+		C0.SendInput(Net, TurnScriptDx0(Sv.CollectTurn));
+		C1.SendInput(Net, TurnScriptDx1(Sv.CollectTurn));
+		TurnPump(Net, Sv, C0, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+	if (Sv.TurnLen.Num() > 40 || C0.TurnLen.Num() > 40 || C1.TurnLen.Num() > 40)
+	{
+		return TurnFailStr(FString::Printf(
+			TEXT("lockstep-turn-long: turn-len grew sv=%d c0=%d c1=%d"),
+			Sv.TurnLen.Num(), C0.TurnLen.Num(), C1.TurnLen.Num()));
+	}
+	return TurnOk(FString::Printf(TEXT("lockstep-turn-long frame=%d turns=%d"),
+		Sv.Frame, Sv.TurnLen.Num()));
+}

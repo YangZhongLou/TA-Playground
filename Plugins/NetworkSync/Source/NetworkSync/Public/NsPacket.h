@@ -43,6 +43,7 @@ struct FNsPacket
 	ENsAddr Dst = ENsAddr::Sv;
 	ENsMsg Type = ENsMsg::C2SInput;
 	double DeliverAt = 0.0;
+	uint32 Session = 0;
 	int32 Seq = 0;
 	int32 Ack = 0;
 	uint32 AckBits = 0;

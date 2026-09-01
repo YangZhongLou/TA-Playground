@@ -114,14 +114,18 @@ Plugins/UnrealMCP/MCP_Server/target/release/unreal-mcp-server.exe
 
 ### 3.3 生成并编译 UE 工程
 
+在仓库根目录执行：
+
 ```powershell
+$ProjectPath = (Resolve-Path ".\TA-Playground.uproject").Path
+
 # 1. 生成 Visual Studio 工程文件
-"C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" `
-  -projectfiles -project="D:\Playground\TA-Playground\TA-Playground.uproject" -game -rocket
+& "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" `
+  -projectfiles "-project=$ProjectPath" -game -rocket
 
 # 2. 编译 Editor 目标
-"C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" `
-  TAPlaygroundEditor Win64 Development -Project="D:\Playground\TA-Playground\TA-Playground.uproject"
+& "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\DotNET\UnrealBuildTool\UnrealBuildTool.exe" `
+  TAPlaygroundEditor Win64 Development "-Project=$ProjectPath"
 ```
 
 ### 3.4 端口配置与连接
@@ -140,7 +144,7 @@ JsonRpcServerPort=13379
 {
   "mcpServers": {
     "unreal": {
-      "command": "D:\\Playground\\TA-Playground\\Plugins\\UnrealMCP\\MCP_Server\\target\\release\\unreal-mcp-server.exe",
+      "command": "<REPO_ROOT>\\Plugins\\UnrealMCP\\MCP_Server\\target\\release\\unreal-mcp-server.exe",
       "env": {
         "UNREAL_MCP_ADDR": "127.0.0.1:13377"
       }
@@ -149,7 +153,7 @@ JsonRpcServerPort=13379
 }
 ```
 
-> `Plugins/UnrealMCP/docs/usage-guide.md` 目前使用 `ClanSimulator` 示例路径，阅读时请把路径替换为 `D:/Playground/TA-Playground`。
+> `Plugins/UnrealMCP/docs/usage-guide.md` 目前使用 `ClanSimulator` 示例路径，阅读时请替换为本仓库根目录。
 
 启动 Editor 后，在 Output Log 中搜索 `LogUnrealMCP`，应看到：
 
@@ -204,14 +208,17 @@ python main.py
 
 #### 4.2.1 共享 FFmpeg 库（Windows 必需）
 
-`/generate/music` 依赖的 `torchaudio` → `torchcodec` 需要在运行时加载 `avcodec-*.dll`、`avformat-*.dll`、`avutil-*.dll` 等 FFmpeg 共享库，仅有一个静态 `ffmpeg.exe` 不够。使用 BtbN 的 **shared** Windows 构建：
+`/generate/music` 依赖的 `torchaudio` → `torchcodec` 需要在运行时加载 `avcodec-*.dll`、
+`avformat-*.dll`、`avutil-*.dll` 等 FFmpeg 共享库，仅有一个静态 `ffmpeg.exe` 不够。
+使用 BtbN 的 **shared** Windows 构建：
 
 - 下载：`https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip`
 - 解压到 `tools/ffmpeg/bin/`，该目录下应出现 `avcodec-*.dll`、`avformat-*.dll`、`avutil-*.dll` 等。
 - 启动服务前必须将 `tools/ffmpeg/bin` 加入 `PATH`：
 
 ```powershell
-$env:PATH = "D:\Playground\TA-Playground\tools\ffmpeg\bin;$env:PATH"
+$RepoRoot = (Resolve-Path ".").Path
+$env:PATH = "$RepoRoot\tools\ffmpeg\bin;$env:PATH"
 cd Plugins\UnrealMCP\audio_server
 python main.py
 ```
@@ -220,7 +227,9 @@ python main.py
 
 #### 4.2.2 ACE-Step Windows 补丁
 
-当前组合 `accelerate==1.6` + `transformers==4.50` 下，ACE-Step 在 Windows 加载会触发 `Cannot copy out of meta tensor; no data!`，且新版 `torchaudio` 会忽略 `backend="soundfile"` 参数并走 `torchcodec` 路径。需要对 ACE-Step 源码做两处修改：
+当前组合 `accelerate==1.6` + `transformers==4.50` 下，ACE-Step 在 Windows 加载会触发
+`Cannot copy out of meta tensor; no data!`，且新版 `torchaudio` 会忽略 `backend="soundfile"`
+参数并走 `torchcodec` 路径。需要对 ACE-Step 源码做两处修改：
 
 - 在 `acestep/pipeline_ace_step.py` 中，给 transformer 与 text encoder 的 `from_pretrained` 传入 `low_cpu_mem_usage=False`。
 - 在 `acestep/music_dcae/music_dcae_pipeline.py` 中，给 DCAE 与 vocoder 的 `from_pretrained` 传入 `low_cpu_mem_usage=False`。
@@ -303,7 +312,7 @@ curl -X POST http://127.0.0.1:8123/generate/foley `
 ### 5.1 环境准备（快速步骤）
 
 ```powershell
-cd D:\Playground\TA-Playground\hunyuan
+cd .\hunyuan
 py -3.10 -m venv venv
 .\venv\Scripts\activate
 
@@ -325,7 +334,7 @@ pip install transformers==4.46.3 diffusers==0.31.0
 ### 5.3 下载权重
 
 ```powershell
-cd D:\Playground\TA-Playground\hunyuan
+cd .\hunyuan
 .\venv\Scripts\python.exe download_weights.py      # 2.1 Shape
 .\venv\Scripts\python.exe download_texture_weights.py  # 2.0 Paint
 .\venv\Scripts\python.exe check_status.py        # 完整性检查
@@ -344,7 +353,7 @@ UE VFX 封装：
 ```powershell
 .\venv\Scripts\python.exe vfx_generation_service.py `
   D:\refs\rock.png `
-  --output-root D:\Playground\TA-Playground\hunyuan\output `
+  --output-root .\output `
   --model-path tencent/Hunyuan3D-2.1 `
   --device cuda `
   --low-vram-mode
@@ -368,7 +377,8 @@ cd Hunyuan3D-2.1
 
 ## 6. VFX / UE 集成工作流
 
-UnrealMCP 为 VFX 工作流新增了 `generate_and_import_3d`、`create_material_from_textures`、`duplicate_niagara_system`、`set_niagara_parameter` 等工具。典型流程：
+UnrealMCP 为 VFX 工作流新增了 `generate_and_import_3d`、`create_material_from_textures`、
+`duplicate_niagara_system`、`set_niagara_parameter` 等工具。典型流程：
 
 1. AI 调用 `generate_and_import_3d`，传入 `referenceImage` / `prompt` 与 `destinationPath`
 2. C++ 启动 `hunyuan/vfx_generation_service.py` 子进程异步生成

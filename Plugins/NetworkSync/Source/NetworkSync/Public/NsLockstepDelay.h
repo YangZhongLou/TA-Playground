@@ -43,6 +43,7 @@ public:
 
 	void SendInput(INsNet& Net, int8 Dx);
 	void OnS2C(const TMap<int32, FNsInputs>& Frames);
+	void ApplyJoin(const FNsPacket& Packet);
 	void Logic();
 };
 

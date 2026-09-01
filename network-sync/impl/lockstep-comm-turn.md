@@ -27,13 +27,16 @@ constexpr int32 LeadTurns = 2;       // 回合 T 的指令在回合 T+2 执行
 
 ## 回合与拍
 
-`LogicFrame` 从 0 涨。`Turn = LogicFrame / FramesPerTurn`。
+`LogicFrame` 从 0 涨。回合长度可动态变化，不能再用一次除法求回合。
+服务端与客户端都维护 `(ExecTurn, ExecTurnStart)` 游标；逻辑帧跨过当前回合长度时只向前推进游标，禁止每拍从回合 0 重扫。
 回合 T 内采样到的本机 dx，记为 `Cmd[T][player]`（每回合每槽一个 dx，取该回合最后一次按键）。
 
 执行逻辑拍 k 时：
 
 ```text
-ExecTurn = k / FramesPerTurn
+while k >= ExecTurnStart + TurnLen[ExecTurn]:
+    ExecTurnStart += TurnLen[ExecTurn]
+    ExecTurn += 1
 SrcTurn  = ExecTurn - LeadTurns
 I = (SrcTurn >= 0) ? Cmd[SrcTurn] : {0,0}
 World.Step(I)
@@ -46,6 +49,8 @@ World.Step(I)
 汇聚点按**回合**等齐：回合 T 结束前必须收到两人的 `Cmd[T]`（或超时填 0）。
 然后广播「回合 T 的 Cmd」，带回合号，可冗余前 1 个回合。
 
+`CollectTurn` 不得跑到 `ExecTurn` 前面无限预取。服务器只关闭当前执行回合以内的命令；执行游标之后 16 回合以前的 `Cmds` 与 `TurnLen` 一起裁剪。
+
 不要每 66ms 广播一次最新摇杆。那是乐观。
 
 上行仍用 `C2SInput`：`win=1`，`seq=Turn`，`dx=本回合命令`。客户端在回合内可重发，后到覆盖。
@@ -55,6 +60,7 @@ World.Step(I)
 本地只显示已执行的 `World`。点按到单位移动，要等两回合，这是本 Kind 的手感，不要用表现层先动去藏。
 
 `Logic` 按 `LogicDtMs` 连 `Step`，输入取 `Cmd[ExecTurn-2]`。缺 `Cmd` 则停等，与等齐相同，停在回合边界而不是停在 66ms 边界。
+`ExecTurn>=2` 后若当前回合的最终 `TurnLen` 尚未收到也必须停，禁止用本地最新 FPT 猜历史长度。
 
 ## 验收
 
@@ -63,6 +69,7 @@ World.Step(I)
 1. Drop=0：回合 T 发出的 dx，要到逻辑拍 `(T+2)*FramesPerTurn` 才改变 `X`。
 2. 拍 `(T+2)*FramesPerTurn - 1` 的坐标仍是旧值。
 3. 一人迟交回合命令：全场停在该回合边界。
+4. 长跑后 `Cmds` / `TurnLen` 只保留有界窗口，执行回合查询总成本随总帧数线性增长。
 
 ## 第二里程碑：Speed Control
 
@@ -70,6 +77,9 @@ World.Step(I)
 
 主机用各端回合完成时间改 `FramesPerTurn`（整数，范围 2～6）。
 变差时立刻加大，好转时每回合最多减 1。全场同一下一回合长度。
-`S2CFrame` reserved = `(ClosedLen<<4)|NextFpt`（两档都是 2–6）。内存 `Tick=NextFpt`，`BaseTick=ClosedLen`。打包窗口每条再带该回合长度。客户端用包里的长度覆盖 `TurnLen[Closed]`，禁止用本地 `FramesPerTurn` 填已关闭回合。只带 NextFpt 的 reserved（高四位 0）仍解码。
+`S2CFrame` reserved = `(ClosedLen<<4)|NextFpt`（两档都是 2–6）。内存 `Tick=NextFpt`，
+`BaseTick=ClosedLen`。打包窗口每条再带该回合长度。客户端用包里的长度覆盖
+`TurnLen[Closed]`，禁止用本地 `FramesPerTurn` 填已关闭回合。
+只带 NextFpt 的 reserved（高四位 0）仍解码。
 验收：`NetworkSync.Lockstep.Turn.Speed` — 人为把 C1 的处理变慢，全场 `FramesPerTurn` 上升，且两端 `World` 仍同位。
 `NetworkSync.Lockstep.Turn.LenDrop` — 升 FPT 后丢掉 C1 的 `S2CFrame`，每回合 dx 不同，Resend 后世界同位且 `TurnLen[Closed]` 与主机一致。

@@ -14,7 +14,7 @@
 | 概念 | `schemes/`、`cases/`、[comparison.md](comparison.md) | 四种方案机理与品类 | 插件 API |
 | 框架 | 本文 | 决策、分层、模块边界、验收范围 | 逐字节、逐行主循环 |
 | 规格 | `impl/` | 常量、循环、包语义、怎么跑 | 产品对比 |
-| 线上布局 | [impl/packet-format.md](impl/packet-format.md) | 20 字节头与八种 payload | 策略论述 |
+| 线上布局 | [impl/packet-format.md](impl/packet-format.md) | 24 字节头与八种 payload | 策略论述 |
 
 改协议语义：先改规格，再改代码，最后改本文的不变量表。
 改字节：只改 `packet-format.md` 与 `NsCodec.cpp`。
@@ -106,7 +106,7 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | `LogicDtMs` | 66 | 锁步 15Hz |
 | `SimDtMs` / `RollbackDtMs` | 16 | 状态同步 / 回滚 ~60Hz |
 | `RedundantFrames` | 3 | 锁步下行与回滚 P2P 冗余窗 |
-| `MaxPacketBytes` | 1200 | 单数据报上限（含 20 字节头） |
+| `MaxPacketBytes` | 1200 | 单数据报上限（含 24 字节头） |
 | `MaxInboxAhead` | 64 | 状态同步 Inbox 相对 `LastSeq` 的上限 |
 | `PacketMagic` | `0x54414E53` | 头 magic，小端 `53 4E 41 54` |
 

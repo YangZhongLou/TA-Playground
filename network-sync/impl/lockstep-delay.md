@@ -4,7 +4,8 @@
 
 对标：回滚普及前的格斗网战。概念见 [../schemes/lockstep-variants.md](../schemes/lockstep-variants.md)「固定帧延迟」。
 
-算法是「等齐 + 输入提前 `d` 拍」。可以抄 [lockstep-conservative.md](lockstep-conservative.md) 的收集循环，但必须是自己的类型和泵，禁止 `FNsLockstepWaitServer` 子类化。
+算法是「等齐 + 输入提前 `d` 拍」。可以抄 [lockstep-conservative.md](lockstep-conservative.md)
+的收集循环，但必须是自己的类型和泵，禁止 `FNsLockstepWaitServer` 子类化。
 
 ## 和乐观 / 等齐的差别
 
@@ -40,6 +41,10 @@ constexpr int32 DelayFrames = 3; // 约 198ms @ 66ms
 与保守相同：只在收到两人针对拍 `n` 的输入（或超时填 0）后 `Step` 并广播。
 不要墙钟到点用 `Latest`。
 
+普通 `S2CFrame` 只冗余最近 4 拍，连续丢失后会留下永久缺口。因此服务器每完成 4 拍另发一份
+`S2CJoinSnap count=0`，其中 `exec_frame=Frame+1`、x/rng 是该拍执行后的权威世界。
+客户端只应用 `exec_frame > ExecFrame` 的新快照，清理更早的缓冲，再从该帧继续；旧快照不得把世界倒退。
+
 ## 验收
 
 前缀 `NetworkSync.Lockstep.Delay.`。
@@ -47,5 +52,6 @@ constexpr int32 DelayFrames = 3; // 约 198ms @ 66ms
 1. Drop=0，RTT=0：第 0 拍按下，`X` 在拍 `DelayFrames` 才变。拍 `DelayFrames-1` 仍为 0。
 2. 两人对打同一 `d`：两端 `World` 同位，没有「只有高 ping 的人晚结算」。
 3. RTT=80、`DelayFrames=3`：多数拍不等超时；把 RTT 加到 400ms 后才频繁 `StallTimeoutMs`。
+4. 连续丢掉所有 `S2CFrame`：客户端仍会通过周期快照前进，且两端世界一致。
 
 格斗手感不够再去 `ENsScheme::Rollback`，不要在本 Kind 里猜远程输入。

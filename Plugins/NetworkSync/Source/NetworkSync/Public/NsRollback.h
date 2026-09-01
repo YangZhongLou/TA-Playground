@@ -17,6 +17,7 @@ public:
 	int32 WaitCount = 0;
 	bool bWaiting = false;
 	bool bInRollback = false;
+	bool bNeedsResync = false;
 	FNsWorld World;
 	TMap<int32, FNsWorld> Saves;
 	TMap<int32, FNsInputs> Pred;

@@ -314,7 +314,7 @@ void FNsUdpNet::Drain(ENsAddr Dst, TArray<FNsPacket>& Out)
 		}
 		Wired.Src = Src;
 		Wired.Dst = Dst;
-		if (Seq.Accept(Dst, Src, Wired.Seq))
+		if (Seq.Accept(Dst, Src, Wired.Session, Wired.Seq))
 		{
 			Out.Add(MoveTemp(Wired));
 		}

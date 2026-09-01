@@ -41,7 +41,7 @@
 | [impl/lockstep.md](impl/lockstep.md) | 乐观 15Hz 规格 |
 | [impl/lockstep-kinds.md](impl/lockstep-kinds.md) | 四支锁步内核：互斥、可独立落地 |
 | [impl/hybrid/README.md](impl/hybrid/README.md) | 结合四包落地；停拍拉齐、锁步加门 |
-| [impl/packet-format.md](impl/packet-format.md) | 20 字节头与八种 payload 的逐字节布局 |
+| [impl/packet-format.md](impl/packet-format.md) | 24 字节头与八种 payload 的逐字节布局 |
 | [comparison.md](comparison.md) | 各方案优劣机理、同轴对照、品类总表 |
 | [cases/compare-three.md](cases/compare-three.md) | 守望先锋 / Dota 2 / 王者荣耀三款对照 |
 | [cases/overwatch.md](cases/overwatch.md) | 守望先锋：权威状态同步 + 重预测 |

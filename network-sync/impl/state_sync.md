@@ -90,7 +90,9 @@ void Sim(INsNet& Net)
 `OnInput`：`seq <= LastSeq` 直接忽略。`seq > LastSeq + MaxInboxAhead`（`MaxInboxAhead = HistoryTicks`）也忽略。同号再来则覆盖 Inbox。模拟只走 `LastSeq+1`，因此跳号不会被「最新一条」吞掉。
 缺 `LastSeq+1` 时该玩家本拍不加位移，直到缺号到达。
 
-客户端 `UnackedSeq` / `UnackedDx` 只保留最近 `InputWindow` 条；`PredX` 仍按每拍累加。发送窗口与内存窗口一致。
+客户端 `UnackedSeq` / `UnackedDx` 保留所有未确认输入，最多 `MaxInboxAhead` 条；每包从最老缺口起重发 `InputWindow` 条。
+达到上限时暂停生成新输入序号和本地预测，直到快照确认释放空间，禁止丢掉最老输入制造永久空洞。
+收到快照后除发 ACK，还会立刻重发剩余最老窗口，因此停止采样后尾部输入仍能排空。
 
 ## 客户端：别人怎么画
 
@@ -98,7 +100,9 @@ void Sim(INsNet& Net)
 `P.Tick <= LastAckedTick` 的旧快照直接忽略。
 收到可用快照后发 `C2SSnapAck`（连发两次）。服务器按 ACK 基发增量。
 解不出 `BaseTick`：连发 `C2SSnapAck Tick=0`，等下一份全量。不要静默死等。
-远程按墙钟：`t_show = now - InterpDelayMs`，两份快照之间 lerp，不外推。
+收到快照时用最小观测值估算 `ServerTimeOffsetMs = local_now - tick*SimDtMs`。
+远程显示时先换算服务器时钟：`server_now = local_now - ServerTimeOffsetMs`，再取
+`t_show = server_now - InterpDelayMs`。两份快照之间 lerp，不外推；禁止直接拿两个进程各自的启动时钟比较。
 
 ```cpp
 void OnSnap(int32 Tick, const int32 Xs[2], const int32 LastSeqs[2])
@@ -117,11 +121,14 @@ void OnSnap(int32 Tick, const int32 Xs[2], const int32 LastSeqs[2])
 ```cpp
 void LocalTick(INsNet& Net, int8 Dx)
 {
-    ++Seq;
-    UnackedSeq.Add(Seq);
-    UnackedDx.Add(NsClampDx(Dx));
-    PredX += NsClampDx(Dx) * Ns::StateSpeed;
-    // 发送最近 InputWindow 条
+    if (UnackedSeq.Num() < Ns::MaxInboxAhead)
+    {
+        ++Seq;
+        UnackedSeq.Add(Seq);
+        UnackedDx.Add(NsClampDx(Dx));
+        PredX += NsClampDx(Dx) * Ns::StateSpeed;
+    }
+    // 从最老未确认输入起发送 InputWindow 条
 }
 
 void OnSnap(...)

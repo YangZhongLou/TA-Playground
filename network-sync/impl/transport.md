@@ -16,11 +16,12 @@
 | --- | --- | --- | --- |
 | 0 | u32 | magic | 固定 `0x54414E53`（随意，但两端一致） |
 | 4 | u8 | type | 见下表 |
-| 5 | u8 | reserved | 默认 `0`。通信回合 `S2CFrame`：`(ClosedLen<<4)|NextFpt`（2–6），或仅 NextFpt |
+| 5 | u8 | reserved | 默认 `0`。通信回合 `S2CFrame`：`(ClosedLen<<4)\|NextFpt`（2–6），或仅 NextFpt |
 | 6 | u16 | payload_len | 头之后的字节数 |
-| 8 | u32 | seq | 发送端递增，从 1 起 |
-| 12 | u32 | ack | 已收到的对端最大 seq |
-| 16 | u32 | ack_bits | 对 ack-1 .. ack-32 的选择性确认 |
+| 8 | u32 | session | 发送进程启动或重置时生成的非零随机 epoch |
+| 12 | u32 | seq | 当前 session 内递增，从 1 起 |
+| 16 | u32 | ack | 已收到的对端最大 seq |
+| 20 | u32 | ack_bits | 对 ack-1 .. ack-32 的选择性确认 |
 
 type（`ENsMsg`）：
 
@@ -35,7 +36,7 @@ type（`ENsMsg`）：
 | 7 | `S2CJoinSnap` | 锁步重连快照 |
 | 8 | `S2CDoorOpen` | 锁步加门开关 |
 
-payload 紧跟 20 字节头。逐字段宽度、示例和长度公式见 [packet-format.md](packet-format.md)。
+payload 紧跟 24 字节头。逐字段宽度、示例和长度公式见 [packet-format.md](packet-format.md)。
 单数据报 UDP 载荷 ≤ 1200 字节，避免 IP 分片把丢包放大。超长在应用层拆成多个完整 Ns 包，见 `NsSplitForMtu`。Src/Dst 不进字节。
 
 ## Payload 摘要
@@ -53,15 +54,25 @@ payload 紧跟 20 字节头。逐字段宽度、示例和长度公式见 [packet
 
 ## 发送端状态
 
-`FNsFakeNet` 已维护每源 `NextSeq` 和每对 `(Dst, Src)` 的 `RecvMax` / `RecvBits`（`FNsSeqWindow`，`NsNet.h`）。接真 socket 时沿用同一套窗。
+`FNsFakeNet` 已维护每源 `SendSession` / `NextSeq` 和每对 `(Dst, Src)` 的
+`RecvSession` / `RecvMax` / `RecvBits`（`FNsSeqWindow`，`NsNet.h`）。接真 socket 时沿用同一套窗。
 
 ```cpp
+uint32 SendSession = NewNonZeroSession();
 int32 Seq = 1;
+uint32 RecvSession = 0;
 int32 RecvMax = 0;
 uint32 RecvBits = 0;
 
-void OnRecvSeq(int32 S)
+void OnRecvSeq(uint32 Session, int32 S)
 {
+    if (Session != RecvSession)
+    {
+        Retire(RecvSession);
+        RecvSession = Session;
+        RecvMax = 0;
+        RecvBits = 0;
+    }
     if (S > RecvMax)
     {
         const int32 Shift = S - RecvMax;
@@ -71,7 +82,8 @@ void OnRecvSeq(int32 S)
 }
 ```
 
-发出去时填 `seq`，然后 `seq += 1`；`ack=RecvMax`，`ack_bits=RecvBits`。
+发出去时填 `session` 与 `seq`，然后 `seq += 1`；`ack=RecvMax`，`ack_bits=RecvBits`。
+进程重启或 `ResetSession` 会换 session 并把 seq 置回 1。接收端切到新 session 后保留最近退役 epoch，迟到的旧包不能把窗口切回去。
 
 ## 假网络（开发期）
 
@@ -95,8 +107,10 @@ void OnRecvSeq(int32 S)
 - 同一 `seq` 处理两次必须幂等（用 `last_seq` 集合或 1024 大小的位窗）。
 - `payload_len` 与实际长度不符则丢弃整包。
 - 未知 `type` 丢弃，不要断连接（版本滚动时有用）。
+- `session=0`、`seq<=0`、重复 seq 或退役 session 的迟到包丢弃。
 - 序号窗口按 **(接收端, 发送端)** 记账，两个客户端发往服务器的 seq=1 互不打架。
 - 发出的每个 UDP 数据报 ≤ 1200 字节。超长必须先 `NsSplitForMtu`，禁止靠 IP 分片。
 - 玩法层用 `Src` 认玩家，不信任 payload `player_id`。
+- 玩法层只接受合法方向：C2S 只能客户端到服务器，S2C 只能服务器到客户端，P2P 只能 C0/C1 互发。
 - `NsMeasureFakeNetDrop` / `ns.DropRate`：配置的 `Drop` 与实测丢包率在 0/1 时精确，中间档偏差 ≤ 0.03（2000 包）。
   自动化：`NetworkSync.FakeNet.DropRate`。

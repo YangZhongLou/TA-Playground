@@ -207,3 +207,34 @@ FNsSelfTestResult NsRunLockstepDelayHighRttSelfTest()
 		TEXT("lockstep-delay-high-rtt wait=%d stall=%d frames=%d"),
 		Sv.WaitTicks, Sv.StallFills, C0.ExecFrame));
 }
+
+FNsSelfTestResult NsRunLockstepDelayRecoverySelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	Net.bDropType = true;
+	Net.DropType = ENsMsg::S2CFrame;
+	FNsLockstepDelayServer Sv;
+	FNsLockstepDelayClient C0;
+	FNsLockstepDelayClient C1;
+	DelayInit(C0, C1);
+
+	for (int32 S = 0; S < 20; ++S)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		DelayPump(Net, Sv, C0, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+	if (C0.ExecFrame == 0 || C1.ExecFrame == 0)
+	{
+		return DelayFail(TEXT("lockstep-delay-recovery: no snapshot catch-up"));
+	}
+	if (!C0.World.Equals(C1.World))
+	{
+		return DelayFail(TEXT("lockstep-delay-recovery: clients diverged"));
+	}
+	return DelayOk(FString::Printf(TEXT("lockstep-delay-recovery frame=%d"), C0.ExecFrame));
+}

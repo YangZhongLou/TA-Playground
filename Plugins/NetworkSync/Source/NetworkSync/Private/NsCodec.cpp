@@ -375,6 +375,7 @@ bool NsEncodePacket(const FNsPacket& Packet, TArray<uint8>& OutBytes)
 	}
 	WriteU8(OutBytes, Rsv);
 	WriteU16(OutBytes, static_cast<uint16>(Payload.Num()));
+	WriteU32(OutBytes, Packet.Session);
 	WriteU32(OutBytes, static_cast<uint32>(Packet.Seq));
 	WriteU32(OutBytes, static_cast<uint32>(Packet.Ack));
 	WriteU32(OutBytes, Packet.AckBits);
@@ -399,6 +400,7 @@ bool NsDecodePacket(const TArray<uint8>& Bytes, FNsPacket& OutPacket)
 	const uint8 TypeRaw = R.U8();
 	const uint8 Rsv = R.U8();
 	const uint16 PayloadLen = R.U16();
+	const uint32 Session = R.U32();
 	const int32 Seq = static_cast<int32>(R.U32());
 	const int32 Ack = static_cast<int32>(R.U32());
 	const uint32 AckBits = R.U32();
@@ -413,6 +415,7 @@ bool NsDecodePacket(const TArray<uint8>& Bytes, FNsPacket& OutPacket)
 	const ENsMsg Type = static_cast<ENsMsg>(TypeRaw);
 	FNsPacket Decoded;
 	Decoded.Type = Type;
+	Decoded.Session = Session;
 	Decoded.Seq = Seq;
 	Decoded.Ack = Ack;
 	Decoded.AckBits = AckBits;

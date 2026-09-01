@@ -41,11 +41,27 @@ void NsDelayPruneHist(TMap<int32, FNsInputs>& Hist, int32 Frame)
 	}
 }
 
+void NsDelaySendSnapshot(INsNet& Net, const FNsLockstepDelayServer& Sv)
+{
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::S2CJoinSnap;
+	Pkt.Tick = Sv.Frame + 1;
+	Pkt.SnapX[0] = Sv.World.X[0];
+	Pkt.SnapX[1] = Sv.World.X[1];
+	Pkt.SnapRng = Sv.World.Rng;
+	Net.Send(ENsAddr::Sv, ENsAddr::C0, Pkt);
+	Net.Send(ENsAddr::Sv, ENsAddr::C1, Pkt);
+}
+
 void NsDelayFinishFrame(FNsLockstepDelayServer& Sv, INsNet& Net, const FNsInputs& Slot)
 {
 	Sv.Hist.Add(Sv.Frame, Slot);
 	Sv.World.Step(Slot.Dx, Ns::LockstepSpeed);
 	NsDelayBroadcast(Net, Sv.Hist, Sv.Frame);
+	if ((Sv.Frame + 1) % (Ns::RedundantFrames + 1) == 0)
+	{
+		NsDelaySendSnapshot(Net, Sv);
+	}
 	NsDelayPruneHist(Sv.Hist, Sv.Frame);
 	Sv.Inbox.Remove(Sv.Frame);
 	++Sv.Frame;
@@ -137,6 +153,33 @@ void FNsLockstepDelayClient::OnS2C(const TMap<int32, FNsInputs>& Frames)
 	}
 }
 
+void FNsLockstepDelayClient::ApplyJoin(const FNsPacket& Packet)
+{
+	if (Packet.Tick <= ExecFrame)
+	{
+		return;
+	}
+	World.X[0] = Packet.SnapX[0];
+	World.X[1] = Packet.SnapX[1];
+	World.Rng = Packet.SnapRng;
+	PrevX[0] = World.X[0];
+	PrevX[1] = World.X[1];
+	ExecFrame = Packet.Tick;
+	KnownFrame = FMath::Max(KnownFrame, ExecFrame - 1);
+	TArray<int32> Dead;
+	for (const TPair<int32, FNsInputs>& Kv : Buf)
+	{
+		if (Kv.Key < ExecFrame)
+		{
+			Dead.Add(Kv.Key);
+		}
+	}
+	for (int32 Frame : Dead)
+	{
+		Buf.Remove(Frame);
+	}
+}
+
 void FNsLockstepDelayClient::Logic()
 {
 	while (const FNsInputs* Found = Buf.Find(ExecFrame))
@@ -174,7 +217,11 @@ void NsPumpLockstepDelayClient(INsNet& Net, FNsLockstepDelayClient& C, bool bWai
 	NsDrain(Net, C.Addr, ToC, bWait);
 	for (const FNsPacket& P : ToC)
 	{
-		if (P.Type == ENsMsg::S2CFrame)
+		if (P.Type == ENsMsg::S2CJoinSnap)
+		{
+			C.ApplyJoin(P);
+		}
+		else if (P.Type == ENsMsg::S2CFrame)
 		{
 			C.OnS2C(P.Frames);
 		}
