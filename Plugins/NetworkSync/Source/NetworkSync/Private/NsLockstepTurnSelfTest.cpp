@@ -427,3 +427,59 @@ FNsSelfTestResult NsRunLockstepTurnLongRunSelfTest()
 	return TurnOk(FString::Printf(TEXT("lockstep-turn-long frame=%d turns=%d"),
 		Sv.Frame, Sv.TurnLen.Num()));
 }
+
+FNsSelfTestResult NsRunLockstepTurnRecoverySelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepTurnServer Sv;
+	FNsLockstepTurnClient C0;
+	FNsLockstepTurnClient C1;
+	TurnInit(C0, C1);
+
+	const int32 OutageTurns = NsLockstepTurnCatchupTurns;
+	for (int32 Pump = 0; Sv.CollectTurn < OutageTurns && Pump < 1024; ++Pump)
+	{
+		C0.SendInput(Net, TurnScriptDx0(C0.SendTurn));
+		C1.SendInput(Net, TurnScriptDx1(C1.SendTurn));
+		NsPumpLockstepTurnServer(Net, Sv);
+		NsPumpLockstepTurnClient(Net, C0);
+		TArray<FNsPacket> Dropped;
+		NsDrain(Net, ENsAddr::C1, Dropped, false);
+		Net.Advance(NsLockstepTurnStallMs + Ns::LogicDtMs);
+	}
+	if (Sv.CollectTurn < OutageTurns)
+	{
+		return TurnFailStr(FString::Printf(
+			TEXT("lockstep-turn-recovery: server only closed %d turns"), Sv.CollectTurn));
+	}
+	C0.SendInput(Net, TurnScriptDx0(C0.SendTurn));
+	C1.SendInput(Net, TurnScriptDx1(C1.SendTurn));
+	NsPumpLockstepTurnServer(Net, Sv);
+	if (!Sv.bCatchupBlocked || Sv.Cmds.Num() > NsLockstepTurnCatchupTurns)
+	{
+		return TurnFailStr(FString::Printf(
+			TEXT("lockstep-turn-recovery: blocked=%d history=%d"),
+			Sv.bCatchupBlocked ? 1 : 0, Sv.Cmds.Num()));
+	}
+
+	TurnReceive(Net, C1);
+	C1.CatchUpTo(Sv.Frame);
+	if (C1.ExecFrame != Sv.Frame || !C1.World.Equals(Sv.World))
+	{
+		return TurnFailStr(FString::Printf(
+			TEXT("lockstep-turn-recovery: sv=%d c1=%d need=%d send=%d"),
+			Sv.Frame, C1.ExecFrame, Sv.ClientNeedTurn[1], C1.SendTurn));
+	}
+	C0.SendInput(Net, TurnScriptDx0(C0.SendTurn));
+	C1.SendInput(Net, TurnScriptDx1(C1.SendTurn));
+	NsPumpLockstepTurnServer(Net, Sv);
+	if (Sv.bCatchupBlocked)
+	{
+		return TurnFail(TEXT("lockstep-turn-recovery: server did not resume after ack"));
+	}
+	return TurnOk(FString::Printf(TEXT("lockstep-turn-recovery frame=%d turns=%d"),
+		Sv.Frame, Sv.CollectTurn));
+}

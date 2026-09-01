@@ -105,6 +105,7 @@ NETWORKSYNC_API FNsSelfTestResult NsRunLockstepTurnDropSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepTurnSpeedSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepTurnLenDropSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepTurnLongRunSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunLockstepTurnRecoverySelfTest();
 
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayCleanSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayRttSelfTest();

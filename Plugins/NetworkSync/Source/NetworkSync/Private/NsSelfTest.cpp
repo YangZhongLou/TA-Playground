@@ -1785,18 +1785,34 @@ FNsSelfTestResult NsRunStateSyncLongOutageSelfTest()
 	C.PlayerId = 0;
 	C.Addr = ENsAddr::C0;
 
-	for (int32 i = 0; i < Ns::InputWindow + 4; ++i)
+	for (int32 i = 0; i < Ns::MaxInboxAhead; ++i)
 	{
 		C.LocalTick(Net, 1);
 	}
 	Net.Drop = 0.f;
 	C.LocalTick(Net, 1);
-	NsPumpStateServer(Net, Sv);
-	if (Sv.Pawns[0].LastSeq <= 0)
+	for (int32 Pump = 0;
+		Pump < 256 && (Sv.Pawns[0].LastSeq < Ns::MaxInboxAhead || C.UnackedSeq.Num() > 0);
+		++Pump)
 	{
-		return Fail(TEXT("state-outage: oldest missing input was not retransmitted"));
+		NsPumpStateServer(Net, Sv);
+		NsPumpStateClient(Net, C);
+		Net.Advance(Ns::SimDtMs);
 	}
-	return OkStr(FString::Printf(TEXT("state-outage recovered seq=%d"), Sv.Pawns[0].LastSeq));
+	if (Sv.Pawns[0].LastSeq != Ns::MaxInboxAhead || C.UnackedSeq.Num() != 0)
+	{
+		return FailStr(FString::Printf(
+			TEXT("state-outage: seq=%d unacked=%d want=%d"),
+			Sv.Pawns[0].LastSeq, C.UnackedSeq.Num(), Ns::MaxInboxAhead));
+	}
+	const int32 ExpectedX = Ns::MaxInboxAhead * Ns::StateSpeed;
+	if (Sv.Pawns[0].X != ExpectedX || C.PredX != ExpectedX)
+	{
+		return FailStr(FString::Printf(
+			TEXT("state-outage: x server=%d client=%d want=%d"),
+			Sv.Pawns[0].X, C.PredX, ExpectedX));
+	}
+	return OkStr(FString::Printf(TEXT("state-outage drained seq=%d"), Sv.Pawns[0].LastSeq));
 }
 
 FNsSelfTestResult NsRunStateSyncClockOffsetSelfTest()
@@ -2005,11 +2021,16 @@ FNsSelfTestResult NsRunRollbackConflictingInputSelfTest()
 	Conflict.Add(1, 1);
 	A.OnRemote(Conflict);
 	A.AdvanceLocal(1, Packed);
-	if (!A.bWaiting || A.Frame != FrameBefore)
+	if (!A.bWaiting || !A.bNeedsResync || A.ResyncFrame != 1 || A.Frame != FrameBefore)
 	{
 		return FailStr(FString::Printf(
-			TEXT("rollback-conflict: resumed frame=%d before=%d waiting=%d"),
-			A.Frame, FrameBefore, A.bWaiting ? 1 : 0));
+			TEXT("rollback-conflict: frame=%d before=%d waiting=%d resync=%d at=%d"),
+			A.Frame, FrameBefore, A.bWaiting ? 1 : 0,
+			A.bNeedsResync ? 1 : 0, A.ResyncFrame));
+	}
+	if (!A.ConsumeResyncRequest() || A.ConsumeResyncRequest())
+	{
+		return Fail(TEXT("rollback-conflict: terminal request was not reported exactly once"));
 	}
 	return OkStr(TEXT("rollback conflicting input halted"));
 }
@@ -2424,6 +2445,7 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunLockstepTurnSpeedSelfTest,
 		&NsRunLockstepTurnLenDropSelfTest,
 		&NsRunLockstepTurnLongRunSelfTest,
+		&NsRunLockstepTurnRecoverySelfTest,
 		&NsRunLockstepDelayCleanSelfTest,
 		&NsRunLockstepDelayRttSelfTest,
 		&NsRunLockstepDelayHighRttSelfTest,

@@ -10,6 +10,8 @@
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogNetworkSyncManager, Log, All);
+
 ANsNetManager::ANsNetManager()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -598,6 +600,18 @@ void ANsNetManager::TickRollback()
 		if (RunsC1())
 		{
 			NsPumpRollbackPeer(Wire(), RbB);
+		}
+		if (RunsC0() && RbA.ConsumeResyncRequest())
+		{
+			UE_LOG(LogNetworkSyncManager, Error,
+				TEXT("Rollback halted for player 0 at frame %d; reset the scheme to restart the session."),
+				RbA.ResyncFrame);
+		}
+		if (RunsC1() && RbB.ConsumeResyncRequest())
+		{
+			UE_LOG(LogNetworkSyncManager, Error,
+				TEXT("Rollback halted for player 1 at frame %d; reset the scheme to restart the session."),
+				RbB.ResyncFrame);
 		}
 
 		Wire().Advance(Ns::RollbackDtMs);

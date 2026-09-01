@@ -265,6 +265,7 @@ NS_WRAP(FNsLockstep_TurnDrop, "NetworkSync.Lockstep.Turn.Drop", NsRunLockstepTur
 NS_WRAP(FNsLockstep_TurnSpeed, "NetworkSync.Lockstep.Turn.Speed", NsRunLockstepTurnSpeedSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_TurnLenDrop, "NetworkSync.Lockstep.Turn.LenDrop", NsRunLockstepTurnLenDropSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_TurnLongRun, "NetworkSync.Lockstep.Turn.LongRun", NsRunLockstepTurnLongRunSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_TurnRecovery, "NetworkSync.Lockstep.Turn.Recovery", NsRunLockstepTurnRecoverySelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_DelayClean, "NetworkSync.Lockstep.Delay.Clean", NsRunLockstepDelayCleanSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_DelayRtt, "NetworkSync.Lockstep.Delay.Rtt", NsRunLockstepDelayRttSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_DelayHighRtt, "NetworkSync.Lockstep.Delay.HighRtt", NsRunLockstepDelayHighRttSelfTest, NsAutoFlags)

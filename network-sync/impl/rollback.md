@@ -78,9 +78,14 @@ void OnRemote(const TMap<int32, int8>& Packed)
 }
 ```
 
-`RollbackFrom(F)`：若 `Frame-F > MaxRollback` 或没有 `Saves[F]`，置 `bWaiting` 并返回 false，调用方不得抬 `Confirmed`。
+`RollbackFrom(F)`：若 `Frame-F > MaxRollback` 或没有 `Saves[F]`，置 `bNeedsResync` / `bWaiting`，
+记录首个 `ResyncFrame` 并返回 false，调用方不得抬 `Confirmed`。
 成功则 `World = Saves[F]`，再对 `K in [F, Frame)` 用「有真用真，否则保持当时的猜」重演。
 重演过程不要渲染、不要播声音。渲染只在本轮 `AdvanceLocal` / `OnRemote` 结束后做一次。
+
+同一 frame 收到两份不同真输入也进入该终止态。`ConsumeResyncRequest` 只返回一次 true；
+`ANsNetManager` 据此打印一次错误和首个问题帧。当前 P2P 分支没有权威世界可自动拉齐，
+所以保持停拍，需切换/重置 Scheme 来重开 session，禁止静默继续造成分叉。
 
 `RaiseConfirmed`：从 `max(Confirmed, InputDelay-1)` 起向后走，遇到缺的 `RealRemote` 就停。禁止用「窗口里最小帧」跳过空洞。
 
@@ -107,5 +112,5 @@ void OnRemote(const TMap<int32, int8>& Packed)
 ns.SelfTest
 ```
 
-日志必须含 `rollback frame=`。自动化：`NetworkSync.Rollback.Drop05`、`.Clean`、`.Wait`、`.Hole`。
+日志必须含 `rollback frame=`。自动化：`NetworkSync.Rollback.Drop05`、`.Clean`、`.Wait`、`.Hole`、`.Conflict`。
 含义：故意错猜若干拍后，两端最终 `X[0],X[1],Rng` 一致；缺前缀帧时 Confirmed 不跳空洞。

@@ -31,15 +31,15 @@ bool NsTurnInputsForFrame(int32 ExecTurn, const TMap<int32, FNsInputs>& Cmds, FN
 	return false;
 }
 
-void NsTurnBroadcast(INsNet& Net, const TMap<int32, FNsInputs>& Cmds, int32 ClosedTurn,
-	int32 LiveFpt, const TMap<int32, int32>& TurnLen)
+void NsTurnSend(INsNet& Net, const TMap<int32, FNsInputs>& Cmds, int32 ClosedTurn,
+	int32 LiveFpt, const TMap<int32, int32>& TurnLen, ENsAddr Dst, int32 FirstTurn)
 {
 	if (ClosedTurn < 0)
 	{
 		return;
 	}
 	TMap<int32, FNsInputs> Packed;
-	const int32 First = FMath::Max(0, ClosedTurn - 16);
+	const int32 First = FMath::Max(0, FirstTurn);
 	for (int32 T = First; T <= ClosedTurn; ++T)
 	{
 		if (const FNsInputs* Found = Cmds.Find(T))
@@ -61,13 +61,13 @@ void NsTurnBroadcast(INsNet& Net, const TMap<int32, FNsInputs>& Cmds, int32 Clos
 	{
 		Pkt.TurnFpt.Add(Kv.Key, NsLockstepTurnLen(TurnLen, Kv.Key, LiveFpt));
 	}
-	Net.Send(ENsAddr::Sv, ENsAddr::C0, Pkt);
-	Net.Send(ENsAddr::Sv, ENsAddr::C1, Pkt);
+	Net.Send(ENsAddr::Sv, Dst, Pkt);
 }
 
-void NsTurnPrune(TMap<int32, FNsInputs>& Cmds, TMap<int32, int32>& TurnLen, int32 ExecTurn)
+void NsTurnPruneBefore(TMap<int32, FNsInputs>& Cmds, TMap<int32, int32>& TurnLen,
+	int32 KeepFrom)
 {
-	const int32 KeepFrom = FMath::Max(0, ExecTurn - 16);
+	KeepFrom = FMath::Max(0, KeepFrom);
 	TArray<int32> Dead;
 	for (const TPair<int32, FNsInputs>& Kv : Cmds)
 	{
@@ -140,7 +140,12 @@ void NsTurnAdjustFpt(int32& FramesPerTurn, double WaitedMs)
 
 void FNsLockstepTurnServer::OnInput(int32 PlayerId, int32 Turn, int8 Dx, double NowMs)
 {
-	if (PlayerId < 0 || PlayerId >= Ns::PlayerCount || Turn != CollectTurn)
+	if (PlayerId < 0 || PlayerId >= Ns::PlayerCount || Turn < 0 || Turn > CollectTurn)
+	{
+		return;
+	}
+	ClientNeedTurn[PlayerId] = FMath::Max(ClientNeedTurn[PlayerId], Turn);
+	if (Turn != CollectTurn)
 	{
 		return;
 	}
@@ -155,6 +160,13 @@ void FNsLockstepTurnServer::Tick(INsNet& Net)
 	if (!TurnLen.Contains(CollectTurn))
 	{
 		TurnLen.Add(CollectTurn, FramesPerTurn);
+	}
+	bCatchupBlocked = CollectTurn - FMath::Min(ClientNeedTurn[0], ClientNeedTurn[1])
+		>= NsLockstepTurnCatchupTurns;
+	if (bCatchupBlocked)
+	{
+		Resend(Net);
+		return;
 	}
 
 	const bool bAll = Got[0] && Got[1];
@@ -187,9 +199,9 @@ void FNsLockstepTurnServer::Tick(INsNet& Net)
 		}
 
 		Cmds.Add(CollectTurn, Slot);
-		NsTurnBroadcast(Net, Cmds, CollectTurn, FramesPerTurn, TurnLen);
 		++CollectTurn;
 		TurnLen.Add(CollectTurn, FramesPerTurn);
+		Resend(Net);
 		Got[0] = false;
 		Got[1] = false;
 		Slot = FNsInputs();
@@ -200,12 +212,18 @@ void FNsLockstepTurnServer::Tick(INsNet& Net)
 
 	NsTurnTryStep(Frame, ExecTurn, ExecTurnStart, Cmds, TurnLen, FramesPerTurn, World, nullptr);
 	Resend(Net);
-	NsTurnPrune(Cmds, TurnLen, ExecTurn);
+	const int32 ClientKeepFrom = FMath::Max(0,
+		FMath::Min(ClientNeedTurn[0], ClientNeedTurn[1]) - NsLockstepTurnResendTurns);
+	const int32 ServerKeepFrom = FMath::Max(0, ExecTurn - NsLockstepTurnLead);
+	NsTurnPruneBefore(Cmds, TurnLen, FMath::Min(ClientKeepFrom, ServerKeepFrom));
 }
 
 void FNsLockstepTurnServer::Resend(INsNet& Net)
 {
-	NsTurnBroadcast(Net, Cmds, CollectTurn - 1, FramesPerTurn, TurnLen);
+	NsTurnSend(Net, Cmds, CollectTurn - 1, FramesPerTurn, TurnLen,
+		ENsAddr::C0, ClientNeedTurn[0] - NsLockstepTurnResendTurns);
+	NsTurnSend(Net, Cmds, CollectTurn - 1, FramesPerTurn, TurnLen,
+		ENsAddr::C1, ClientNeedTurn[1] - NsLockstepTurnResendTurns);
 }
 
 void FNsLockstepTurnClient::SendInput(INsNet& Net, int8 Dx)
@@ -262,7 +280,7 @@ void FNsLockstepTurnClient::Logic()
 {
 	NsTurnTryStep(ExecFrame, ExecTurn, ExecTurnStart,
 		Cmds, TurnLen, FramesPerTurn, World, PrevX);
-	NsTurnPrune(Cmds, TurnLen, ExecTurn);
+	NsTurnPruneBefore(Cmds, TurnLen, ExecTurn - NsLockstepTurnResendTurns);
 }
 
 void FNsLockstepTurnClient::CatchUpTo(int32 TargetFrame)
@@ -271,7 +289,7 @@ void FNsLockstepTurnClient::CatchUpTo(int32 TargetFrame)
 		&& NsTurnTryStep(ExecFrame, ExecTurn, ExecTurnStart,
 			Cmds, TurnLen, FramesPerTurn, World, PrevX))
 	{
-		NsTurnPrune(Cmds, TurnLen, ExecTurn);
+		NsTurnPruneBefore(Cmds, TurnLen, ExecTurn - NsLockstepTurnResendTurns);
 	}
 }
 

@@ -11,6 +11,12 @@ constexpr int32 NsLockstepTurnFptMin = 2;
 constexpr int32 NsLockstepTurnFptMax = 6;
 constexpr int32 NsLockstepTurnLead = 2;
 constexpr int32 NsLockstepTurnStallMs = 500;
+constexpr int32 NsLockstepTurnResendTurns = 16;
+constexpr int32 NsLockstepTurnCatchupTurns = 128;
+
+static_assert(NsLockstepTurnCatchupTurns + NsLockstepTurnResendTurns
+	<= Ns::MaxS2CTurnFrameEntries,
+	"turn catch-up and safety window must fit in one datagram");
 
 inline int32 NsLockstepTurnLen(const TMap<int32, int32>& TurnLen, int32 Turn, int32 LiveFpt)
 {
@@ -38,6 +44,8 @@ public:
 	int32 ExecTurn = 0;
 	int32 ExecTurnStart = 0;
 	int32 CollectTurn = 0;
+	int32 ClientNeedTurn[Ns::PlayerCount] = {0, 0};
+	bool bCatchupBlocked = false;
 	int32 FramesPerTurn = NsLockstepTurnFrames;
 	bool Got[Ns::PlayerCount] = {};
 	double ArriveMs[Ns::PlayerCount] = {};

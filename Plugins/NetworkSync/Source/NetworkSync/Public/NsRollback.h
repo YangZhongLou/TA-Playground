@@ -18,6 +18,7 @@ public:
 	bool bWaiting = false;
 	bool bInRollback = false;
 	bool bNeedsResync = false;
+	int32 ResyncFrame = -1;
 	FNsWorld World;
 	TMap<int32, FNsWorld> Saves;
 	TMap<int32, FNsInputs> Pred;
@@ -27,6 +28,7 @@ public:
 	void AdvanceLocal(int8 Dx, TMap<int32, int8>& OutPacked);
 	void Advance(INsNet& Net, int8 Dx);
 	void OnRemote(const TMap<int32, int8>& Packed);
+	bool ConsumeResyncRequest();
 
 private:
 	FNsInputs Pair(int32 F) const;
@@ -35,4 +37,6 @@ private:
 	void Trim();
 	void RaiseConfirmed();
 	void CollectPacked(int32 EndF, TMap<int32, int8>& Out) const;
+	void MarkNeedsResync(int32 FrameIndex);
+	bool bResyncReported = false;
 };

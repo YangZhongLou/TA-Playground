@@ -21,6 +21,8 @@ Speed Control 是本 Kind 的第二里程碑：主机按回合完成时间改 `F
 ```cpp
 constexpr int32 FramesPerTurn = 3;   // 198ms，贴近 200ms，且整除 LogicDtMs
 constexpr int32 LeadTurns = 2;       // 回合 T 的指令在回合 T+2 执行
+constexpr int32 ResendTurns = 16;    // 已确认进度之前仍保留的安全冗余
+constexpr int32 CatchupTurns = 128;  // 单包可装下的最大追赶窗口
 ```
 
 指令延迟 ≈ `FramesPerTurn * LeadTurns * LogicDtMs` = 396ms。
@@ -47,9 +49,16 @@ World.Step(I)
 ## 服务器
 
 汇聚点按**回合**等齐：回合 T 结束前必须收到两人的 `Cmd[T]`（或超时填 0）。
-然后广播「回合 T 的 Cmd」，带回合号，可冗余前 1 个回合。
+然后广播「回合 T 的 Cmd」，带回合号。
 
-`CollectTurn` 不得跑到 `ExecTurn` 前面无限预取。服务器只关闭当前执行回合以内的命令；执行游标之后 16 回合以前的 `Cmds` 与 `TurnLen` 一起裁剪。
+`CollectTurn` 不得跑到 `ExecTurn` 前面无限预取。客户端的 `SendTurn` 也是它最早缺少的命令回合，
+服务器按玩家记录 `ClientNeedTurn`，分别补发 `ClientNeedTurn-ResendTurns .. ClosedTurn`。
+`Cmds` / `TurnLen` 只能裁掉两个客户端都已越过、且服务器执行游标也不再需要的部分。
+
+某客户端落后达到 `CatchupTurns` 时，服务器置 `bCatchupBlocked`，暂停关闭回合和 `Step`，但继续补发。
+客户端收到历史、用下一份 `C2SInput` 推进 `ClientNeedTurn` 后自动恢复。这样离线客户端不会导致历史无限增长，
+也不会因为固定 16 回合窗口永久缺帧。128 条追赶历史加 16 条安全冗余仍能装进单个 1200 字节数据报，
+代码用 `static_assert` 守住这个条件。
 
 不要每 66ms 广播一次最新摇杆。那是乐观。
 
@@ -70,6 +79,7 @@ World.Step(I)
 2. 拍 `(T+2)*FramesPerTurn - 1` 的坐标仍是旧值。
 3. 一人迟交回合命令：全场停在该回合边界。
 4. 长跑后 `Cmds` / `TurnLen` 只保留有界窗口，执行回合查询总成本随总帧数线性增长。
+5. C1 连续丢失 `CatchupTurns` 个回合：服务器有界停拍；恢复下行后 C1 补齐到同帧同世界，ACK 后服务器继续推进。
 
 ## 第二里程碑：Speed Control
 

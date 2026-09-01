@@ -118,16 +118,14 @@ void FNsRollbackPeer::OnRemote(const TMap<int32, int8>& Packed)
 		{
 			if (*Existing != Dx)
 			{
-				bNeedsResync = true;
-				bWaiting = true;
+				MarkNeedsResync(F);
 				bConfirm = false;
 			}
 			continue;
 		}
 		if (F <= Confirmed && !Pred.Contains(F))
 		{
-			bNeedsResync = true;
-			bWaiting = true;
+			MarkNeedsResync(F);
 			bConfirm = false;
 			continue;
 		}
@@ -154,14 +152,12 @@ bool FNsRollbackPeer::RollbackFrom(int32 F)
 {
 	if (Frame - F > Ns::MaxRollback)
 	{
-		bNeedsResync = true;
-		bWaiting = true;
+		MarkNeedsResync(F);
 		return false;
 	}
 	if (!Saves.Contains(F))
 	{
-		bNeedsResync = true;
-		bWaiting = true;
+		MarkNeedsResync(F);
 		return false;
 	}
 	bInRollback = true;
@@ -188,6 +184,26 @@ bool FNsRollbackPeer::RollbackFrom(int32 F)
 		World.Step(In.Dx, Ns::RollbackSpeed);
 	}
 	bInRollback = false;
+	return true;
+}
+
+void FNsRollbackPeer::MarkNeedsResync(int32 FrameIndex)
+{
+	if (!bNeedsResync)
+	{
+		ResyncFrame = FrameIndex;
+	}
+	bNeedsResync = true;
+	bWaiting = true;
+}
+
+bool FNsRollbackPeer::ConsumeResyncRequest()
+{
+	if (!bNeedsResync || bResyncReported)
+	{
+		return false;
+	}
+	bResyncReported = true;
 	return true;
 }
 
