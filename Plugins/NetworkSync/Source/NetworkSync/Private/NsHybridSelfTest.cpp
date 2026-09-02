@@ -677,6 +677,99 @@ FNsSelfTestResult NsRunLockstepResyncUdpSelfTest()
 		Repair.bResumed ? 1 : 0, V0.HaltTick, V1.HaltTick, Sv.Frame, C0.ExecFrame, C1.ExecFrame));
 }
 
+static void HySendChecksum(INsNet& Net, ENsAddr Src, int32 Tick, uint32 Hash)
+{
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SChecksum;
+	Pkt.PlayerId = NsPlayerIdFromAddr(Src);
+	Pkt.Tick = Tick;
+	Pkt.Hash = Hash;
+	Net.Send(Src, ENsAddr::Sv, Pkt);
+}
+
+FNsSelfTestResult NsRunLockstepResyncKickOffSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	FNsLockstepClient C1;
+	HyInitLs(C0, C1);
+	HyWarmLockstep(Net, Sv, C0, C1, 24);
+	const uint32* Found = Sv.Checksums.Find(Ns::ChecksumEvery);
+	if (!Found)
+	{
+		return HyFail(TEXT("lockstep-resync-kick-off: no checksum record"));
+	}
+	const int32 FrameAt = Sv.Frame;
+	FNsLockstepResync Repair;
+	HySendChecksum(Net, ENsAddr::C1, Ns::ChecksumEvery, *Found ^ 1u);
+	NsPumpLockstepResyncServer(Net, Sv, Repair);
+	if (!Sv.bDesync || Sv.Frame != FrameAt || !Repair.Alive[1])
+	{
+		return HyFailStr(FString::Printf(
+			TEXT("lockstep-resync-kick-off: desync=%d frame=%d was=%d alive1=%d"),
+			Sv.bDesync ? 1 : 0, Sv.Frame, FrameAt, Repair.Alive[1] ? 1 : 0));
+	}
+	return HyOk(TEXT("lockstep-resync-kick-off"));
+}
+
+FNsSelfTestResult NsRunLockstepResyncKickSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	FNsLockstepClient C1;
+	HyInitLs(C0, C1);
+	HyWarmLockstep(Net, Sv, C0, C1, 24);
+	const uint32* Found = Sv.Checksums.Find(Ns::ChecksumEvery);
+	if (!Found)
+	{
+		return HyFail(TEXT("lockstep-resync-kick: no checksum record"));
+	}
+	FNsLockstepResync Repair;
+	Repair.bKickDesyncer = true;
+	HySendChecksum(Net, ENsAddr::C1, Ns::ChecksumEvery, *Found ^ 1u);
+	NsPumpLockstepResyncServer(Net, Sv, Repair);
+	if (Sv.bDesync || Repair.Alive[1] || !Repair.Alive[0])
+	{
+		return HyFailStr(FString::Printf(
+			TEXT("lockstep-resync-kick: desync=%d alive0=%d alive1=%d"),
+			Sv.bDesync ? 1 : 0, Repair.Alive[0] ? 1 : 0, Repair.Alive[1] ? 1 : 0));
+	}
+
+	const int32 X0 = Sv.World.X[0];
+	const int32 X1 = Sv.World.X[1];
+	const int32 FrameAt = Sv.Frame;
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
+	for (int32 S = 0; S < 8; ++S)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, 1);
+		NsPumpLockstepResyncServer(Net, Sv, Repair);
+		NsPumpLockstepResyncClient(Net, C0, V0);
+		NsPumpLockstepResyncClient(Net, C1, V1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+	if (Sv.Frame <= FrameAt || Sv.World.X[0] == X0 || Sv.World.X[1] != X1)
+	{
+		return HyFailStr(FString::Printf(
+			TEXT("lockstep-resync-kick: frame=%d was=%d x0=%d/%d x1=%d/%d"),
+			Sv.Frame, FrameAt, Sv.World.X[0], X0, Sv.World.X[1], X1));
+	}
+	if (!C0.World.Equals(C1.World) || !C0.World.Equals(Sv.World))
+	{
+		return HyFail(TEXT("lockstep-resync-kick: worlds"));
+	}
+	return HyOk(FString::Printf(TEXT("lockstep-resync-kick frame=%d"), Sv.Frame));
+}
+
 static void DoorInit(FNsLockstepDoorServer& Sv, FNsLockstepDoorClient& C0, FNsLockstepDoorClient& C1)
 {
 	C0.Ls.PlayerId = 0;

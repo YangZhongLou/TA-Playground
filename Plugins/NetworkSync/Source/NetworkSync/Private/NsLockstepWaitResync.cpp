@@ -24,7 +24,7 @@ void NsPumpLockstepWaitResyncServer(INsNet& Net, FNsLockstepWaitServer& Sv, FNsL
 		if (P.Type == ENsMsg::C2SInput)
 		{
 			const int32 Id = NsPlayerIdFromAddr(P.Src);
-			if (Id < 0 || P.SeqWindow.Num() == 0 || P.DxWindow.Num() == 0)
+			if (Id < 0 || !Resync.Alive[Id] || P.SeqWindow.Num() == 0 || P.DxWindow.Num() == 0)
 			{
 				continue;
 			}
@@ -33,11 +33,21 @@ void NsPumpLockstepWaitResyncServer(INsNet& Net, FNsLockstepWaitServer& Sv, FNsL
 		else if (P.Type == ENsMsg::C2SChecksum)
 		{
 			const int32 Id = NsPlayerIdFromAddr(P.Src);
+			if (Id < 0 || !Resync.Alive[Id])
+			{
+				continue;
+			}
 			if (Sv.bDesync && Resync.bCaptured && !Resync.bGiveUp && !Resync.bResumed
-				&& Id >= 0 && P.Tick == Resync.LiveSnapTick
+				&& P.Tick == Resync.LiveSnapTick
 				&& P.Hash == Resync.LiveSnap.Checksum())
 			{
 				Resync.Acked[Id] = true;
+			}
+			else if (Resync.KickIfMismatch(Id, P.Tick, P.Hash, Sv.Checksums))
+			{
+				Sv.Alive[Id] = false;
+				Sv.Slot.Dx[Id] = 0;
+				continue;
 			}
 			else
 			{

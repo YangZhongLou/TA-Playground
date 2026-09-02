@@ -57,7 +57,8 @@
 分进程 `Host` / `Client` 各有一份客户端 View；停拍只认 LiveSnap 包，不共享 `bCaptured`。
 乐观 Manager 一律走 `NsPumpLockstepResync*`。等齐停拍拉齐是另一包，见 [wait-resync.md](wait-resync.md)。delay 停拍拉齐见 [delay-resync.md](delay-resync.md)。通信回合停拍拉齐见 [turn-resync.md](turn-resync.md)。
 
-第一版不做按视野裁快照，不做踢人替代。恢复打拍是本包第二里程碑，已做。
+第一版不做按视野裁快照。恢复打拍是本包第二里程碑，已做。
+踢分叉者是第三里程碑：`bKickDesyncer` 默认 false，仍停拍拉齐。打开后，checksum 对不上的那一槽从输入集拿掉（`Alive`），**不**置 `bDesync`、不 `SendLiveSnap`。`World` 仍是两人。不是新 Kind，也不新开 `ENsMsg`。不要改各 Kind 的 `Tick`。Manager 不打开此开关。等齐泵再置 `WaitSv.Alive`；通信回合 / delay 泵把缺槽填成空输入再 `Tick`。
 
 ## 禁令
 
@@ -84,3 +85,5 @@
 11. `NetworkSync.Lockstep.Resync.Again`：Resume 后再人为 checksum 失败。新的 `LiveSnapTick`，再次停拍，ack 后再 Resume，两端同位。
 12. `NetworkSync.Lockstep.Resync.Wire`：客户端 View 不读服务器 `bCaptured`；空 `S2CJoinSnap` 停拍，随后 `S2CFrame` 恢复。
 13. `NetworkSync.Lockstep.Resync.Udp`：Host Sv+C0 / Client C1 分进程 UDP，C1 只靠包停拍拉齐并恢复。
+14. `NetworkSync.Lockstep.Resync.KickOff`：默认开关下，C1 上报错误 Hash 仍停拍，`Frame` 不增加。
+15. `NetworkSync.Lockstep.Resync.Kick`：`bKickDesyncer` 时 C1 错误 Hash 不置 `bDesync`；继续打拍；被踢槽迟到输入改不了 `X`。

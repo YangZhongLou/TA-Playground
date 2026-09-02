@@ -17,11 +17,37 @@ public:
 	bool Acked[Ns::PlayerCount] = {};
 	int32 PumpCycles = 0;
 	bool bGiveUp = false;
+	bool bKickDesyncer = false;
+	bool Alive[Ns::PlayerCount] = {true, true};
 
 	void CaptureLive(const FNsWorld& World, int32 Frame);
 	void SendLiveSnap(INsNet& Net, ENsAddr Dst) const;
 	void FinishResume();
 	void Resume(FNsLockstepServer& Sv, INsNet& Net);
+
+	void Kick(int32 Id)
+	{
+		if (Id < 0 || Id >= Ns::PlayerCount)
+		{
+			return;
+		}
+		Alive[Id] = false;
+	}
+
+	bool KickIfMismatch(int32 Id, int32 Tick, uint32 Hash, const TMap<int32, uint32>& Checksums)
+	{
+		if (!bKickDesyncer || Id < 0 || Id >= Ns::PlayerCount || !Alive[Id])
+		{
+			return false;
+		}
+		const uint32* Found = Checksums.Find(Tick);
+		if (!Found || *Found == Hash)
+		{
+			return false;
+		}
+		Kick(Id);
+		return true;
+	}
 };
 
 struct FNsLockstepResyncClient

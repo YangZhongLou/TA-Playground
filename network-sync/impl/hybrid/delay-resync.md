@@ -28,6 +28,8 @@ delay 没有 `NextMs`：两槽 ack 后清 `bDesync`、`FinishResume()`，并把 
 客户端泵：空 `S2CJoinSnap` 且 `Tick>0` 走 `NsApplyDelayResyncSnap`，停拍期间不 `Logic`。
 带 `frame >= HaltTick` 的 `S2CFrame` 清停拍。带 Hist 的周期 Join 在停拍期间丢掉。可选 `FNsDoorOpen*`：halt 期间仍 `NsApplyDoorOpen`，不改 delay `Tick`。
 
+`bKickDesyncer` 与乐观停拍包相同。打开后泵把当前拍 Inbox 缺槽标齐并 `dx=0` 再 `Tick`。不要改 delay `Tick`。
+
 ## 禁令
 
 - 不要用空 JoinSnap 做 delay 周期恢复。
@@ -46,3 +48,5 @@ delay 没有 `NextMs`：两槽 ack 后清 `bDesync`、`FinishResume()`，并把 
 5. Resume 后再人为 checksum 失败：新的 `LiveSnapTick`，再次停拍，ack 后再 Resume。
 6. 客户端 View 不读服务器 `bCaptured`；空 `S2CJoinSnap` 停拍，随后 `S2CFrame` 恢复。
 7. `NetworkSync.Lockstep.Delay.Resync.Udp`：Host Sv+C0 / Client C1 分进程 UDP，C1 只靠包停拍拉齐并恢复。
+8. `NetworkSync.Lockstep.Delay.Resync.KickOff`：默认仍停拍。
+9. `NetworkSync.Lockstep.Delay.Resync.Kick`：`bKickDesyncer` 时踢分叉槽，继续打拍，迟到输入改不了 `X`。

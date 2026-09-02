@@ -489,6 +489,99 @@ FNsSelfTestResult NsRunLockstepWaitResyncUdpSelfTest()
 		Repair.bResumed ? 1 : 0, V0.HaltTick, V1.HaltTick, Sv.Frame, C0.ExecFrame, C1.ExecFrame));
 }
 
+static void WrSendChecksum(INsNet& Net, ENsAddr Src, int32 Tick, uint32 Hash)
+{
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SChecksum;
+	Pkt.PlayerId = NsPlayerIdFromAddr(Src);
+	Pkt.Tick = Tick;
+	Pkt.Hash = Hash;
+	Net.Send(Src, ENsAddr::Sv, Pkt);
+}
+
+FNsSelfTestResult NsRunLockstepWaitResyncKickOffSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepWaitServer Sv;
+	FNsLockstepWaitClient C0;
+	FNsLockstepWaitClient C1;
+	WrInit(C0, C1);
+	WrWarm(Net, Sv, C0, C1, 24);
+	const uint32* Found = Sv.Checksums.Find(Ns::ChecksumEvery);
+	if (!Found)
+	{
+		return WrFail(TEXT("lockstep-wait-resync-kick-off: no checksum record"));
+	}
+	const int32 FrameAt = Sv.Frame;
+	FNsLockstepResync Repair;
+	WrSendChecksum(Net, ENsAddr::C1, Ns::ChecksumEvery, *Found ^ 1u);
+	NsPumpLockstepWaitResyncServer(Net, Sv, Repair);
+	if (!Sv.bDesync || Sv.Frame != FrameAt || !Repair.Alive[1])
+	{
+		return WrFailStr(FString::Printf(
+			TEXT("lockstep-wait-resync-kick-off: desync=%d frame=%d was=%d alive1=%d"),
+			Sv.bDesync ? 1 : 0, Sv.Frame, FrameAt, Repair.Alive[1] ? 1 : 0));
+	}
+	return WrOk(TEXT("lockstep-wait-resync-kick-off"));
+}
+
+FNsSelfTestResult NsRunLockstepWaitResyncKickSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepWaitServer Sv;
+	FNsLockstepWaitClient C0;
+	FNsLockstepWaitClient C1;
+	WrInit(C0, C1);
+	WrWarm(Net, Sv, C0, C1, 24);
+	const uint32* Found = Sv.Checksums.Find(Ns::ChecksumEvery);
+	if (!Found)
+	{
+		return WrFail(TEXT("lockstep-wait-resync-kick: no checksum record"));
+	}
+	FNsLockstepResync Repair;
+	Repair.bKickDesyncer = true;
+	WrSendChecksum(Net, ENsAddr::C1, Ns::ChecksumEvery, *Found ^ 1u);
+	NsPumpLockstepWaitResyncServer(Net, Sv, Repair);
+	if (Sv.bDesync || Repair.Alive[1] || !Repair.Alive[0] || Sv.Alive[1])
+	{
+		return WrFailStr(FString::Printf(
+			TEXT("lockstep-wait-resync-kick: desync=%d alive=%d/%d wait=%d"),
+			Sv.bDesync ? 1 : 0, Repair.Alive[0] ? 1 : 0, Repair.Alive[1] ? 1 : 0, Sv.Alive[1] ? 1 : 0));
+	}
+
+	const int32 X0 = Sv.World.X[0];
+	const int32 X1 = Sv.World.X[1];
+	const int32 FrameAt = Sv.Frame;
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
+	for (int32 S = 0; S < 8; ++S)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, 1);
+		NsPumpLockstepWaitResyncServer(Net, Sv, Repair);
+		NsPumpLockstepWaitResyncClient(Net, C0, V0);
+		NsPumpLockstepWaitResyncClient(Net, C1, V1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+	if (Sv.Frame <= FrameAt || Sv.World.X[0] == X0 || Sv.World.X[1] != X1)
+	{
+		return WrFailStr(FString::Printf(
+			TEXT("lockstep-wait-resync-kick: frame=%d was=%d x0=%d/%d x1=%d/%d"),
+			Sv.Frame, FrameAt, Sv.World.X[0], X0, Sv.World.X[1], X1));
+	}
+	if (!C0.World.Equals(C1.World) || !C0.World.Equals(Sv.World))
+	{
+		return WrFail(TEXT("lockstep-wait-resync-kick: worlds"));
+	}
+	return WrOk(FString::Printf(TEXT("lockstep-wait-resync-kick frame=%d"), Sv.Frame));
+}
+
 FNsSelfTestResult NsRunLockstepWaitDoorComposeSelfTest()
 {
 	FNsFakeNet Net;

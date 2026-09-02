@@ -39,7 +39,7 @@ void NsPumpLockstepTurnResyncServer(INsNet& Net, FNsLockstepTurnServer& Sv, FNsL
 		if (P.Type == ENsMsg::C2SInput)
 		{
 			const int32 Id = NsPlayerIdFromAddr(P.Src);
-			if (Id < 0 || P.SeqWindow.Num() == 0 || P.DxWindow.Num() == 0)
+			if (Id < 0 || !Resync.Alive[Id] || P.SeqWindow.Num() == 0 || P.DxWindow.Num() == 0)
 			{
 				continue;
 			}
@@ -48,11 +48,22 @@ void NsPumpLockstepTurnResyncServer(INsNet& Net, FNsLockstepTurnServer& Sv, FNsL
 		else if (P.Type == ENsMsg::C2SChecksum)
 		{
 			const int32 Id = NsPlayerIdFromAddr(P.Src);
+			if (Id < 0 || !Resync.Alive[Id])
+			{
+				continue;
+			}
 			if (Sv.bDesync && Resync.bCaptured && !Resync.bGiveUp && !Resync.bResumed
-				&& Id >= 0 && P.Tick == Resync.LiveSnapTick
+				&& P.Tick == Resync.LiveSnapTick
 				&& P.Hash == Resync.LiveSnap.Checksum())
 			{
 				Resync.Acked[Id] = true;
+			}
+			else if (Resync.KickIfMismatch(Id, P.Tick, P.Hash, Sv.Checksums))
+			{
+				Sv.Got[Id] = true;
+				Sv.Slot.Dx[Id] = 0;
+				Sv.ArriveMs[Id] = Net.Now;
+				continue;
 			}
 			else
 			{
@@ -75,6 +86,16 @@ void NsPumpLockstepTurnResyncServer(INsNet& Net, FNsLockstepTurnServer& Sv, FNsL
 	{
 		if (!bJustResumed)
 		{
+			for (int32 Id = 0; Id < Ns::PlayerCount; ++Id)
+			{
+				if (!Resync.Alive[Id])
+				{
+					Sv.Got[Id] = true;
+					Sv.Slot.Dx[Id] = 0;
+					Sv.ArriveMs[Id] = Net.Now;
+					Sv.ClientNeedTurn[Id] = FMath::Max(Sv.ClientNeedTurn[Id], Sv.CollectTurn);
+				}
+			}
 			Sv.Tick(Net);
 		}
 		return;

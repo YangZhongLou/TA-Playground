@@ -15,6 +15,7 @@
 
 共用 `INsNet` 与编码。各包自己写泵。禁止 `NsPumpLockstep` 调用 `OnSnap`。
 停拍后不调用 `Tick`，直到两槽对 `LiveSnap` checksum ack。
+乐观停拍包 `bKickDesyncer` 打开时改为踢分叉槽并继续打拍，默认仍停拍拉齐。等齐 / 通信回合 / delay 停拍泵同样认这个字段。
 乐观 `ANsNetManager` 走停拍拉齐泵；等齐走 `NsPumpLockstepWaitResync*`；通信回合走 `NsPumpLockstepTurnResync*`；delay 走 `NsPumpLockstepDelayResync*`。
 锁步加门不新增 `ENsScheme`。四支锁步的停拍客户端泵都可叠 `FNsDoorOpen*`。
 新线上 type 先改 [packet-format.md](../packet-format.md)。门用 `S2CDoorOpen=8`；停拍拉齐复用 `S2CJoinSnap`。乐观按号补发用 `C2SFrameNack=9`。

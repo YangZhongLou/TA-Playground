@@ -21,6 +21,7 @@ Speed Control 是 `CommTurn` 的第二里程碑，不是第五支内核。
 delay 停拍拉齐同样是第三里程碑：独立泵 `NsPumpLockstepDelayResync*`，规格 [hybrid/delay-resync.md](hybrid/delay-resync.md)。
 delay 按 RTT 调 `d` 是第四里程碑：`DelayFrames` 字段 + `NsLockstepDelayFromRtt`，不是新 Kind。
 乐观按号 NACK 是乐观类后续字段：`C2SFrameNack` + 泵 Drain `OnNack`，不是新 Kind，也不进 `Tick`。
+乐观停拍踢分叉者是停拍包第三里程碑：`bKickDesyncer`，泵 Drain，不是新 Kind，也不进 `Tick`。等齐 / 通信回合 / delay 停拍泵同样认这个字段。
 通信回合停拍拉齐同样是第三里程碑：独立泵 `NsPumpLockstepTurnResync*`，规格 [hybrid/turn-resync.md](hybrid/turn-resync.md)。
 空输入 vs `Latest`、追帧限流，是某支内核里的字段，不是新 Kind。
 
