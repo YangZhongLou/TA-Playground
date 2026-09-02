@@ -175,6 +175,7 @@ namespace
 			return true;
 		}
 		case ENsMsg::C2SSnapAck:
+		case ENsMsg::C2SFire:
 			WriteU8(Out, static_cast<uint8>(Packet.PlayerId));
 			WriteU32(Out, static_cast<uint32>(Packet.Tick));
 			return true;
@@ -311,6 +312,7 @@ namespace
 			return R.bOk;
 		}
 		case ENsMsg::C2SSnapAck:
+		case ENsMsg::C2SFire:
 			Out.PlayerId = static_cast<int32>(R.U8());
 			Out.Tick = static_cast<int32>(R.U32());
 			return R.bOk;
@@ -492,6 +494,7 @@ int32 NsPayloadBytes(const FNsPacket& Packet)
 	case ENsMsg::S2CSnapshot:
 		return 21;
 	case ENsMsg::C2SSnapAck:
+	case ENsMsg::C2SFire:
 		return 5;
 	case ENsMsg::P2PInput:
 		if (Packet.RemoteDx.Num() > 255)

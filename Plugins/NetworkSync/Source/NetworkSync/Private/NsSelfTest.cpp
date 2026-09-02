@@ -1389,6 +1389,20 @@ FNsSelfTestResult NsRunCodecContractSelfTest()
 			return R;
 		}
 	}
+	{
+		FNsPacket Src;
+		Src.Type = ENsMsg::C2SFire;
+		Src.PlayerId = 1;
+		Src.Tick = 80;
+		const FNsSelfTestResult R = Check(TEXT("fire"), Src, [](const FNsPacket& D)
+		{
+			return D.Type == ENsMsg::C2SFire && D.PlayerId == 1 && D.Tick == 80;
+		});
+		if (!R.Detail.IsEmpty())
+		{
+			return R;
+		}
+	}
 
 	FNsPacket Empty;
 	TArray<uint8> None;
@@ -1813,6 +1827,72 @@ FNsSelfTestResult NsRunStateSyncRewindSelfTest()
 		return Fail(TEXT("rewind: bad player"));
 	}
 	return OkStr(FString::Printf(TEXT("rewind current=%d past=%d"), Cap, Past));
+}
+
+FNsSelfTestResult NsRunStateSyncFireSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsStateSyncServer Sv;
+	for (int32 S = 0; S < 40; ++S)
+	{
+		Sv.Sim(Net);
+		Net.Advance(Ns::SimDtMs);
+	}
+	if (!Sv.OnFire(0, 80) || Sv.Hits[0] != 1)
+	{
+		return Fail(TEXT("fire: close rewind should hit"));
+	}
+	if (Sv.OnFire(-1, 80) || Sv.OnFire(2, 80) || Sv.Hits[0] != 1)
+	{
+		return Fail(TEXT("fire: bad shooter"));
+	}
+
+	for (int32 S = 0; S < 40; ++S)
+	{
+		Sv.OnInput(1, S + 1, 1);
+		Sv.Sim(Net);
+		Net.Advance(Ns::SimDtMs);
+	}
+	if (Sv.OnFire(0, 80) || Sv.OnFire(0, 500) || Sv.Hits[0] != 1)
+	{
+		return FailStr(FString::Printf(TEXT("fire: far victim should miss x0=%d x1=%d rewind=%d"),
+			Sv.Pawns[0].X, Sv.Pawns[1].X, Sv.RewindX(1, 80)));
+	}
+
+	FNsFakeNet Wire;
+	Wire.Drop = 0.f;
+	Wire.RttMs = 0.f;
+	Wire.JitterMs = 0.f;
+	FNsStateSyncServer WireSv;
+	FNsStateSyncClient C0;
+	C0.PlayerId = 0;
+	C0.Addr = ENsAddr::C0;
+	for (int32 S = 0; S < 40; ++S)
+	{
+		NsPumpStateServer(Wire, WireSv);
+		Wire.Advance(Ns::SimDtMs);
+	}
+	FNsPacket Spoof;
+	Spoof.Type = ENsMsg::C2SFire;
+	Spoof.PlayerId = 0;
+	Spoof.Tick = 80;
+	Wire.Send(ENsAddr::C1, ENsAddr::Sv, Spoof);
+	NsPumpStateServer(Wire, WireSv);
+	if (WireSv.Hits[0] != 0 || WireSv.Hits[1] != 1)
+	{
+		return FailStr(FString::Printf(TEXT("fire: spoof src hits=%d/%d"),
+			WireSv.Hits[0], WireSv.Hits[1]));
+	}
+	C0.Fire(Wire, 80);
+	NsPumpStateServer(Wire, WireSv);
+	if (WireSv.Hits[0] != 1)
+	{
+		return Fail(TEXT("fire: wire C0 miss"));
+	}
+	return OkStr(TEXT("state-sync fire rewind+src"));
 }
 
 FNsSelfTestResult NsRunStateSyncNackSelfTest()
@@ -2657,6 +2737,7 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunStateSyncSelfTest,
 		&NsRunStateSyncCleanSelfTest,
 		&NsRunStateSyncRewindSelfTest,
+		&NsRunStateSyncFireSelfTest,
 		&NsRunStateSyncNackSelfTest,
 		&NsRunStateSyncInboxHoleSelfTest,
 		&NsRunStateSyncInboxCapSelfTest,

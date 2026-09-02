@@ -143,9 +143,12 @@ void OnSnap(...)
 
 和解用快照里的 `last_processed_seq`，不要用「我发出去多久了」去猜服务器处理到哪。
 
-## 滞后补偿（骨架，可先空实现）
+## 滞后补偿
 
-开火时：`RewindX(player, ping_ms)`。`back_ms = ping/2 + interp_delay`，`back_ms > 220` 则用当前坐标。
+开火走 `C2SFire`。泵 Drain `OnFire`，不进 `Sim`。身份用 `Src`。
+`RewindX(victim, ping_ms)`：`back_ms = ping/2 + interp_delay`，`back_ms > 220` 则用当前坐标。
+命中：`|shooter.X - RewindX(victim, ping)| <= HitRange`（8，两拍 `StateSpeed`）。无射线、无血量；命中只加 `Hits[shooter]`。
+无 ACK。丢了这一枪就丢了。
 
 ## 实现顺序
 
@@ -153,7 +156,8 @@ void OnSnap(...)
 2. 远程插值，本地仍直接画最新（自己会感到延迟）。
 3. 本地预测 + `last_processed_seq` 和解。自己跟手，别人平滑。
 4. `C2S_SNAP_ACK` + 增量。已做。
-5. 历史缓冲 + `RewindX` 命中倒带。已做（无开火，只留倒带查询）。
+5. 历史缓冲 + `RewindX` 命中倒带。已做。
+6. `C2SFire` 倒带开火。已做（无血量 / 无射线）。
 
 ## 验收
 
@@ -161,5 +165,5 @@ void OnSnap(...)
 ns.SelfTest
 ```
 
-日志必须含 `state-sync tick=`。自动化：`NetworkSync.StateSync.Drop05`、`.Clean`、`.Rewind`、`.Nack`。
-含义：远端插值有值、本地预测在快照到达后与服务器 x 和解一致；丢掉增量基后 nack 0 能恢复全量。
+日志必须含 `state-sync tick=`。自动化：`NetworkSync.StateSync.Drop05`、`.Clean`、`.Rewind`、`.Fire`、`.Nack`。
+含义：远端插值有值、本地预测在快照到达后与服务器 x 和解一致；丢掉增量基后 nack 0 能恢复全量；近处倒带命中、远处与超 cap 打空，开火身份跟 `Src`。

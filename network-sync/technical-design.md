@@ -150,6 +150,7 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | `S2CJoinSnap` | 服 → 客 | 锁步重连：世界 + 快照之后的输入 |
 | `S2CDoorOpen` | 服 → 客 | 锁步加门开关，不带 pawn `X` |
 | `C2SFrameNack` | 客 → 服 | 锁步点名缺拍；回复 `S2CFrame` 或 Join |
+| `C2SFire` | 客 → 服 | 状态同步倒带开火；`Tick` 为上报 RTT |
 
 逐字节布局以 [impl/packet-format.md](impl/packet-format.md) 为准。
 
@@ -191,6 +192,7 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | 旧快照 | `P.Tick <= LastAckedTick` 则忽略 |
 | 插值 | `t_show = now - 100ms`；禁止外推；自己走 `PredX` |
 | 倒带 | `RewindX`：`ping/2+100`，超过 220ms 用当前 x |
+| 开火 | `C2SFire` Drain `OnFire`：倒带受害者，`|ΔX|<=HitRange` 则 `Hits[shooter]++` |
 
 不要把这套和解叫回滚。这里有服务器真值。
 代码：`NsStateSync.*`。规格：[impl/state_sync.md](impl/state_sync.md)。
@@ -258,7 +260,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | 传输 | `FakeNet.*`、`Udp.*`、`Stun.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程锁步/状态同步/回滚、突发、STUN Binding 编解码与环回 |
 | 锁步 | `Lockstep.*` | 乐观：干净、Drop、Join、空洞、按号 NACK、分叉。等齐：`Lockstep.Wait.*`（含 Join、按号 NACK、停拍拉齐、超时踢人）。通信回合：`Lockstep.Turn.*`（含 Speed / Recovery / 停拍拉齐）。delay：`Lockstep.Delay.*`（含停拍拉齐、按 RTT 调 `d`、按号 NACK） |
 | 结合 | `Lockstep.Resync.*` / `Lockstep.Wait.Resync.*` / `Lockstep.Turn.Resync.*` / `Lockstep.Delay.Resync.*` / `LockstepDoor.*` | 四支锁步停拍强制回跳与恢复（含包驱动 Host/Client 与 `*.Resync.Udp`）；四支停拍均可改踢分叉槽（`*.Resync.Kick*`）；假网络四支锁步走各自停拍泵并叠门；FakeNet 门；检查点用 `Lockstep.Join*`；切段 `SchemeSwitch` / `SchemeApply` |
-| 状态同步 | `StateSync.*` | 和解、倒带、nack 全量、Inbox 空洞/上限、长断线排空、旧快照忽略、Src 身份 |
+| 状态同步 | `StateSync.*` | 和解、倒带、倒带开火、nack 全量、Inbox 空洞/上限、长断线排空、旧快照忽略、Src 身份 |
 | 回滚 | `Rollback.*` | 干净、WAIT、Confirmed 不跳空洞（前缀/中间）、冲突输入终止态 |
 | 运行时 | `Runtime.SchemeSwitch` / `Runtime.SchemeApply` | 热切后锁步不追 `Now`、队列清空；`ApplyScheme` 重建协议且锁步不继承 `PredX` |
 | 复制 | `Actors.Cdo` | Door / Counter RPC |
@@ -269,7 +271,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 
 ## 已知边界
 
-已闭环：两人整数世界、假网络字节头、本机与分进程 UDP、STUN Binding 查询映射地址、三套协议主循环、checksum、有序 Inbox、增量 nack、回滚空洞、锁步周期 Join、乐观/等齐/delay 按号 NACK、四支停拍踢分叉者、复制整数与门。
+已闭环：两人整数世界、假网络字节头、本机与分进程 UDP、STUN Binding 查询映射地址、三套协议主循环、checksum、有序 Inbox、增量 nack、回滚空洞、锁步周期 Join、乐观/等齐/delay 按号 NACK、四支停拍踢分叉者、状态同步倒带开火、复制整数与门。
 
 | 未做 | 影响 |
 | --- | --- |
@@ -277,11 +279,11 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | 锁步加门 | 四支锁步 Manager 已叠 FakeNet `S2CDoorOpen`；不接 `UNetDriver` / `ANsDoor` |
 | NAT / STUN | Binding 可查出映射 IPv4:port；仍无打洞 / ICE / 信令。`UdpRemoteHost` 仍要填 |
 | 多人 / AOI | 地址写死 Sv/C0/C1 |
-| 开火命中 | `RewindX` 已有，未接武器 |
+| 开火命中 | 倒带开火已接；无血量 / 无真正射线 |
 | 客户端 Owner RPC | 远端按 `E`/`F` 可能被丢 |
 | 角色移动 | 不在本插件；玩法项目自选引擎移动系统 |
 
-后续：射击倒带，或跨机填 `UdpRemoteHost`。
+后续：Owner RPC，或跨机填 `UdpRemoteHost`。
 
 ## 索引
 

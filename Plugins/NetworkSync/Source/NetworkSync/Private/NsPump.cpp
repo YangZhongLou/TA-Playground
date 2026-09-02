@@ -16,6 +16,7 @@ bool NsRouteAllowed(const FNsPacket& Packet)
 	case ENsMsg::C2SSnapAck:
 	case ENsMsg::C2SChecksum:
 	case ENsMsg::C2SFrameNack:
+	case ENsMsg::C2SFire:
 		return bFromClient && Packet.Dst == ENsAddr::Sv;
 	case ENsMsg::S2CFrame:
 	case ENsMsg::S2CSnapshot:
@@ -142,6 +143,14 @@ void NsPumpStateServer(INsNet& Net, FNsStateSyncServer& Sv, bool bWait)
 			if (Id >= 0)
 			{
 				Sv.OnAck(Id, P.Tick);
+			}
+		}
+		else if (P.Type == ENsMsg::C2SFire)
+		{
+			const int32 Id = NsPlayerIdFromAddr(P.Src);
+			if (Id >= 0)
+			{
+				Sv.OnFire(Id, P.Tick);
 			}
 		}
 	}

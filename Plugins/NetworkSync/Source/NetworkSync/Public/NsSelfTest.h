@@ -46,6 +46,7 @@ NETWORKSYNC_API FNsSelfTestResult NsRunSchemeApplySelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncCleanSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncRewindSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncFireSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncNackSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncInboxHoleSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncInboxCapSelfTest();

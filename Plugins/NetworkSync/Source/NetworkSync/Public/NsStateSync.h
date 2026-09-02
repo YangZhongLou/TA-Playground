@@ -20,10 +20,12 @@ public:
 	TMap<int32, int8> Inbox[Ns::PlayerCount];
 	int32 LastAck[Ns::PlayerCount] = {0, 0};
 	int32 HistX[Ns::PlayerCount][Ns::HistoryTicks] = {};
+	int32 Hits[Ns::PlayerCount] = {0, 0};
 	int32 DeltaSent = 0;
 
 	void OnInput(int32 PlayerId, int32 Seq, int8 Dx);
 	void OnAck(int32 PlayerId, int32 AckTick);
+	bool OnFire(int32 ShooterId, int32 PingMs);
 	void Sim(INsNet& Net);
 	int32 RewindX(int32 PlayerId, int32 PingMs) const;
 
@@ -55,6 +57,7 @@ public:
 	bool bHasServerTimeOffset = false;
 
 	void LocalTick(INsNet& Net, int8 Dx);
+	void Fire(INsNet& Net, int32 PingMs) const;
 	void OnSnap(INsNet& Net, const FNsPacket& P);
 	void UpdateRemoteDraw(double NowMs);
 

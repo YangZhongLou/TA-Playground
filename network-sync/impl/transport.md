@@ -53,6 +53,7 @@ type（`ENsMsg`）：
 | 7 | `S2CJoinSnap` | 锁步重连快照 |
 | 8 | `S2CDoorOpen` | 锁步加门开关 |
 | 9 | `C2SFrameNack` | 锁步按号补发 |
+| 10 | `C2SFire` | 状态同步倒带开火 |
 
 payload 紧跟 24 字节头。逐字段宽度、示例和长度公式见 [packet-format.md](packet-format.md)。
 单数据报 UDP 载荷 ≤ 1200 字节，避免 IP 分片把丢包放大。超长在应用层拆成多个完整 Ns 包，见 `NsSplitForMtu`。Src/Dst 不进字节。
@@ -70,6 +71,7 @@ payload 紧跟 24 字节头。逐字段宽度、示例和长度公式见 [packet
 | `S2CJoinSnap` | `17 + 6×count` | `exec_frame`、x0、x1、rng、之后的输入拍 |
 | `S2CDoorOpen` | 4 | `open` |
 | `C2SFrameNack` | `2 + 4×count` | 缺的逻辑拍号，count 通常 ≤8 |
+| `C2SFire` | 5 | `player_id` + 上报 RTT（毫秒） |
 
 ## 发送端状态
 

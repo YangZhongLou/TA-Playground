@@ -36,6 +36,22 @@ void FNsStateSyncServer::OnAck(int32 PlayerId, int32 AckTick)
 	}
 }
 
+bool FNsStateSyncServer::OnFire(int32 ShooterId, int32 PingMs)
+{
+	if (ShooterId < 0 || ShooterId >= Ns::PlayerCount)
+	{
+		return false;
+	}
+	const int32 Victim = 1 - ShooterId;
+	const int32 AimX = RewindX(Victim, PingMs);
+	if (FMath::Abs(Pawns[ShooterId].X - AimX) > Ns::HitRange)
+	{
+		return false;
+	}
+	++Hits[ShooterId];
+	return true;
+}
+
 int32 FNsStateSyncServer::RewindX(int32 PlayerId, int32 PingMs) const
 {
 	if (PlayerId < 0 || PlayerId >= Ns::PlayerCount)
@@ -150,6 +166,15 @@ void FNsStateSyncClient::LocalTick(INsNet& Net, int8 Dx)
 		PredX += static_cast<int32>(D) * Ns::StateSpeed;
 	}
 	SendUnacked(Net);
+}
+
+void FNsStateSyncClient::Fire(INsNet& Net, int32 PingMs) const
+{
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SFire;
+	Pkt.PlayerId = PlayerId;
+	Pkt.Tick = FMath::Max(0, PingMs);
+	Net.Send(Addr, ENsAddr::Sv, Pkt);
 }
 
 void FNsStateSyncClient::OnSnap(INsNet& Net, const FNsPacket& P)

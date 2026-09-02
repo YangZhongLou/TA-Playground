@@ -24,6 +24,7 @@ namespace Ns
 	constexpr int32 MaxInboxAhead = HistoryTicks;
 	constexpr int32 InputDelay = 1;
 	constexpr int32 LagCompCapMs = 220;
+	constexpr int32 HitRange = 8;
 	constexpr int32 JoinSnapEvery = 75;
 	constexpr int32 ResyncGiveUpPumps = 32;
 	constexpr uint32 PacketMagic = 0x54414E53;

@@ -316,6 +316,7 @@ NS_WRAP(FNsLockstep_DelayResyncKickOff, "NetworkSync.Lockstep.Delay.Resync.KickO
 NS_WRAP(FNsLockstep_DelayResyncKick, "NetworkSync.Lockstep.Delay.Resync.Kick", NsRunLockstepDelayResyncKickSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_Clean, "NetworkSync.StateSync.Clean", NsRunStateSyncCleanSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_Rewind, "NetworkSync.StateSync.Rewind", NsRunStateSyncRewindSelfTest, NsAutoFlags)
+NS_WRAP(FNsStateSync_Fire, "NetworkSync.StateSync.Fire", NsRunStateSyncFireSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_Nack, "NetworkSync.StateSync.Nack", NsRunStateSyncNackSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_InboxHole, "NetworkSync.StateSync.InboxHole", NsRunStateSyncInboxHoleSelfTest, NsAutoFlags)
 NS_WRAP(FNsStateSync_InboxCap, "NetworkSync.StateSync.InboxCap", NsRunStateSyncInboxCapSelfTest, NsAutoFlags)

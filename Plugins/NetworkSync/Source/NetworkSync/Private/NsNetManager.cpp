@@ -589,6 +589,24 @@ void ANsNetManager::TickLockstep()
 
 void ANsNetManager::TickStateSync()
 {
+	const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+	if (PC && PC->WasInputKeyJustPressed(EKeys::SpaceBar))
+	{
+		const int32 PingMs = FMath::Max(0, static_cast<int32>(Fake.RttMs));
+		if (RunsC0())
+		{
+			SsC0.Fire(Wire(), PingMs);
+		}
+		else if (RunsC1())
+		{
+			SsC1.Fire(Wire(), PingMs);
+		}
+	}
+	if (PC && PC->WasInputKeyJustPressed(EKeys::RightControl) && RunsC0() && RunsC1())
+	{
+		SsC1.Fire(Wire(), FMath::Max(0, static_cast<int32>(Fake.RttMs)));
+	}
+
 	AccumMs += GetWorld()->GetDeltaSeconds() * 1000.0;
 	while (AccumMs >= Ns::SimDtMs)
 	{
@@ -675,6 +693,12 @@ void ANsNetManager::DrawPawns() const
 	if (Scheme == ENsScheme::Lockstep)
 	{
 		DrawLockstepDoor();
+	}
+	else if (Scheme == ENsScheme::StateSync && RunsServer())
+	{
+		DrawDebugString(World, GetActorLocation() + FVector(0.f, 0.f, 120.f),
+			FString::Printf(TEXT("Hits %d / %d (Space)"), SsSv.Hits[0], SsSv.Hits[1]),
+			nullptr, FColor::White, 0.f, false, 1.1f);
 	}
 }
 
