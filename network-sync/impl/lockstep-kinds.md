@@ -19,6 +19,8 @@ Speed Control 是 `CommTurn` 的第二里程碑，不是第五支内核。
 等齐停拍拉齐是第三里程碑：独立泵 `NsPumpLockstepWaitResync*`，规格 [hybrid/wait-resync.md](hybrid/wait-resync.md)。
 等齐超时踢人是第四里程碑：`KickAfterStalls`，仍改 `NsLockstepWait.*`，不是新 Kind。
 delay 停拍拉齐同样是第三里程碑：独立泵 `NsPumpLockstepDelayResync*`，规格 [hybrid/delay-resync.md](hybrid/delay-resync.md)。
+delay 按 RTT 调 `d` 是第四里程碑：`DelayFrames` 字段 + `NsLockstepDelayFromRtt`，不是新 Kind。
+乐观按号 NACK 是乐观类后续字段：`C2SFrameNack` + 泵 Drain `OnNack`，不是新 Kind，也不进 `Tick`。
 通信回合停拍拉齐同样是第三里程碑：独立泵 `NsPumpLockstepTurnResync*`，规格 [hybrid/turn-resync.md](hybrid/turn-resync.md)。
 空输入 vs `Latest`、追帧限流，是某支内核里的字段，不是新 Kind。
 
@@ -38,7 +40,7 @@ delay 停拍拉齐同样是第三里程碑：独立泵 `NsPumpLockstepDelayResyn
 | 共用 | 各 Kind 自己写 |
 | --- | --- |
 | `FNsWorld` / `FNsInputs` / `LogicDtMs` | 何时 `Step`、何时广播 |
-| `INsNet`、`NsCodec`、现有 `ENsMsg` 1/2/6/7 | 自己的 `*Server` / `*Client` / `NsPump*` |
+| `INsNet`、`NsCodec`、现有 `ENsMsg` 1/2/6/7/9 | 自己的 `*Server` / `*Client` / `NsPump*` |
 | 身份 `NsPlayerIdFromAddr` | 自测 `NetworkSync.Lockstep.<Kind>.*` |
 | Join 快照语义（等齐已做 `Wait.Join`） | 缺包策略 |
 

@@ -83,7 +83,7 @@ void FNsLockstepDelayServer::OnInput(int32 PlayerId, int32 Tick, int8 Dx)
 	{
 		return;
 	}
-	if (Tick < NsLockstepDelayFrames)
+	if (Tick < DelayFrames)
 	{
 		return;
 	}
@@ -109,7 +109,7 @@ void FNsLockstepDelayServer::OnChecksum(int32 FrameIndex, uint32 Hash)
 
 void FNsLockstepDelayServer::Tick(INsNet& Net)
 {
-	if (Frame < NsLockstepDelayFrames)
+	if (Frame < DelayFrames)
 	{
 		NsDelayFinishFrame(*this, Net, FNsInputs());
 		return;
@@ -150,8 +150,8 @@ void FNsLockstepDelayClient::SendInput(INsNet& Net, int8 Dx)
 {
 	const int8 Clamped = NsClampDx(Dx);
 	const int32 Seq = (KnownFrame < 0)
-		? NsLockstepDelayFrames
-		: KnownFrame + NsLockstepDelayFrames;
+		? DelayFrames
+		: KnownFrame + DelayFrames;
 	FNsPacket Pkt;
 	Pkt.Type = ENsMsg::C2SInput;
 	Pkt.PlayerId = PlayerId;

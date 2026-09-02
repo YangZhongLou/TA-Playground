@@ -12,7 +12,7 @@ void NsApplyDelayResyncSnap(FNsLockstepDelayClient& Client, const FNsPacket& Pac
 	Client.PrevX[0] = Client.World.X[0];
 	Client.PrevX[1] = Client.World.X[1];
 	Client.ExecFrame = Packet.Tick;
-	Client.KnownFrame = Packet.Tick - NsLockstepDelayFrames;
+	Client.KnownFrame = Packet.Tick - Client.DelayFrames;
 	if (Client.KnownFrame < -1)
 	{
 		Client.KnownFrame = -1;
@@ -137,7 +137,7 @@ void NsPumpLockstepDelayResyncClient(
 		Pkt.Tick = C.ExecFrame;
 		Pkt.Hash = C.World.Checksum();
 		Net.Send(C.Addr, ENsAddr::Sv, Pkt);
-		for (int32 i = 1; i < NsLockstepDelayFrames; ++i)
+		for (int32 i = 1; i < C.DelayFrames; ++i)
 		{
 			FNsPacket Fill;
 			Fill.Type = ENsMsg::C2SInput;

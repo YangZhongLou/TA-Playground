@@ -16,6 +16,7 @@
 constexpr int32 LogicDtMs = 66;       // 1000/15，用整数毫秒
 constexpr int32 PlayerCount = 2;
 constexpr int32 RedundantFrames = 3;  // 每个下行包带上前 3 拍
+constexpr int32 LockstepNackMax = 8;  // 一包最多点名这么多缺拍
 constexpr int32 ChecksumEvery = 15;   // 每秒一次
 constexpr int32 LockstepSpeed = 8;    // 每逻辑拍位移（整数）
 constexpr int32 JoinSnapEvery = 75;   // 约 5 秒一份重连快照
@@ -67,6 +68,11 @@ payload 的 `player_id` 不参与结算。`win` 固定为 0。
 | latest | 本包最大拍号 |
 | 每拍 frame, dx0, dx1 | 填客户端 `Buf`；已执行的丢掉 |
 
+### `C2SFrameNack`
+
+`Buf` 里已有比 `ExecFrame` 更新的拍、但缺当前拍时，点名从 `ExecFrame` 起的连续空洞（最多 8 个）。
+`player_id` 不参与结算。回复仍是 `S2CFrame`；`Hist` 里没有则 `SendJoin`。
+
 ## 服务器主循环
 
 服务器有墙钟，但只在 `now_ms >= next_logic_ms` 时打一拍。见 `FNsLockstepServer::Tick`。
@@ -112,10 +118,11 @@ void Tick(INsNet& Net)
 
 不等待「所有人本拍都有新包」。到点就广播。这是乐观锁步。
 `pack` 把 n、n-1、n-2、n-3 的输入都放进去（n<0 的跳过）。
-服务器要保存最近 `RedundantFrames+1` 拍的输入数组，供补发。
+服务器要保存最近 `RedundantFrames+1` 拍的输入数组，供补发。实际 `Hist` 一直留到下次 `JoinSnapEvery` 裁剪，按号 NACK 从这份内存取 `I(n)`。
 
-补发：第一版只靠每个 `S2CFrame` 带前 3 拍。没有按号 NACK。
-周期 `S2CJoinSnap`（每 4 拍发一次，世界快照每 75 拍更新）带上快照之后的 `Hist` 尾巴，给晚加入用，不是随机取出任意旧 `I(n)`。
+补发：每个 `S2CFrame` 仍带前 3 拍。连续丢超过冗余窗时，客户端发 `C2SFrameNack`；服务器 `OnNack`（泵 Drain，不进 `Tick`）单播这些拍的 `S2CFrame`。拍已裁掉则 `SendJoin`。停拍时忽略 NACK。
+k 仍为 3，NACK 不是自适应冗余。等齐 / 通信回合 / delay 仍靠 Join，不发这个 type。
+周期 `S2CJoinSnap`（每 4 拍发一次，世界快照每 75 拍更新）带上快照之后的 `Hist` 尾巴，给晚加入用。
 所有权与禁令见 [hybrid/checkpoint.md](hybrid/checkpoint.md)。停拍拉齐 / 锁步加门不要写进本文件。
 
 ## 客户端主循环
@@ -151,10 +158,11 @@ void Logic(INsNet& Net)
         }
         ++ExecFrame;
     }
+    // 若 Buf 有未来拍而缺 ExecFrame：C2SFrameNack(连续空洞)
 }
 ```
 
-**禁止**在缺 `ExecFrame` 时执行 `ExecFrame+1`。乱序到达只进 `Buf`。
+**禁止**在缺 `ExecFrame` 时执行 `ExecFrame+1`。乱序到达只进 `Buf`。空洞靠 NACK 填，不靠跳号。
 
 渲染：`Step` 前把 `PrevX` 存下来。`ANsNetManager` 用 `AccumMs / LogicDtMs` 做 `lerp(PrevX, World.X)`，只用于画。
 
@@ -188,6 +196,8 @@ void Logic(INsNet& Net)
 4. 表现插值 + 定期 checksum 上报。已做。
 5. 重连：服务器每 `JoinSnapEvery=75` 拍存 `SnapWorld`；`SendJoin` 发 `S2CJoinSnap`。
    客户端 `ApplyJoin` 后从 `ExecFrame` 快进。已做。自测：`NetworkSync.Lockstep.Join`。
+6. 按号 NACK：空洞时 `C2SFrameNack`，`Hist` 命中则单播 `S2CFrame`，否则 Join。已做。
+   自测：`NetworkSync.Lockstep.Nack` / `.NackJoin`。
 
 ## 验收命令
 
@@ -197,6 +207,7 @@ void Logic(INsNet& Net)
 ns.SelfTest
 ```
 
-日志必须含 `lockstep frames=`。自动化：`NetworkSync.Lockstep.Drop10`、`.Join`、`.LateJoin`。
+日志必须含 `lockstep frames=`。自动化：`NetworkSync.Lockstep.Drop10`、`.Join`、`.LateJoin`、`.Nack`、`.NackJoin`。
 自测已开 `Drop=0.1` 与冗余。Join 自测 `Drop=0`，避免加入包本身被丢掉。
 LateJoin：丢掉 C1 早期包后靠周期 Join 追上；伪造 payload `player_id` 不得改错槽。
+Nack：丢掉超过冗余窗的连续 `S2CFrame` 后靠按号补发追上，不走 Join。NackJoin：点名已裁掉的拍号则 Join。

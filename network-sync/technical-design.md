@@ -14,7 +14,7 @@
 | 概念 | `schemes/`、`cases/`、[comparison.md](comparison.md) | 四种方案机理与品类 | 插件 API |
 | 框架 | 本文 | 决策、分层、模块边界、验收范围 | 逐字节、逐行主循环 |
 | 规格 | `impl/` | 常量、循环、包语义、怎么跑 | 产品对比 |
-| 线上布局 | [impl/packet-format.md](impl/packet-format.md) | 24 字节头与八种 payload | 策略论述 |
+| 线上布局 | [impl/packet-format.md](impl/packet-format.md) | 24 字节头与九种 payload | 策略论述 |
 
 改协议语义：先改规格，再改代码，最后改本文的不变量表。
 改字节：只改 `packet-format.md` 与 `NsCodec.cpp`。
@@ -148,6 +148,7 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | `C2SChecksum` | 客 → 服 | 锁步每 15 拍校验 |
 | `S2CJoinSnap` | 服 → 客 | 锁步重连：世界 + 快照之后的输入 |
 | `S2CDoorOpen` | 服 → 客 | 锁步加门开关，不带 pawn `X` |
+| `C2SFrameNack` | 客 → 服 | 乐观锁步点名缺拍；回复 `S2CFrame` 或 Join |
 
 逐字节布局以 [impl/packet-format.md](impl/packet-format.md) 为准。
 
@@ -165,6 +166,7 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | 冗余 | 每个 `S2CFrame` 带本拍与前 3 拍 |
 | 身份 | `OnInput(NsPlayerIdFromAddr(Src), dx)` |
 | 加入 | 每 75 拍存 `SnapWorld`；每 4 拍 `SendJoin` 两次 |
+| 按号 NACK | `Buf` 有未来拍而缺 `ExecFrame` 时发 `C2SFrameNack`；`OnNack` 不进 `Tick` |
 | ApplyJoin | 仅当 `Tick > ExecFrame` 时跳世界；只丢掉 `< Tick` 的 `Buf`，保留未来帧 |
 | 校验 | 每 15 拍 `C2SChecksum`；对不上则 `bDesync`；缺记录则忽略（迟到） |
 
@@ -253,7 +255,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | 内核 | `World.*` | 确定性、clamp、Reset |
 | 编解码 | `Codec.*` | 往返（含 Frame/Checksum/JoinSnap）、拒收、MTU 拆包（S2C/Join/C2S/P2P） |
 | 传输 | `FakeNet.*`、`Udp.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程锁步/状态同步/回滚、突发 |
-| 锁步 | `Lockstep.*` | 乐观：干净、Drop、Join、空洞、分叉。等齐：`Lockstep.Wait.*`（含 Join、停拍拉齐、超时踢人）。通信回合：`Lockstep.Turn.*`（含 Speed / Recovery / 停拍拉齐）。delay：`Lockstep.Delay.*`（含停拍拉齐） |
+| 锁步 | `Lockstep.*` | 乐观：干净、Drop、Join、空洞、按号 NACK、分叉。等齐：`Lockstep.Wait.*`（含 Join、停拍拉齐、超时踢人）。通信回合：`Lockstep.Turn.*`（含 Speed / Recovery / 停拍拉齐）。delay：`Lockstep.Delay.*`（含停拍拉齐、按 RTT 调 `d`） |
 | 结合 | `Lockstep.Resync.*` / `Lockstep.Wait.Resync.*` / `Lockstep.Turn.Resync.*` / `Lockstep.Delay.Resync.*` / `LockstepDoor.*` | 四支锁步停拍强制回跳与恢复（含包驱动 Host/Client 与 `*.Resync.Udp`）；假网络四支锁步走各自停拍泵并叠门；FakeNet 门；检查点用 `Lockstep.Join*`；切段 `SchemeSwitch` / `SchemeApply` |
 | 状态同步 | `StateSync.*` | 和解、倒带、nack 全量、Inbox 空洞/上限、长断线排空、旧快照忽略、Src 身份 |
 | 回滚 | `Rollback.*` | 干净、WAIT、Confirmed 不跳空洞（前缀/中间）、冲突输入终止态 |
@@ -266,7 +268,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 
 ## 已知边界
 
-已闭环：两人整数世界、假网络字节头、本机与分进程 UDP、三套协议主循环、checksum、有序 Inbox、增量 nack、回滚空洞、锁步周期 Join、复制整数与门。
+已闭环：两人整数世界、假网络字节头、本机与分进程 UDP、三套协议主循环、checksum、有序 Inbox、增量 nack、回滚空洞、锁步周期 Join、乐观按号 NACK、复制整数与门。
 
 | 未做 | 影响 |
 | --- | --- |

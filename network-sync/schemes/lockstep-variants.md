@@ -134,7 +134,7 @@
 | 帧号 | 检测缺、重、乱序 | `ExecFrame` 禁止跳 |
 | 冗余窗 | 每包带前 k 拍，抗短突发 | `RedundantFrames=3` |
 | 周期 Join 尾巴 | 快照之后的 `Hist` 给晚加入 | 每 4 拍 `S2CJoinSnap`；快照每 75 拍 |
-| 按号 NACK | 客户端点名缺哪几拍 | 未做（王者内存按号补发，本插件没有） |
+| 按号 NACK | 客户端点名缺哪几拍 | 乐观：`C2SFrameNack`，`Hist` 命中单播 `S2CFrame`，已裁则 Join。等齐/回合/delay 仍靠 Join |
 | TCP | 队头阻塞 | 禁止 |
 
 k 随丢包升高是王者的做法。本插件 k 写死为 3。
@@ -271,7 +271,8 @@ PC MOBA（Dota 2、英雄联盟）是状态同步。Dota 1 / 星际是帧同步�
 
 入口与硬规则：[../impl/lockstep-kinds.md](../impl/lockstep-kinds.md)。
 
-不必并进乐观类的旋钮：自适应 `LogicDtMs`、P2P、按号 NACK、分叉后权威拉齐、稀疏命令载荷、追帧限流。
+不必并进乐观类的旋钮：自适应 `LogicDtMs`、P2P、分叉后权威拉齐、稀疏命令载荷、追帧限流。
+k 随丢包升高仍不做；NACK 补的是按号取出，不改冗余窗。
 
 不要把回滚并进 `ENsScheme::Lockstep`。四套主方案互斥；四支锁步内核也互斥。
 

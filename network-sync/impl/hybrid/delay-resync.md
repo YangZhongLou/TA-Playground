@@ -22,7 +22,7 @@ LiveSnap 组包、强制回跳、客户端 `HaltTick` 与乐观相同，见 [res
 lookahead 是停拍前填进当前拍的，留着会让 ack 当拍立刻 `FinishFrame`。
 delay 没有 `NextMs`：两槽 ack 后清 `bDesync`、`FinishResume()`，并把 `FrameStartMs = Now`，避免停拍期间攒下的墙钟立刻超时填空。
 
-回跳后 `KnownFrame = Tick - DelayFrames`，使下一发 `C2SInput` 的 seq 等于 `LiveSnapTick`。
+回跳后 `KnownFrame = Tick - DelayFrames`（客户端字段），使下一发 `C2SInput` 的 seq 等于 `LiveSnapTick`。
 客户端另发 `Tick+1 .. Tick+d-1` 的空输入，填回 delay 管线；不要把 `Tick` 本身算进这批空输入，否则 ack 当拍会立刻 `FinishFrame`。
 
 客户端泵：空 `S2CJoinSnap` 且 `Tick>0` 走 `NsApplyDelayResyncSnap`，停拍期间不 `Logic`。

@@ -233,6 +233,20 @@ namespace
 		case ENsMsg::S2CDoorOpen:
 			WriteI32(Out, Packet.DoorOpen);
 			return true;
+		case ENsMsg::C2SFrameNack:
+		{
+			if (Packet.SeqWindow.Num() > 255)
+			{
+				return false;
+			}
+			WriteU8(Out, static_cast<uint8>(Packet.PlayerId));
+			WriteU8(Out, static_cast<uint8>(Packet.SeqWindow.Num()));
+			for (int32 F : Packet.SeqWindow)
+			{
+				WriteU32(Out, static_cast<uint32>(F));
+			}
+			return true;
+		}
 		default:
 			return false;
 		}
@@ -337,6 +351,17 @@ namespace
 		case ENsMsg::S2CDoorOpen:
 			Out.DoorOpen = R.I32();
 			return R.bOk;
+		case ENsMsg::C2SFrameNack:
+		{
+			Out.PlayerId = static_cast<int32>(R.U8());
+			const int32 Count = R.U8();
+			Out.SeqWindow.Reset();
+			for (int32 i = 0; i < Count; ++i)
+			{
+				Out.SeqWindow.Add(static_cast<int32>(R.U32()));
+			}
+			return R.bOk;
+		}
 		default:
 			return false;
 		}
@@ -484,6 +509,12 @@ int32 NsPayloadBytes(const FNsPacket& Packet)
 		return 17 + 6 * Packet.Frames.Num();
 	case ENsMsg::S2CDoorOpen:
 		return 4;
+	case ENsMsg::C2SFrameNack:
+		if (Packet.SeqWindow.Num() > 255)
+		{
+			return -1;
+		}
+		return 2 + 4 * Packet.SeqWindow.Num();
 	default:
 		return -1;
 	}

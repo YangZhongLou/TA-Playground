@@ -17,4 +17,4 @@
 停拍后不调用 `Tick`，直到两槽对 `LiveSnap` checksum ack。
 乐观 `ANsNetManager` 走停拍拉齐泵；等齐走 `NsPumpLockstepWaitResync*`；通信回合走 `NsPumpLockstepTurnResync*`；delay 走 `NsPumpLockstepDelayResync*`。
 锁步加门不新增 `ENsScheme`。四支锁步的停拍客户端泵都可叠 `FNsDoorOpen*`。
-新线上 type 先改 [packet-format.md](../packet-format.md)。门用 `S2CDoorOpen=8`；停拍拉齐复用 `S2CJoinSnap`。
+新线上 type 先改 [packet-format.md](../packet-format.md)。门用 `S2CDoorOpen=8`；停拍拉齐复用 `S2CJoinSnap`。乐观按号补发用 `C2SFrameNack=9`。

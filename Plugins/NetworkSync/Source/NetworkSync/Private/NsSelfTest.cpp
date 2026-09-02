@@ -280,6 +280,151 @@ FNsSelfTestResult NsRunLockstepNoSkipSelfTest()
 	return OkStr(TEXT("lockstep-noskip hole then catch"));
 }
 
+FNsSelfTestResult NsRunLockstepNackSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	C0.PlayerId = 0;
+	C0.Addr = ENsAddr::C0;
+	FNsLockstepClient C1;
+	C1.PlayerId = 1;
+	C1.Addr = ENsAddr::C1;
+
+	auto StepBoth = [&]()
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C0);
+		NsPumpLockstepClient(Net, C1);
+		Net.Advance(Ns::LogicDtMs);
+	};
+
+	for (int32 i = 0; i < 8; ++i)
+	{
+		StepBoth();
+	}
+
+	for (int32 i = 0; i < 6; ++i)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C1);
+		TArray<FNsPacket> Dropped;
+		Net.Drain(ENsAddr::C0, Dropped);
+		Net.Advance(Ns::LogicDtMs);
+	}
+
+	const int32 Hole = C0.ExecFrame;
+	C0.SendInput(Net, 1);
+	C1.SendInput(Net, -1);
+	NsPumpLockstepServer(Net, Sv);
+	NsPumpLockstepClient(Net, C0);
+	NsPumpLockstepClient(Net, C1);
+	if (C0.ExecFrame != Hole || C0.Buf.Contains(Hole) || C0.ExecFrame >= C1.ExecFrame)
+	{
+		return FailStr(FString::Printf(TEXT("lockstep-nack: no hole exec=%d peer=%d"), C0.ExecFrame, C1.ExecFrame));
+	}
+
+	NsPumpLockstepServer(Net, Sv);
+	TArray<FNsPacket> Reply;
+	NsDrain(Net, ENsAddr::C0, Reply);
+	bool bFrame = false;
+	for (const FNsPacket& P : Reply)
+	{
+		if (P.Type == ENsMsg::S2CJoinSnap)
+		{
+			return Fail(TEXT("lockstep-nack: used Join"));
+		}
+		if (P.Type == ENsMsg::S2CFrame && P.Frames.Contains(Hole))
+		{
+			bFrame = true;
+			C0.OnS2C(P.Frames);
+		}
+	}
+	if (!bFrame)
+	{
+		return Fail(TEXT("lockstep-nack: no Hist replay"));
+	}
+	C0.Logic(Net);
+	if (C0.ExecFrame != C1.ExecFrame)
+	{
+		return FailStr(FString::Printf(TEXT("lockstep-nack: stuck exec=%d peer=%d"), C0.ExecFrame, C1.ExecFrame));
+	}
+	if (!C0.World.Equals(C1.World))
+	{
+		return Fail(TEXT("lockstep-nack: worlds diverged"));
+	}
+	return OkStr(FString::Printf(TEXT("lockstep-nack hole=%d exec=%d"), Hole, C0.ExecFrame));
+}
+
+FNsSelfTestResult NsRunLockstepNackJoinSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	C0.PlayerId = 0;
+	C0.Addr = ENsAddr::C0;
+	FNsLockstepClient C1;
+	C1.PlayerId = 1;
+	C1.Addr = ENsAddr::C1;
+
+	for (int32 i = 0; i < 5; ++i)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C0);
+		NsPumpLockstepClient(Net, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+	const int32 Stale = C0.ExecFrame;
+
+	for (int32 i = 0; i < Ns::JoinSnapEvery + 10; ++i)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		NsPumpLockstepServer(Net, Sv);
+		NsPumpLockstepClient(Net, C1);
+		TArray<FNsPacket> Dropped;
+		Net.Drain(ENsAddr::C0, Dropped);
+		Net.Advance(Ns::LogicDtMs);
+	}
+
+	if (Sv.Hist.Contains(Stale) || Sv.SnapFrame < 0)
+	{
+		return Fail(TEXT("lockstep-nack-join: Hist still has stale"));
+	}
+
+	FNsPacket Nack;
+	Nack.Type = ENsMsg::C2SFrameNack;
+	Nack.PlayerId = 0;
+	Nack.SeqWindow.Add(Stale);
+	Net.Send(ENsAddr::C0, ENsAddr::Sv, Nack);
+	NsPumpLockstepServer(Net, Sv);
+	NsPumpLockstepClient(Net, C0);
+	NsPumpLockstepClient(Net, C1);
+	if (C0.ExecFrame <= Stale + 8)
+	{
+		return FailStr(FString::Printf(TEXT("lockstep-nack-join: still stuck exec=%d"), C0.ExecFrame));
+	}
+	if (!C0.World.Equals(C1.World) || C0.ExecFrame != C1.ExecFrame)
+	{
+		return FailStr(FString::Printf(TEXT("lockstep-nack-join: worlds exec=%d peer=%d"), C0.ExecFrame, C1.ExecFrame));
+	}
+	return OkStr(FString::Printf(TEXT("lockstep-nack-join stale=%d exec=%d"), Stale, C0.ExecFrame));
+}
+
 FNsSelfTestResult NsRunLockstepJoinFragSelfTest()
 {
 	FNsFakeNet Net;
@@ -1223,6 +1368,21 @@ FNsSelfTestResult NsRunCodecContractSelfTest()
 		const FNsSelfTestResult R = Check(TEXT("gate"), Src, [](const FNsPacket& D)
 		{
 			return D.Type == ENsMsg::S2CDoorOpen && D.DoorOpen == 1;
+		});
+		if (!R.Detail.IsEmpty())
+		{
+			return R;
+		}
+	}
+	{
+		FNsPacket Src;
+		Src.Type = ENsMsg::C2SFrameNack;
+		Src.PlayerId = 1;
+		Src.SeqWindow = {8, 9, 10};
+		const FNsSelfTestResult R = Check(TEXT("nack"), Src, [](const FNsPacket& D)
+		{
+			return D.Type == ENsMsg::C2SFrameNack && D.PlayerId == 1
+				&& D.SeqWindow.Num() == 3 && D.SeqWindow[0] == 8 && D.SeqWindow[2] == 10;
 		});
 		if (!R.Detail.IsEmpty())
 		{
@@ -2416,6 +2576,8 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunLockstepJoinSelfTest,
 		&NsRunLockstepLateJoinSelfTest,
 		&NsRunLockstepNoSkipSelfTest,
+		&NsRunLockstepNackSelfTest,
+		&NsRunLockstepNackJoinSelfTest,
 		&NsRunLockstepJoinFragSelfTest,
 		&NsRunLockstepDesyncSelfTest,
 		&NsRunSchemeSwitchSelfTest,
@@ -2471,6 +2633,8 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunLockstepDelayCleanSelfTest,
 		&NsRunLockstepDelayRttSelfTest,
 		&NsRunLockstepDelayHighRttSelfTest,
+		&NsRunLockstepDelayFromRttSelfTest,
+		&NsRunLockstepDelayAdaptSelfTest,
 		&NsRunLockstepDelayRecoverySelfTest,
 		&NsRunLockstepDelayResyncAlignSelfTest,
 		&NsRunLockstepDelayResyncForceSelfTest,

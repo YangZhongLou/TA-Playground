@@ -15,6 +15,7 @@ bool NsRouteAllowed(const FNsPacket& Packet)
 	case ENsMsg::C2SInput:
 	case ENsMsg::C2SSnapAck:
 	case ENsMsg::C2SChecksum:
+	case ENsMsg::C2SFrameNack:
 		return bFromClient && Packet.Dst == ENsAddr::Sv;
 	case ENsMsg::S2CFrame:
 	case ENsMsg::S2CSnapshot:
@@ -87,6 +88,10 @@ void NsPumpLockstepServer(INsNet& Net, FNsLockstepServer& Sv, bool bWait)
 		else if (P.Type == ENsMsg::C2SChecksum)
 		{
 			Sv.OnChecksum(P.Tick, P.Hash);
+		}
+		else if (P.Type == ENsMsg::C2SFrameNack)
+		{
+			Sv.OnNack(Net, P.Src, P.SeqWindow);
 		}
 	}
 	Sv.Tick(Net);

@@ -20,10 +20,12 @@
 ## 常量
 
 ```cpp
-constexpr int32 DelayFrames = 3; // 约 198ms @ 66ms
+constexpr int32 DelayFrames = 3; // 默认约 198ms @ 66ms
 ```
 
-`d` 写死。按 RTT 调 `d` 是后续字段，仍在本 Kind，不是新枚举。
+`DelayFrames` 是内核字段，默认 3。`NsLockstepDelayFromRtt(RttMs)` 按整段 RTT 向上取整到拍数再加 1 拍量化余量，夹在 1～8。客户端用已收 `S2CFrame` 标 `seq`，所以 `d` 必须盖住来回。三端必须同一 `d`，不新开 `ENsMsg`。局中途改 `d` 会让 `seq` 错位，第一版只在开局设。
+
+Manager 默认仍是 3。`HighRtt` 继续用默认 3，证明 `d` 不够会停等。
 
 ## 客户端
 
@@ -55,11 +57,17 @@ constexpr int32 DelayFrames = 3; // 约 198ms @ 66ms
 2. 两人对打同一 `d`：两端 `World` 同位，没有「只有高 ping 的人晚结算」。
 3. RTT=80、`DelayFrames=3`：多数拍不等超时；把 RTT 加到 400ms 后才频繁 `StallTimeoutMs`。
 4. 连续丢掉所有 `S2CFrame`：客户端仍会通过周期快照前进，且两端世界一致。
+5. `NsLockstepDelayFromRtt(400)=8`：RTT=400 时 `StallFills=0`，两端同位；按下仍在拍 `d` 才进 `X`。
 
 ## 第三里程碑：停拍拉齐
 
 另开 `NsLockstepDelayResync.*`，不要新 Kind，不要改 `Tick`。
 内核补 `Checksums` / `OnChecksum` / `bDesync`，供停拍泵读取。
 规格：[hybrid/delay-resync.md](hybrid/delay-resync.md)。验收：`NetworkSync.Lockstep.Delay.Resync.*`。
+
+## 第四里程碑：按 RTT 调 `d`
+
+仍在 `NsLockstepDelay.*` 里加，不要新 Kind。
+`NsLockstepDelayFromRtt` / `NsLockstepDelayApplyFrames`。验收：`NetworkSync.Lockstep.Delay.FromRtt` / `Adapt`。
 
 格斗手感不够再去 `ENsScheme::Rollback`，不要在本 Kind 里猜远程输入。

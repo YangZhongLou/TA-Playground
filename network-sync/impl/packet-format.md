@@ -18,7 +18,7 @@
 | 绝对偏移 | 宽 | 类型 | 字段 | 线上值 |
 | --- | --- | --- | --- | --- |
 | 0 | 4 | u32 | magic | `0x54414E53`。小端字节 `53 4E 41 54` |
-| 4 | 1 | u8 | type | `ENsMsg` 1–8。其它值丢弃 |
+| 4 | 1 | u8 | type | `ENsMsg` 1–9。其它值丢弃 |
 | 5 | 1 | u8 | reserved | 默认 `0`。通信回合为 `(ClosedLen<<4)\|NextFpt`；其它 type 为 0 |
 | 6 | 2 | u16 | payload_len | payload 字节数。必须等于 `包长 - 24` |
 | 8 | 4 | u32 | session | 发送进程启动或重置时生成的非零随机 epoch |
@@ -52,6 +52,7 @@ IPv6 最小 MTU 1280，IPv6+UDP 头 48，1200+48=1248 < 1280。IPv4 以太网 12
 | `P2PInput` 4 条 | 45 B | 235 |
 | `S2CJoinSnap` 75 拍 | 491 B | 193 |
 | `S2CDoorOpen` | 28 B | — |
+| `C2SFrameNack` 3 拍 | 38 B | — |
 
 日常冗余远小于上限。`Send` 路径调用 `NsSplitForMtu`：超限则按帧号切片，每片独立编序号、独立丢包。
 
@@ -69,6 +70,7 @@ IPv6 最小 MTU 1280，IPv6+UDP 头 48，1200+48=1248 < 1280。IPv4 以太网 12
 | 6 | `C2SChecksum` | 客→服 | 锁步 | 9 |
 | 7 | `S2CJoinSnap` | 服→客 | 锁步重连 / 停拍拉齐 | 17 + 6×count |
 | 8 | `S2CDoorOpen` | 服→客 | 锁步加门 | 4 |
+| 9 | `C2SFrameNack` | 客→服 | 乐观锁步按号补发 | 2 + 4×count |
 
 下面偏移均相对 **payload 起点**（整包偏移 = 24 + 该列）。
 
@@ -233,13 +235,26 @@ payload 长度：`17 + 6×count`。乐观锁步服务器每 75 拍存一份 `Sna
 
 payload 长度：4。整包 28 字节。无 ACK。实现里服务器每个锁步加门泵周期重发当前值。
 
+## 9 `C2SFrameNack`
+
+乐观锁步客户端点名缺拍。`SeqWindow` 是缺的逻辑拍号，不是状态同步的输入 seq。等齐 / 通信回合 / delay 第一版不发这个 type。
+
+| 偏移 | 宽 | 类型 | 字段 | 约束 |
+| --- | --- | --- | --- | --- |
+| 0 | 1 | u8 | player_id | 0 或 1。结算用 UDP 源地址 |
+| 1 | 1 | u8 | count | 后面拍号数。`>255` 失败。实现里最多 `LockstepNackMax=8` |
+| 2 | 4×count | u32 | frames | 缺的 `ExecFrame` 起连续空洞 |
+
+payload 长度：`2 + 4×count`。3 个拍号时整包 38 字节。无 ACK。
+服务器从 `Hist` 取出这些拍，单播 `S2CFrame`。任一拍已被 Join 裁掉则改发 `S2CJoinSnap`。停拍期间泵丢掉本 type。
+
 ## 拒收规则
 
 解码任一条失败则整包丢弃，不断连接：
 
 - 短于 24 字节
 - magic 不对
-- type 不是 1–8
+- type 不是 1–9
 - `包长 != 24 + payload_len`
 - payload 内部读越界，或读完后 `off != 包长`
 - `S2CSnapshot` 的 `player_count != 2`

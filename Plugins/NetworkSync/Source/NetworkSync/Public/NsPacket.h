@@ -35,6 +35,7 @@ enum class ENsMsg : uint8
 	C2SChecksum = 6,
 	S2CJoinSnap = 7,
 	S2CDoorOpen = 8,
+	C2SFrameNack = 9,
 };
 
 struct FNsPacket

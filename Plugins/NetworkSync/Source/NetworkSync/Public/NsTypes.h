@@ -10,6 +10,7 @@ namespace Ns
 	constexpr int32 LogicDtMs = 66;
 	constexpr int32 LockstepSpeed = 8;
 	constexpr int32 RedundantFrames = 3;
+	constexpr int32 LockstepNackMax = 8;
 	constexpr int32 ChecksumEvery = 15;
 	constexpr int32 SimDtMs = 16;
 	constexpr int32 SendEvery = 3;
