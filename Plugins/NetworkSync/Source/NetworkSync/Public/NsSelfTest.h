@@ -39,6 +39,7 @@ NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDesyncSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepStressSelfTest();
 
 NETWORKSYNC_API FNsSelfTestResult NsRunSchemeSwitchSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunSchemeApplySelfTest();
 
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStateSyncCleanSelfTest();

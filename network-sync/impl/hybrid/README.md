@@ -6,7 +6,7 @@
 | 包 | 规格 | 类型 | 测试前缀 |
 | --- | --- | --- | --- |
 | 检查点 | [checkpoint.md](checkpoint.md) | 已在 `NsLockstep.*` | `NetworkSync.Lockstep.Join*` |
-| 会话切段 | [session.md](session.md) | 已在 `ANsNetManager` | `NetworkSync.Runtime.SchemeSwitch`（仅时钟/队列） |
+| 会话切段 | [session.md](session.md) | 已在 `ANsNetManager` | `NetworkSync.Runtime.SchemeSwitch` / `SchemeApply` |
 | 停拍拉齐 | [resync.md](resync.md) | `NsLockstepResync.*` | `NetworkSync.Lockstep.Resync.*` |
 | 等齐停拍拉齐 | [wait-resync.md](wait-resync.md) | `NsLockstepWaitResync.*` | `NetworkSync.Lockstep.Wait.Resync.*` |
 | 锁步加门 | [door.md](door.md) | `NsLockstepDoor.*` | `NetworkSync.LockstepDoor.*` |

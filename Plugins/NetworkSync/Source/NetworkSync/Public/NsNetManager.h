@@ -14,6 +14,7 @@
 #include "NsStateSync.h"
 #include "NsRollback.h"
 #include "NsUdpNet.h"
+#include "NsSelfTest.h"
 #include "NsNetManager.generated.h"
 
 UENUM(BlueprintType)
@@ -84,6 +85,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "NetworkSync")
 	FVector GetPawnLocation(int32 PlayerId) const;
+
+	friend FNsSelfTestResult NsRunSchemeApplySelfTest();
+	friend void NsSchemeApplyDirty(ANsNetManager& Manager);
 
 private:
 	int8 ReadDx(bool bPlayer0) const;

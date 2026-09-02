@@ -7,7 +7,8 @@
 问「是不是帧同步」时，只问 PvP 战斗。
 
 规格：[../../impl/hybrid/session.md](../../impl/hybrid/session.md)。
-本插件用 `ENsScheme` 热切模拟切段，不实现大厅服。自测只覆盖时钟和队列。
+本插件用 `ENsScheme` 热切模拟切段，不实现大厅服。
+`SchemeSwitch` 覆盖时钟和队列；`SchemeApply` 覆盖 `ApplyScheme` 的 `InitProtocols` 与 `PredX` 隔离。
 
 | 时段 | 主线 | pawn `X` |
 | --- | --- | --- |

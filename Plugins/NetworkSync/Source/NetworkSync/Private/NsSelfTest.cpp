@@ -2419,6 +2419,7 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunLockstepJoinFragSelfTest,
 		&NsRunLockstepDesyncSelfTest,
 		&NsRunSchemeSwitchSelfTest,
+		&NsRunSchemeApplySelfTest,
 		&NsRunLockstepResyncAlignSelfTest,
 		&NsRunLockstepResyncForceSelfTest,
 		&NsRunLockstepResyncIgnoreFrameSelfTest,

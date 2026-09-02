@@ -18,4 +18,7 @@
 ## 验收
 
 `NetworkSync.Runtime.SchemeSwitch` **只**证明：锁步跑一段 → `ResetSession` → 新锁步不得按旧 `Now` 追帧风暴；队列必须空。
-它不覆盖 `InitProtocols`，也不覆盖 `PredX` 隔离。那两件靠 `ApplyScheme` 的实现，没有自动化。
+
+`NetworkSync.Runtime.SchemeApply` 走真实 `ANsNetManager::ApplyScheme`：
+热切后 `InitProtocols` 重建对象，锁步 `X` / `Frame` 不得继承状态同步 `PredX`，
+假网络 `Now` 与队列清空。Kind 热切同样重建等齐内核。

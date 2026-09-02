@@ -239,6 +239,7 @@ NS_WRAP(FNsLockstep_NoSkip, "NetworkSync.Lockstep.NoSkip", NsRunLockstepNoSkipSe
 NS_WRAP(FNsLockstep_JoinFrag, "NetworkSync.Lockstep.JoinFrag", NsRunLockstepJoinFragSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_Desync, "NetworkSync.Lockstep.Desync", NsRunLockstepDesyncSelfTest, NsAutoFlags)
 NS_WRAP(FNsScheme_Switch, "NetworkSync.Runtime.SchemeSwitch", NsRunSchemeSwitchSelfTest, NsAutoFlags)
+NS_WRAP(FNsScheme_Apply, "NetworkSync.Runtime.SchemeApply", NsRunSchemeApplySelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_ResyncAlign, "NetworkSync.Lockstep.Resync.Align", NsRunLockstepResyncAlignSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_ResyncForce, "NetworkSync.Lockstep.Resync.Force", NsRunLockstepResyncForceSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_ResyncIgnore, "NetworkSync.Lockstep.Resync.IgnoreFrame", NsRunLockstepResyncIgnoreFrameSelfTest, NsAutoFlags)
