@@ -7,6 +7,7 @@
 namespace
 {
 constexpr uint16 NsStunBindRequest = 0x0001;
+constexpr uint16 NsStunBindIndication = 0x0011;
 constexpr uint16 NsStunBindSuccess = 0x0101;
 constexpr uint16 NsStunAttrMapped = 0x0001;
 constexpr uint16 NsStunAttrXorMapped = 0x0020;
@@ -91,6 +92,20 @@ bool NsStunEncodeBindRequest(const uint8 TxId[NsStunTxIdBytes], TArray<uint8>& O
 	}
 	Out.Reset();
 	NsStunW16(Out, NsStunBindRequest);
+	NsStunW16(Out, 0);
+	NsStunW32(Out, NsStunMagic);
+	Out.Append(TxId, NsStunTxIdBytes);
+	return Out.Num() == NsStunHeaderBytes;
+}
+
+bool NsStunEncodeBindIndication(const uint8 TxId[NsStunTxIdBytes], TArray<uint8>& Out)
+{
+	if (!TxId)
+	{
+		return false;
+	}
+	Out.Reset();
+	NsStunW16(Out, NsStunBindIndication);
 	NsStunW16(Out, 0);
 	NsStunW32(Out, NsStunMagic);
 	Out.Append(TxId, NsStunTxIdBytes);
@@ -190,6 +205,14 @@ bool NsStunDecodeMapped(
 	return bHit;
 }
 
+bool NsStunIsBindIndication(const TArray<uint8>& Bytes)
+{
+	uint16 Type = 0;
+	uint16 Length = 0;
+	const uint8* TxId = nullptr;
+	return NsStunReadHeader(Bytes, Type, Length, TxId) && Type == NsStunBindIndication;
+}
+
 FString NsStunIpv4ToString(uint32 Ipv4Host)
 {
 	return FString::Printf(TEXT("%u.%u.%u.%u"),
@@ -197,4 +220,78 @@ FString NsStunIpv4ToString(uint32 Ipv4Host)
 		(Ipv4Host >> 16) & 0xffu,
 		(Ipv4Host >> 8) & 0xffu,
 		Ipv4Host & 0xffu);
+}
+
+bool NsStunParseIpv4(const FString& Host, uint32& OutIpv4Host)
+{
+	TArray<FString> Parts;
+	Host.ParseIntoArray(Parts, TEXT("."), true);
+	if (Parts.Num() != 4)
+	{
+		return false;
+	}
+	uint32 Acc = 0;
+	for (int32 i = 0; i < 4; ++i)
+	{
+		const int32 Octet = FCString::Atoi(*Parts[i]);
+		if (Octet < 0 || Octet > 255)
+		{
+			return false;
+		}
+		Acc = (Acc << 8) | static_cast<uint32>(Octet);
+	}
+	OutIpv4Host = Acc;
+	return true;
+}
+
+bool NsRendezvousEncode(uint8 Slot, uint32 Ipv4Host, int32 Port, TArray<uint8>& Out)
+{
+	if (Slot > 2 || Port <= 0 || Port > 65535)
+	{
+		return false;
+	}
+	Out.Reset();
+	Out.Add(static_cast<uint8>(NsRendezvousMagic));
+	Out.Add(static_cast<uint8>(NsRendezvousMagic >> 8));
+	Out.Add(static_cast<uint8>(NsRendezvousMagic >> 16));
+	Out.Add(static_cast<uint8>(NsRendezvousMagic >> 24));
+	Out.Add(Slot);
+	Out.Add(0);
+	const uint16 WirePort = static_cast<uint16>(Port);
+	Out.Add(static_cast<uint8>(WirePort));
+	Out.Add(static_cast<uint8>(WirePort >> 8));
+	Out.Add(static_cast<uint8>(Ipv4Host));
+	Out.Add(static_cast<uint8>(Ipv4Host >> 8));
+	Out.Add(static_cast<uint8>(Ipv4Host >> 16));
+	Out.Add(static_cast<uint8>(Ipv4Host >> 24));
+	return Out.Num() == NsRendezvousBytes;
+}
+
+bool NsRendezvousDecode(const TArray<uint8>& Bytes, uint8& OutSlot, uint32& OutIpv4Host, int32& OutPort)
+{
+	if (Bytes.Num() != NsRendezvousBytes)
+	{
+		return false;
+	}
+	const uint8* Data = Bytes.GetData();
+	const uint32 Magic = static_cast<uint32>(Data[0])
+		| (static_cast<uint32>(Data[1]) << 8)
+		| (static_cast<uint32>(Data[2]) << 16)
+		| (static_cast<uint32>(Data[3]) << 24);
+	if (Magic != NsRendezvousMagic || Data[5] != 0 || Data[4] > 2)
+	{
+		return false;
+	}
+	const int32 Port = static_cast<int32>(Data[6] | (static_cast<uint16>(Data[7]) << 8));
+	if (Port <= 0)
+	{
+		return false;
+	}
+	OutSlot = Data[4];
+	OutPort = Port;
+	OutIpv4Host = static_cast<uint32>(Data[8])
+		| (static_cast<uint32>(Data[9]) << 8)
+		| (static_cast<uint32>(Data[10]) << 16)
+		| (static_cast<uint32>(Data[11]) << 24);
+	return true;
 }

@@ -172,6 +172,61 @@ FNsSelfTestResult NsRunStunBindSelfTest()
 		return StunFail(TEXT("stun: ipv4 string"));
 	}
 
+	TArray<uint8> Ind;
+	if (!NsStunEncodeBindIndication(TxId, Ind) || Ind.Num() != NsStunHeaderBytes)
+	{
+		return StunFail(TEXT("stun: indication size"));
+	}
+	if (Ind[0] != 0 || Ind[1] != 0x11)
+	{
+		return StunFail(TEXT("stun: indication type"));
+	}
+	if (NsStunDecodeMapped(Ind, TxId, GotIp, GotPort))
+	{
+		return StunFail(TEXT("stun: indication decoded as mapped"));
+	}
+	if (!NsStunIsBindIndication(Ind))
+	{
+		return StunFail(TEXT("stun: indication not recognized"));
+	}
+	TArray<uint8> BadInd = Ind;
+	BadInd[7] ^= 1;
+	if (NsStunIsBindIndication(BadInd))
+	{
+		return StunFail(TEXT("stun: bad magic indication accepted"));
+	}
+	if (NsStunIsBindIndication(Req))
+	{
+		return StunFail(TEXT("stun: request treated as indication"));
+	}
+
+	TArray<uint8> Offer;
+	if (!NsRendezvousEncode(1, MappedIp, MappedPort, Offer) || Offer.Num() != NsRendezvousBytes)
+	{
+		return StunFail(TEXT("stun: rendezvous size"));
+	}
+	if (Offer[0] != 0x56 || Offer[1] != 0x52 || Offer[2] != 0x53 || Offer[3] != 0x4E)
+	{
+		return StunFail(TEXT("stun: rendezvous magic"));
+	}
+	uint8 Slot = 99;
+	uint32 OfferIp = 0;
+	int32 OfferPort = 0;
+	if (!NsRendezvousDecode(Offer, Slot, OfferIp, OfferPort)
+		|| Slot != 1 || OfferIp != MappedIp || OfferPort != MappedPort)
+	{
+		return StunFail(TEXT("stun: rendezvous decode"));
+	}
+	if (NsRendezvousDecode(Req, Slot, OfferIp, OfferPort))
+	{
+		return StunFail(TEXT("stun: request treated as rendezvous"));
+	}
+	uint32 ParsedIp = 0;
+	if (!NsStunParseIpv4(TEXT("127.0.0.1"), ParsedIp) || ParsedIp != MappedIp)
+	{
+		return StunFail(TEXT("stun: parse ipv4"));
+	}
+
 	return StunOk(TEXT("stun bind codec"));
 }
 
@@ -294,4 +349,215 @@ FNsSelfTestResult NsRunStunLoopbackSelfTest()
 	}
 
 	return StunOk(FString::Printf(TEXT("stun loopback %s:%d"), *Host, Port));
+}
+
+FNsSelfTestResult NsRunStunPunchSelfTest()
+{
+	FNsUdpNet Sv;
+	FNsUdpNet C0;
+	if (!Sv.Bind(ENsAddr::Sv, 0, false) || !C0.Bind(ENsAddr::C0, 0, false))
+	{
+		return StunFail(TEXT("stun-punch: bind"));
+	}
+	if (!Sv.SetPeer(ENsAddr::C0, TEXT("127.0.0.1"), C0.BoundPort(ENsAddr::C0))
+		|| !C0.SetPeer(ENsAddr::Sv, TEXT("127.0.0.1"), Sv.BoundPort(ENsAddr::Sv)))
+	{
+		return StunFail(TEXT("stun-punch: set peer"));
+	}
+
+	uint8 TxId[NsStunTxIdBytes];
+	NsStunFillTxId(TxId);
+	if (!C0.StunSendIndication(ENsAddr::C0, TEXT("127.0.0.1"), Sv.BoundPort(ENsAddr::Sv), TxId))
+	{
+		return StunFail(TEXT("stun-punch: send indication"));
+	}
+
+	bool bGotInd = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		if (Sv.StunRecvIndication(ENsAddr::Sv))
+		{
+			bGotInd = true;
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (!bGotInd)
+	{
+		return StunFail(TEXT("stun-punch: no indication"));
+	}
+
+	if (!Sv.PunchPeers() || !C0.PunchPeers())
+	{
+		return StunFail(TEXT("stun-punch: punch peers"));
+	}
+	bGotInd = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		if (C0.StunRecvIndication(ENsAddr::C0) || Sv.StunRecvIndication(ENsAddr::Sv))
+		{
+			bGotInd = true;
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (!bGotInd)
+	{
+		return StunFail(TEXT("stun-punch: punch not received"));
+	}
+
+	TArray<FNsPacket> Flush;
+	Sv.Drain(ENsAddr::Sv, Flush);
+	C0.Drain(ENsAddr::C0, Flush);
+
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SInput;
+	Pkt.PlayerId = 0;
+	Pkt.Dx = 1;
+	C0.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
+	TArray<FNsPacket> Got;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Sv.Drain(ENsAddr::Sv, Got);
+		if (Got.Num() > 0)
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (Got.Num() != 1 || Got[0].Dx != 1 || Got[0].Src != ENsAddr::C0)
+	{
+		return StunFail(TEXT("stun-punch: tans after punch"));
+	}
+
+	return StunOk(TEXT("stun punch"));
+}
+
+FNsSelfTestResult NsRunStunRendezvousSelfTest()
+{
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return StunFail(TEXT("stun-rendezvous: no sockets"));
+	}
+	FSocket* Hub = SS->CreateSocket(NAME_DGram, TEXT("NsRendezvousHub"), FName(FNetworkProtocolTypes::IPv4));
+	if (!Hub)
+	{
+		return StunFail(TEXT("stun-rendezvous: hub create"));
+	}
+	Hub->SetNonBlocking(true);
+	TSharedRef<FInternetAddr> BindAddr = SS->CreateInternetAddr();
+	BindAddr->SetLoopbackAddress();
+	BindAddr->SetPort(0);
+	if (!Hub->Bind(*BindAddr))
+	{
+		StunDestroy(Hub);
+		return StunFail(TEXT("stun-rendezvous: hub bind"));
+	}
+	TSharedRef<FInternetAddr> Bound = SS->CreateInternetAddr();
+	Hub->GetAddress(*Bound);
+	const int32 HubPort = Bound->GetPort();
+	if (HubPort <= 0)
+	{
+		StunDestroy(Hub);
+		return StunFail(TEXT("stun-rendezvous: hub port"));
+	}
+
+	FNsUdpNet Sv;
+	FNsUdpNet C0;
+	if (!Sv.Bind(ENsAddr::Sv, 0, false) || !C0.Bind(ENsAddr::C0, 0, false))
+	{
+		StunDestroy(Hub);
+		return StunFail(TEXT("stun-rendezvous: bind"));
+	}
+
+	uint32 HubIp[3] = {};
+	int32 HubPorts[3] = {};
+	bool HubHave[3] = {};
+	bool bSvPeer = false;
+	bool bC0Peer = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Sv.RendezvousSendOffer(ENsAddr::Sv, TEXT("127.0.0.1"), HubPort);
+		C0.RendezvousSendOffer(ENsAddr::C0, TEXT("127.0.0.1"), HubPort);
+		uint8 Buf[64];
+		TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+		int32 Read = 0;
+		while (Hub->RecvFrom(Buf, 64, Read, *From) && Read > 0)
+		{
+			TArray<uint8> Bytes;
+			Bytes.Append(Buf, Read);
+			uint8 Slot = 0;
+			uint32 Ip = 0;
+			int32 Port = 0;
+			if (!NsRendezvousDecode(Bytes, Slot, Ip, Port) || Slot > 2)
+			{
+				continue;
+			}
+			HubIp[Slot] = Ip;
+			HubPorts[Slot] = Port;
+			HubHave[Slot] = true;
+			for (int32 Other = 0; Other < 3; ++Other)
+			{
+				if (Other == static_cast<int32>(Slot) || !HubHave[Other])
+				{
+					continue;
+				}
+				TArray<uint8> Reply;
+				if (!NsRendezvousEncode(static_cast<uint8>(Other), HubIp[Other], HubPorts[Other], Reply))
+				{
+					continue;
+				}
+				int32 Sent = 0;
+				Hub->SendTo(Reply.GetData(), Reply.Num(), Sent, *From);
+			}
+		}
+		bSvPeer = bSvPeer || Sv.RendezvousRecvPeer(ENsAddr::Sv);
+		bC0Peer = bC0Peer || C0.RendezvousRecvPeer(ENsAddr::C0);
+		if (bSvPeer && bC0Peer)
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	StunDestroy(Hub);
+	if (!bSvPeer || !bC0Peer)
+	{
+		return StunFail(TEXT("stun-rendezvous: no peer"));
+	}
+	if (Sv.PeerPort(ENsAddr::C0) != C0.BoundPort(ENsAddr::C0)
+		|| C0.PeerPort(ENsAddr::Sv) != Sv.BoundPort(ENsAddr::Sv))
+	{
+		return StunFail(TEXT("stun-rendezvous: peer port"));
+	}
+
+	if (!Sv.PunchPeers() || !C0.PunchPeers())
+	{
+		return StunFail(TEXT("stun-rendezvous: punch"));
+	}
+	TArray<FNsPacket> Flush;
+	Sv.Drain(ENsAddr::Sv, Flush);
+	C0.Drain(ENsAddr::C0, Flush);
+
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SInput;
+	Pkt.PlayerId = 0;
+	Pkt.Dx = 1;
+	C0.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
+	TArray<FNsPacket> Got;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Sv.Drain(ENsAddr::Sv, Got);
+		if (Got.Num() > 0)
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (Got.Num() != 1 || Got[0].Dx != 1 || Got[0].Src != ENsAddr::C0)
+	{
+		return StunFail(TEXT("stun-rendezvous: tans"));
+	}
+
+	return StunOk(TEXT("stun rendezvous"));
 }

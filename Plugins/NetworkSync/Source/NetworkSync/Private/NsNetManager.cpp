@@ -148,46 +148,72 @@ bool ANsNetManager::BindUdp()
 {
 	Udp.Close();
 	bool bOk = false;
+	const int32 Base = (UdpBasePort > 0) ? UdpBasePort : 27000;
+	const int32 RemoteBase = (UdpRemoteBasePort > 0) ? UdpRemoteBasePort : Base;
+	const TCHAR* Remote = UdpRemoteHost.IsEmpty() ? TEXT("127.0.0.1") : *UdpRemoteHost;
 	if (UdpRole == ENsUdpRole::LocalMesh)
 	{
 		bOk = Udp.BindLoopback(UdpBasePort);
 	}
+	else if (AppliedScheme == ENsScheme::Rollback)
+	{
+		bOk = (UdpRole == ENsUdpRole::Host)
+			? Udp.Bind(ENsAddr::C0, Base + 1, bUdpLan)
+			: Udp.Bind(ENsAddr::C1, Base + 2, bUdpLan);
+	}
+	else if (UdpRole == ENsUdpRole::Host)
+	{
+		bOk = Udp.Bind(ENsAddr::Sv, Base, bUdpLan)
+			&& Udp.Bind(ENsAddr::C0, Base + 1, bUdpLan);
+	}
 	else
 	{
-		const int32 Base = (UdpBasePort > 0) ? UdpBasePort : 27000;
-		const int32 RemoteBase = (UdpRemoteBasePort > 0) ? UdpRemoteBasePort : Base;
-		const TCHAR* Remote = UdpRemoteHost.IsEmpty() ? TEXT("127.0.0.1") : *UdpRemoteHost;
-		if (AppliedScheme == ENsScheme::Rollback)
+		bOk = Udp.Bind(ENsAddr::C1, Base + 2, bUdpLan);
+	}
+	if (!bOk)
+	{
+		return false;
+	}
+	QueryStunIfNeeded();
+	if (UdpRole != ENsUdpRole::LocalMesh)
+	{
+		bool bPeers = false;
+		if (!UdpRendezvousHost.IsEmpty() && UdpRendezvousPort > 0)
 		{
-			if (UdpRole == ENsUdpRole::Host)
+			bPeers = Udp.RendezvousExchange(*UdpRendezvousHost, UdpRendezvousPort);
+			if (!bPeers)
 			{
-				bOk = Udp.Bind(ENsAddr::C0, Base + 1, bUdpLan)
-					&& Udp.SetPeer(ENsAddr::C1, Remote, RemoteBase + 2);
+				UE_LOG(LogNetworkSyncManager, Warning, TEXT("rendezvous got no peer"));
+			}
+		}
+		if (!bPeers)
+		{
+			if (AppliedScheme == ENsScheme::Rollback)
+			{
+				bPeers = (UdpRole == ENsUdpRole::Host)
+					? Udp.SetPeer(ENsAddr::C1, Remote, RemoteBase + 2)
+					: Udp.SetPeer(ENsAddr::C0, Remote, RemoteBase + 1);
+			}
+			else if (UdpRole == ENsUdpRole::Host)
+			{
+				bPeers = Udp.SetPeer(ENsAddr::C1, Remote, RemoteBase + 2);
 			}
 			else
 			{
-				bOk = Udp.Bind(ENsAddr::C1, Base + 2, bUdpLan)
+				bPeers = Udp.SetPeer(ENsAddr::Sv, Remote, RemoteBase)
 					&& Udp.SetPeer(ENsAddr::C0, Remote, RemoteBase + 1);
 			}
 		}
-		else if (UdpRole == ENsUdpRole::Host)
+		if (!bPeers)
 		{
-			bOk = Udp.Bind(ENsAddr::Sv, Base, bUdpLan)
-				&& Udp.Bind(ENsAddr::C0, Base + 1, bUdpLan)
-				&& Udp.SetPeer(ENsAddr::C1, Remote, RemoteBase + 2);
+			return false;
 		}
-		else
+		if (!Udp.PunchPeers())
 		{
-			bOk = Udp.Bind(ENsAddr::C1, Base + 2, bUdpLan)
-				&& Udp.SetPeer(ENsAddr::Sv, Remote, RemoteBase)
-				&& Udp.SetPeer(ENsAddr::C0, Remote, RemoteBase + 1);
+			UE_LOG(LogNetworkSyncManager, Warning, TEXT("udp punch sent none"));
 		}
 	}
-	if (bOk)
-	{
-		QueryStunIfNeeded();
-	}
-	return bOk;
+	return true;
 }
 
 void ANsNetManager::QueryStunIfNeeded()

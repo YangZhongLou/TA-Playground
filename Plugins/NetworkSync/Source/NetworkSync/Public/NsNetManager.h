@@ -87,6 +87,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync", meta = (EditCondition = "bUseUdp", ClampMin = "1", ClampMax = "65535"))
 	int32 UdpStunPort = 3478;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync", meta = (EditCondition = "bUseUdp"))
+	FString UdpRendezvousHost;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "NetworkSync", meta = (EditCondition = "bUseUdp", ClampMin = "1", ClampMax = "65535"))
+	int32 UdpRendezvousPort = 3479;
+
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UFUNCTION(BlueprintPure, Category = "NetworkSync")

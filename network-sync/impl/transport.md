@@ -11,19 +11,23 @@
 ## STUN Binding（RFC 5389）
 
 STUN 不是 `FNsPacket`。字节大端，magic `0x2112A442`，与 TANS 小端 `0x54414E53` 分开。
-`Drain` 解不出 TANS 就丢，所以 Binding 走 `StunSendBind` / `StunRecvMapped`，不要塞进 `ENsMsg`。
+`Drain` 解不出 TANS 就丢，所以 Binding / 打洞 / 会合走 `StunSendBind` / `StunRecvMapped` / `StunSendIndication` / `RendezvousSendOffer`，不要塞进 `ENsMsg`。
 
-只做 Binding：问 STUN 服务器“我的映射 IPv4:port 是什么”。不实现 ICE、打洞、信令。
-`UdpRemoteHost` 仍要人手填。查询发生在 `BindUdp` 成功之后、玩法包之前。`UdpStunHost` 为空则跳过（自动化保持空）。失败只打警告，不拆 socket。
+Binding 问 STUN 服务器“我的映射 IPv4:port 是什么”。Host/Client 在 Binding 之后，对已填的 peer 发 Binding Indication（`0x0011`，无响应），在玩法包之前朝对端开 NAT。LocalMesh 跳过。不实现 ICE、TURN、SDP。
+`UdpStunHost` 为空则跳过 Binding（自动化保持空）。失败只打警告，不拆 socket。
+
+填了 `UdpRendezvousHost` 时，两端把映射地址（无 STUN 则用 `127.0.0.1` + 本机端口）交给已知助手，用小端 magic `0x4E535256`（`NSRV`）换到对端 IPv4:port，再 `SetPeer` 后打洞。助手不是 TANS，`Drain` 会丢。助手为空则仍人手填 `UdpRemoteHost`。自动化保持空。
 
 | 项 | 值 |
 | --- | --- |
 | Binding Request | `0x0001` |
+| Binding Indication | `0x0011`（无响应；peer 不核对 txid） |
 | Success Response | `0x0101` |
 | XOR-MAPPED-ADDRESS | `0x0020`（IPv4 family `0x01`） |
+| 会合 | `NsRendezvousEncode`，12 字节，slot + port + ipv4 |
 | 编解码 | `NsStun.h` |
 
-自动化：`NetworkSync.Stun.Bind`（编解码）、`NetworkSync.Stun.Loopback`（进程内假 STUN + `FNsUdpNet` C0）。不打公网 STUN。
+自动化：`NetworkSync.Stun.Bind`（编解码，含 Indication / 会合）、`NetworkSync.Stun.Loopback`（进程内假 STUN + `FNsUdpNet` C0）、`NetworkSync.Stun.Punch`（两 socket Indication 后 TANS 仍通）、`NetworkSync.Stun.Rendezvous`（假助手换地址后打洞再 TANS）。不打公网 STUN。
 
 ## 包头（所有类型共用）
 
@@ -117,7 +121,7 @@ void OnRecvSeq(uint32 Session, int32 S)
 
 两份编辑器：都勾 `bUseUdp`，一份 `Host`、一份 `Client`，同一 `UdpBasePort`（如 27000），
 `UdpRemoteHost` 填对端 IPv4。局域网勾 `bUdpLan`。
-可选填 `UdpStunHost`（点分 IPv4，不解析 DNS）在 Bind 后打一次 Binding；不要靠它自动改 `UdpRemoteHost`。
+可选填 `UdpStunHost`（点分 IPv4，不解析 DNS）在 Bind 后打一次 Binding。可选填 `UdpRendezvousHost` 用会合助手换对端地址；空则仍填 `UdpRemoteHost`。不要靠 STUN 自动改 `UdpRemoteHost`。
 锁步 / 状态同步的 Host 绑 Sv+C0；回滚 Host 只绑 C0，对端 C1。
 自动化：`NetworkSync.Udp.Split`（锁步）、`.SplitState`、`.SplitRollback`。
 

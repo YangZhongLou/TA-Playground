@@ -2,6 +2,7 @@
 
 #include "NsUdpNet.h"
 #include "NsCodec.h"
+#include "HAL/PlatformProcess.h"
 #include "Sockets.h"
 #include "SocketSubsystem.h"
 #include "IPAddress.h"
@@ -75,6 +76,8 @@ void FNsUdpNet::Close()
 		DestroySock(i);
 		PeerHosts[i].Reset();
 		PeerPorts[i] = 0;
+		MappedIpv4[i] = 0;
+		MappedPorts[i] = 0;
 	}
 	ResetSession();
 }
@@ -345,17 +348,10 @@ bool NsUdpResolve(const TCHAR* Host, int32 Port, TSharedRef<FInternetAddr>& Out)
 	Out = Resolved.ToSharedRef();
 	return true;
 }
-}
 
-bool FNsUdpNet::StunSendBind(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes])
+bool NsUdpSendTo(FSocket* Sock, const TCHAR* Host, int32 Port, const TArray<uint8>& Bytes)
 {
-	const int32 i = static_cast<int32>(Addr);
-	if (i < 0 || i > 2 || !Socks[i] || !TxId)
-	{
-		return false;
-	}
-	TArray<uint8> Bytes;
-	if (!NsStunEncodeBindRequest(TxId, Bytes))
+	if (!Sock || Bytes.Num() <= 0)
 	{
 		return false;
 	}
@@ -370,7 +366,38 @@ bool FNsUdpNet::StunSendBind(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 
 		return false;
 	}
 	int32 Sent = 0;
-	return Socks[i]->SendTo(Bytes.GetData(), Bytes.Num(), Sent, *Dest) && Sent == Bytes.Num();
+	return Sock->SendTo(Bytes.GetData(), Bytes.Num(), Sent, *Dest) && Sent == Bytes.Num();
+}
+}
+
+bool FNsUdpNet::StunSendBind(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes])
+{
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i] || !TxId)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	if (!NsStunEncodeBindRequest(TxId, Bytes))
+	{
+		return false;
+	}
+	return NsUdpSendTo(Socks[i], Host, Port, Bytes);
+}
+
+bool FNsUdpNet::StunSendIndication(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes])
+{
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i] || !TxId)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	if (!NsStunEncodeBindIndication(TxId, Bytes))
+	{
+		return false;
+	}
+	return NsUdpSendTo(Socks[i], Host, Port, Bytes);
 }
 
 bool FNsUdpNet::StunRecvMapped(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes], FString& OutHost, int32& OutPort)
@@ -404,5 +431,144 @@ bool FNsUdpNet::StunRecvMapped(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes], 
 	}
 	OutHost = NsStunIpv4ToString(Ipv4);
 	OutPort = MappedPort;
+	MappedIpv4[i] = Ipv4;
+	MappedPorts[i] = OutPort;
 	return true;
+}
+
+bool FNsUdpNet::StunRecvIndication(ENsAddr Addr)
+{
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i])
+	{
+		return false;
+	}
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return false;
+	}
+	uint8 Buf[512];
+	TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+	int32 Read = 0;
+	if (!Socks[i]->RecvFrom(Buf, 512, Read, *From) || Read <= 0)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	Bytes.Append(Buf, Read);
+	return NsStunIsBindIndication(Bytes);
+}
+
+bool FNsUdpNet::PunchPeers()
+{
+	bool bSent = false;
+	for (int32 From = 0; From < 3; ++From)
+	{
+		if (!Socks[From])
+		{
+			continue;
+		}
+		for (int32 To = 0; To < 3; ++To)
+		{
+			if (Socks[To] || PeerPorts[To] <= 0 || PeerHosts[To].IsEmpty())
+			{
+				continue;
+			}
+			uint8 TxId[NsStunTxIdBytes];
+			NsStunFillTxId(TxId);
+			for (int32 n = 0; n < 3; ++n)
+			{
+				if (StunSendIndication(static_cast<ENsAddr>(From), *PeerHosts[To], PeerPorts[To], TxId))
+				{
+					bSent = true;
+				}
+			}
+		}
+	}
+	return bSent;
+}
+
+bool FNsUdpNet::RendezvousSendOffer(ENsAddr From, const TCHAR* HubHost, int32 HubPort)
+{
+	const int32 i = static_cast<int32>(From);
+	if (i < 0 || i > 2 || !Socks[i])
+	{
+		return false;
+	}
+	const int32 AdvPort = (MappedPorts[i] > 0) ? MappedPorts[i] : LocalPorts[i];
+	uint32 Ipv4 = MappedIpv4[i];
+	if (MappedPorts[i] <= 0 && !NsStunParseIpv4(TEXT("127.0.0.1"), Ipv4))
+	{
+		return false;
+	}
+	if (AdvPort <= 0)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	if (!NsRendezvousEncode(static_cast<uint8>(i), Ipv4, AdvPort, Bytes))
+	{
+		return false;
+	}
+	return NsUdpSendTo(Socks[i], HubHost, HubPort, Bytes);
+}
+
+bool FNsUdpNet::RendezvousRecvPeer(ENsAddr From)
+{
+	const int32 i = static_cast<int32>(From);
+	if (i < 0 || i > 2 || !Socks[i])
+	{
+		return false;
+	}
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return false;
+	}
+	uint8 Buf[64];
+	TSharedRef<FInternetAddr> FromAddr = SS->CreateInternetAddr();
+	int32 Read = 0;
+	if (!Socks[i]->RecvFrom(Buf, 64, Read, *FromAddr) || Read <= 0)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	Bytes.Append(Buf, Read);
+	uint8 Slot = 0;
+	uint32 Ipv4 = 0;
+	int32 Port = 0;
+	if (!NsRendezvousDecode(Bytes, Slot, Ipv4, Port) || Slot > 2 || Socks[Slot])
+	{
+		return false;
+	}
+	return SetPeer(static_cast<ENsAddr>(Slot), *NsStunIpv4ToString(Ipv4), Port);
+}
+
+bool FNsUdpNet::RendezvousExchange(const TCHAR* HubHost, int32 HubPort)
+{
+	bool bPeer = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		for (int32 i = 0; i < 3; ++i)
+		{
+			if (Socks[i])
+			{
+				RendezvousSendOffer(static_cast<ENsAddr>(i), HubHost, HubPort);
+			}
+		}
+		for (int32 i = 0; i < 3; ++i)
+		{
+			if (Socks[i] && RendezvousRecvPeer(static_cast<ENsAddr>(i)))
+			{
+				bPeer = true;
+			}
+		}
+		if (bPeer)
+		{
+			return true;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	return false;
 }
