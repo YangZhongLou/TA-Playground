@@ -55,7 +55,7 @@
 
 热切 `ApplyScheme` 会重建 `LsResync` 与两端 `FNsLockstepResyncClient`。
 分进程 `Host` / `Client` 各有一份客户端 View；停拍只认 LiveSnap 包，不共享 `bCaptured`。
-乐观 Manager 一律走 `NsPumpLockstepResync*`。等齐停拍拉齐是另一包，见 [wait-resync.md](wait-resync.md)。delay 停拍拉齐见 [delay-resync.md](delay-resync.md)。
+乐观 Manager 一律走 `NsPumpLockstepResync*`。等齐停拍拉齐是另一包，见 [wait-resync.md](wait-resync.md)。delay 停拍拉齐见 [delay-resync.md](delay-resync.md)。通信回合停拍拉齐见 [turn-resync.md](turn-resync.md)。
 
 第一版不做按视野裁快照，不做踢人替代。恢复打拍是本包第二里程碑，已做。
 

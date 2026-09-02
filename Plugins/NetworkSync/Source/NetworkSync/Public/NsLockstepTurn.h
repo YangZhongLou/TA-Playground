@@ -37,6 +37,18 @@ inline int32 NsLockstepTurnFrameStart(const TMap<int32, int32>& TurnLen, int32 T
 	return Start;
 }
 
+inline void NsLockstepTurnSyncCursor(int32 LogicFrame, const TMap<int32, int32>& TurnLen,
+	int32 LiveFpt, int32& ExecTurn, int32& ExecTurnStart)
+{
+	ExecTurn = 0;
+	ExecTurnStart = 0;
+	while (LogicFrame >= ExecTurnStart + NsLockstepTurnLen(TurnLen, ExecTurn, LiveFpt))
+	{
+		ExecTurnStart += NsLockstepTurnLen(TurnLen, ExecTurn, LiveFpt);
+		++ExecTurn;
+	}
+}
+
 class NETWORKSYNC_API FNsLockstepTurnServer
 {
 public:
@@ -54,8 +66,12 @@ public:
 	FNsWorld World;
 	TMap<int32, FNsInputs> Cmds;
 	TMap<int32, int32> TurnLen;
+	TMap<int32, uint32> Checksums;
+	int32 ChecksumOk = 0;
+	bool bDesync = false;
 
 	void OnInput(int32 PlayerId, int32 Turn, int8 Dx, double NowMs);
+	void OnChecksum(int32 FrameIndex, uint32 Hash);
 	void Tick(INsNet& Net);
 	void Resend(INsNet& Net);
 };
@@ -78,7 +94,7 @@ public:
 	void SendInput(INsNet& Net, int8 Dx);
 	void OnS2C(const TMap<int32, FNsInputs>& Turns, int32 LiveFpt, int32 ClosedLen,
 		const TMap<int32, int32>& Lens);
-	void Logic();
+	void Logic(INsNet& Net);
 	void CatchUpTo(int32 TargetFrame);
 };
 

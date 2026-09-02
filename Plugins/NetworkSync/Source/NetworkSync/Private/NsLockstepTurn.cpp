@@ -138,6 +138,21 @@ void NsTurnAdjustFpt(int32& FramesPerTurn, double WaitedMs)
 }
 }
 
+void FNsLockstepTurnServer::OnChecksum(int32 FrameIndex, uint32 Hash)
+{
+	if (const uint32* Found = Checksums.Find(FrameIndex))
+	{
+		if (*Found == Hash)
+		{
+			++ChecksumOk;
+		}
+		else
+		{
+			bDesync = true;
+		}
+	}
+}
+
 void FNsLockstepTurnServer::OnInput(int32 PlayerId, int32 Turn, int8 Dx, double NowMs)
 {
 	if (PlayerId < 0 || PlayerId >= Ns::PlayerCount || Turn < 0 || Turn > CollectTurn)
@@ -210,7 +225,16 @@ void FNsLockstepTurnServer::Tick(INsNet& Net)
 		TurnStartMs = Net.Now;
 	}
 
+	const int32 FrameBefore = Frame;
 	NsTurnTryStep(Frame, ExecTurn, ExecTurnStart, Cmds, TurnLen, FramesPerTurn, World, nullptr);
+	if (Frame > FrameBefore)
+	{
+		const int32 Done = Frame - 1;
+		if (Done % Ns::ChecksumEvery == 0)
+		{
+			Checksums.Add(Done, World.Checksum());
+		}
+	}
 	Resend(Net);
 	const int32 ClientKeepFrom = FMath::Max(0,
 		FMath::Min(ClientNeedTurn[0], ClientNeedTurn[1]) - NsLockstepTurnResendTurns);
@@ -276,10 +300,24 @@ void FNsLockstepTurnClient::OnS2C(const TMap<int32, FNsInputs>& Turns, int32 Liv
 	}
 }
 
-void FNsLockstepTurnClient::Logic()
+void FNsLockstepTurnClient::Logic(INsNet& Net)
 {
+	const int32 FrameBefore = ExecFrame;
 	NsTurnTryStep(ExecFrame, ExecTurn, ExecTurnStart,
 		Cmds, TurnLen, FramesPerTurn, World, PrevX);
+	if (ExecFrame > FrameBefore)
+	{
+		const int32 Done = ExecFrame - 1;
+		if (Done % Ns::ChecksumEvery == 0)
+		{
+			FNsPacket Pkt;
+			Pkt.Type = ENsMsg::C2SChecksum;
+			Pkt.PlayerId = PlayerId;
+			Pkt.Tick = Done;
+			Pkt.Hash = World.Checksum();
+			Net.Send(Addr, ENsAddr::Sv, Pkt);
+		}
+	}
 	NsTurnPruneBefore(Cmds, TurnLen, ExecTurn - NsLockstepTurnResendTurns);
 }
 
@@ -308,6 +346,10 @@ void NsPumpLockstepTurnServer(INsNet& Net, FNsLockstepTurnServer& Sv, bool bWait
 			}
 			Sv.OnInput(Id, P.SeqWindow[0], P.DxWindow[0], Net.Now);
 		}
+		else if (P.Type == ENsMsg::C2SChecksum)
+		{
+			Sv.OnChecksum(P.Tick, P.Hash);
+		}
 	}
 	Sv.Tick(Net);
 }
@@ -323,5 +365,5 @@ void NsPumpLockstepTurnClient(INsNet& Net, FNsLockstepTurnClient& C, bool bWait)
 			C.OnS2C(P.Frames, P.Tick, P.BaseTick, P.TurnFpt);
 		}
 	}
-	C.Logic();
+	C.Logic(Net);
 }

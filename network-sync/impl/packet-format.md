@@ -110,7 +110,7 @@ payload 长度：`3 + 5×win`。乐观锁步整包 27 字节。等齐 `win=1` �
 | 偏移 | 宽 | 类型 | 字段 | 约束 |
 | --- | --- | --- | --- | --- |
 | 0 | 4 | u32 | latest | 本包最大 frame。等于下面 keys 的最后一个。解码读掉但不单独存 |
-| 4 | 1 | u8 | count | 后面拍数。`>255` 失败。实现里 1–4 |
+| 4 | 1 | u8 | count | 后面拍数。`>255` 失败。实现里乐观 / 等齐 / delay 为 1–4；通信回合恢复令牌为 0 |
 | 5 | 6×count 或 7×count | — | 拍 | 每拍 `u32 frame + i8 dx0 + i8 dx1`；通信回合再加 `u8` 回合长度 |
 
 一拍：
@@ -221,7 +221,7 @@ payload 9 字节。整包 33 字节。锁步客户端每 15 拍发一次。服�
 payload 长度：`17 + 6×count`。乐观锁步服务器每 75 拍存一份 `SnapWorld`，`SendJoin` 连发两次。
 固定延迟锁步每 4 拍发送 `count=1` 的权威恢复快照（带刚完成拍的 Hist），跨过连续丢失的 `S2CFrame` 缺口。
 超 MTU 时同一快照切成多个 JoinSnap，每片独立成 UDP 包。
-停拍拉齐复用本 type：`count=0`，`exec_frame` / x / rng 来自**当前**服务器世界。客户端据此停拍；带 `frame >= HaltTick` 的 `S2CFrame` 恢复。见 [hybrid/resync.md](hybrid/resync.md)。delay 恢复快照必须 `count=1`，避免被当成 LiveSnap。
+停拍拉齐复用本 type：`count=0`，`exec_frame` / x / rng 来自**当前**服务器世界。客户端据此停拍；乐观 / 等齐 / delay 带 `frame >= HaltTick` 的 `S2CFrame` 恢复。通信回合用空 `S2CFrame` 恢复，见 [hybrid/turn-resync.md](hybrid/turn-resync.md)。delay 恢复快照必须 `count=1`，避免被当成 LiveSnap。
 
 ## 8 `S2CDoorOpen`
 

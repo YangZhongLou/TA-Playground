@@ -253,8 +253,8 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | 内核 | `World.*` | 确定性、clamp、Reset |
 | 编解码 | `Codec.*` | 往返（含 Frame/Checksum/JoinSnap）、拒收、MTU 拆包（S2C/Join/C2S/P2P） |
 | 传输 | `FakeNet.*`、`Udp.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程锁步/状态同步/回滚、突发 |
-| 锁步 | `Lockstep.*` | 乐观：干净、Drop、Join、空洞、分叉。等齐：`Lockstep.Wait.*`（含 Join、停拍拉齐）。通信回合：`Lockstep.Turn.*`（含 Speed / Recovery）。delay：`Lockstep.Delay.*`（含停拍拉齐） |
-| 结合 | `Lockstep.Resync.*` / `Lockstep.Wait.Resync.*` / `Lockstep.Delay.Resync.*` / `LockstepDoor.*` | 乐观、等齐、delay 停拍强制回跳与恢复（含包驱动 Host/Client）；假网络乐观演示走同一泵并叠门；FakeNet 门；检查点用 `Lockstep.Join*`；切段 `SchemeSwitch` / `SchemeApply` |
+| 锁步 | `Lockstep.*` | 乐观：干净、Drop、Join、空洞、分叉。等齐：`Lockstep.Wait.*`（含 Join、停拍拉齐）。通信回合：`Lockstep.Turn.*`（含 Speed / Recovery / 停拍拉齐）。delay：`Lockstep.Delay.*`（含停拍拉齐） |
+| 结合 | `Lockstep.Resync.*` / `Lockstep.Wait.Resync.*` / `Lockstep.Turn.Resync.*` / `Lockstep.Delay.Resync.*` / `LockstepDoor.*` | 四支锁步停拍强制回跳与恢复（含包驱动 Host/Client）；假网络乐观演示走同一泵并叠门；FakeNet 门；检查点用 `Lockstep.Join*`；切段 `SchemeSwitch` / `SchemeApply` |
 | 状态同步 | `StateSync.*` | 和解、倒带、nack 全量、Inbox 空洞/上限、长断线排空、旧快照忽略、Src 身份 |
 | 回滚 | `Rollback.*` | 干净、WAIT、Confirmed 不跳空洞（前缀/中间）、冲突输入终止态 |
 | 运行时 | `Runtime.SchemeSwitch` / `Runtime.SchemeApply` | 热切后锁步不追 `Now`、队列清空；`ApplyScheme` 重建协议且锁步不继承 `PredX` |
@@ -270,7 +270,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 
 | 未做 | 影响 |
 | --- | --- |
-| 停拍拉齐 | 乐观、等齐、delay Manager 走各自停拍泵；Host/Client 靠 LiveSnap 包。通信回合尚未叠 |
+| 停拍拉齐 | 四支锁步 Manager 走各自停拍泵；Host/Client 靠 LiveSnap 包。通信回合用空 `S2CFrame` 恢复 |
 | 锁步加门 | 乐观 Manager 已叠 `S2CDoorOpen`；不接 `UNetDriver` / `ANsDoor` |
 | NAT / STUN | 地址表手工填 IP:port |
 | 多人 / AOI | 地址写死 Sv/C0/C1 |
@@ -289,7 +289,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | [schemes/README.md](schemes/README.md) | 四篇协议细则 |
 | [impl/README.md](impl/README.md) | 实现规格与如何运行 |
 | [impl/lockstep-kinds.md](impl/lockstep-kinds.md) | 四支锁步内核如何互斥落地 |
-| [impl/hybrid/README.md](impl/hybrid/README.md) | 结合包：检查点 / 切段 / 停拍拉齐 / 等齐与 delay 停拍拉齐 / 锁步加门 |
+| [impl/hybrid/README.md](impl/hybrid/README.md) | 结合包：检查点 / 切段 / 停拍拉齐 / 等齐、回合、delay 停拍拉齐 / 锁步加门 |
 | [impl/packet-format.md](impl/packet-format.md) | 帧字节格式 |
 | [cases/compare-three.md](cases/compare-three.md) | 守望先锋 / Dota 2 / 王者 |
 | `Plugins/NetworkSync/` | UE 插件源码 |
@@ -310,6 +310,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | `FNsLockstepResync` | `Public/NsLockstepResync.h` |
 | `NsPumpLockstepWaitResync*` | `Public/NsLockstepWaitResync.h` |
 | `NsPumpLockstepDelayResync*` | `Public/NsLockstepDelayResync.h` |
+| `NsPumpLockstepTurnResync*` | `Public/NsLockstepTurnResync.h` |
 | `FNsLockstepDoorServer` / `Client` | `Public/NsLockstepDoor.h` |
 | `FNsStateSyncServer` / `Client` | `Public/NsStateSync.h` |
 | `FNsRollbackPeer` | `Public/NsRollback.h` |

@@ -4,6 +4,7 @@
 #include "NsReplicatedActor.h"
 #include "NsDoor.h"
 #include "NsLockstepWaitResync.h"
+#include "NsLockstepTurnResync.h"
 #include "NsLockstepDelayResync.h"
 #include "NsPump.h"
 #include "NsTypes.h"
@@ -430,15 +431,15 @@ void ANsNetManager::TickLockstep()
 
 			if (RunsServer())
 			{
-				NsPumpLockstepTurnServer(Wire(), TurnSv);
+				NsPumpLockstepTurnResyncServer(Wire(), TurnSv, LsResync);
 			}
 			if (RunsC0())
 			{
-				NsPumpLockstepTurnClient(Wire(), TurnC0);
+				NsPumpLockstepTurnResyncClient(Wire(), TurnC0, LsResyncC0);
 			}
 			if (RunsC1())
 			{
-				NsPumpLockstepTurnClient(Wire(), TurnC1);
+				NsPumpLockstepTurnResyncClient(Wire(), TurnC1, LsResyncC1);
 			}
 
 			Wire().Advance(Ns::LogicDtMs);

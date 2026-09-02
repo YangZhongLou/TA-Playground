@@ -93,3 +93,10 @@ World.Step(I)
 只带 NextFpt 的 reserved（高四位 0）仍解码。
 验收：`NetworkSync.Lockstep.Turn.Speed` — 人为把 C1 的处理变慢，全场 `FramesPerTurn` 上升，且两端 `World` 仍同位。
 `NetworkSync.Lockstep.Turn.LenDrop` — 升 FPT 后丢掉 C1 的 `S2CFrame`，每回合 dx 不同，Resend 后世界同位且 `TurnLen[Closed]` 与主机一致。
+
+## 第三里程碑：停拍拉齐
+
+另开 `NsLockstepTurnResync.*`，不要新 Kind，不要改 `Tick`。
+内核补 `Checksums` / `OnChecksum` / `bDesync`，供停拍泵读取。
+恢复用空 `S2CFrame`，不要用回合号 `>= HaltTick`。
+规格：[hybrid/turn-resync.md](hybrid/turn-resync.md)。验收：`NetworkSync.Lockstep.Turn.Resync.*`。

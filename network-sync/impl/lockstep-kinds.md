@@ -18,6 +18,7 @@ Speed Control 是 `CommTurn` 的第二里程碑，不是第五支内核。
 等齐 Join 是 `Conservative` 的第二里程碑，同样不是新 Kind。
 等齐停拍拉齐是第三里程碑：独立泵 `NsPumpLockstepWaitResync*`，规格 [hybrid/wait-resync.md](hybrid/wait-resync.md)。
 delay 停拍拉齐同样是第三里程碑：独立泵 `NsPumpLockstepDelayResync*`，规格 [hybrid/delay-resync.md](hybrid/delay-resync.md)。
+通信回合停拍拉齐同样是第三里程碑：独立泵 `NsPumpLockstepTurnResync*`，规格 [hybrid/turn-resync.md](hybrid/turn-resync.md)。
 空输入 vs `Latest`、追帧限流，是某支内核里的字段，不是新 Kind。
 
 ## 禁止并进 Lockstep 的
