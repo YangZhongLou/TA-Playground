@@ -57,6 +57,10 @@ void NsPumpLockstepDelayResyncServer(INsNet& Net, FNsLockstepDelayServer& Sv, FN
 				Sv.OnChecksum(P.Tick, P.Hash);
 			}
 		}
+		else if (P.Type == ENsMsg::C2SFrameNack && !Sv.bDesync)
+		{
+			Sv.OnNack(Net, P.Src, P.SeqWindow);
+		}
 	}
 
 	if (Sv.bDesync && Resync.Acked[0] && Resync.Acked[1] && !Resync.bGiveUp)

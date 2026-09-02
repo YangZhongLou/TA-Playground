@@ -148,7 +148,7 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | `C2SChecksum` | 客 → 服 | 锁步每 15 拍校验 |
 | `S2CJoinSnap` | 服 → 客 | 锁步重连：世界 + 快照之后的输入 |
 | `S2CDoorOpen` | 服 → 客 | 锁步加门开关，不带 pawn `X` |
-| `C2SFrameNack` | 客 → 服 | 乐观锁步点名缺拍；回复 `S2CFrame` 或 Join |
+| `C2SFrameNack` | 客 → 服 | 锁步点名缺拍；回复 `S2CFrame` 或 Join |
 
 逐字节布局以 [impl/packet-format.md](impl/packet-format.md) 为准。
 
@@ -255,7 +255,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | 内核 | `World.*` | 确定性、clamp、Reset |
 | 编解码 | `Codec.*` | 往返（含 Frame/Checksum/JoinSnap）、拒收、MTU 拆包（S2C/Join/C2S/P2P） |
 | 传输 | `FakeNet.*`、`Udp.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程锁步/状态同步/回滚、突发 |
-| 锁步 | `Lockstep.*` | 乐观：干净、Drop、Join、空洞、按号 NACK、分叉。等齐：`Lockstep.Wait.*`（含 Join、停拍拉齐、超时踢人）。通信回合：`Lockstep.Turn.*`（含 Speed / Recovery / 停拍拉齐）。delay：`Lockstep.Delay.*`（含停拍拉齐、按 RTT 调 `d`） |
+| 锁步 | `Lockstep.*` | 乐观：干净、Drop、Join、空洞、按号 NACK、分叉。等齐：`Lockstep.Wait.*`（含 Join、按号 NACK、停拍拉齐、超时踢人）。通信回合：`Lockstep.Turn.*`（含 Speed / Recovery / 停拍拉齐）。delay：`Lockstep.Delay.*`（含停拍拉齐、按 RTT 调 `d`、按号 NACK） |
 | 结合 | `Lockstep.Resync.*` / `Lockstep.Wait.Resync.*` / `Lockstep.Turn.Resync.*` / `Lockstep.Delay.Resync.*` / `LockstepDoor.*` | 四支锁步停拍强制回跳与恢复（含包驱动 Host/Client 与 `*.Resync.Udp`）；四支停拍均可改踢分叉槽（`*.Resync.Kick*`）；假网络四支锁步走各自停拍泵并叠门；FakeNet 门；检查点用 `Lockstep.Join*`；切段 `SchemeSwitch` / `SchemeApply` |
 | 状态同步 | `StateSync.*` | 和解、倒带、nack 全量、Inbox 空洞/上限、长断线排空、旧快照忽略、Src 身份 |
 | 回滚 | `Rollback.*` | 干净、WAIT、Confirmed 不跳空洞（前缀/中间）、冲突输入终止态 |
@@ -268,7 +268,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 
 ## 已知边界
 
-已闭环：两人整数世界、假网络字节头、本机与分进程 UDP、三套协议主循环、checksum、有序 Inbox、增量 nack、回滚空洞、锁步周期 Join、乐观按号 NACK、四支停拍踢分叉者、复制整数与门。
+已闭环：两人整数世界、假网络字节头、本机与分进程 UDP、三套协议主循环、checksum、有序 Inbox、增量 nack、回滚空洞、锁步周期 Join、乐观/等齐/delay 按号 NACK、四支停拍踢分叉者、复制整数与门。
 
 | 未做 | 影响 |
 | --- | --- |

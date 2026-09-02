@@ -41,7 +41,9 @@ public:
 
 	void OnInput(int32 PlayerId, int32 Tick, int8 Dx);
 	void OnChecksum(int32 FrameIndex, uint32 Hash);
+	void OnNack(INsNet& Net, ENsAddr Dst, const TArray<int32>& Frames);
 	void Tick(INsNet& Net);
+	void SendJoin(INsNet& Net, ENsAddr Dst) const;
 };
 
 class NETWORKSYNC_API FNsLockstepDelayClient

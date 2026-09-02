@@ -123,3 +123,9 @@ Join 与乐观同一套 `S2CJoinSnap`：`Tick > ExecFrame` 才跳世界，尾巴
 仍在 `NsLockstepWait.*` 的 `Tick` 里加，不要新 Kind，不要新消息。
 `KickAfterStalls=0`（默认）保持验收 2 的填空。大于 0 时从等待集拿掉槽，不缩小 `FNsWorld`。
 验收：`NetworkSync.Lockstep.Wait.Kick` / `KickResume`。
+
+## 第五里程碑：按号 NACK
+
+仍在 `NsLockstepWait.*` 里加，不要新 Kind，不要改 `Tick`。
+`Buf` 有未来拍而缺 `ExecFrame` 时发 `C2SFrameNack`。泵 Drain `OnNack`：`Hist` 命中单播 `S2CFrame`，已裁则 `SendJoin`。停拍时忽略。
+验收：`NetworkSync.Lockstep.Wait.Nack` / `.NackJoin`。

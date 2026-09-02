@@ -134,7 +134,7 @@
 | 帧号 | 检测缺、重、乱序 | `ExecFrame` 禁止跳 |
 | 冗余窗 | 每包带前 k 拍，抗短突发 | `RedundantFrames=3` |
 | 周期 Join 尾巴 | 快照之后的 `Hist` 给晚加入 | 每 4 拍 `S2CJoinSnap`；快照每 75 拍 |
-| 按号 NACK | 客户端点名缺哪几拍 | 乐观：`C2SFrameNack`，`Hist` 命中单播 `S2CFrame`，已裁则 Join。等齐/回合/delay 仍靠 Join |
+| 按号 NACK | 客户端点名缺哪几拍 | 乐观 / 等齐：`C2SFrameNack`，`Hist` 命中单播 `S2CFrame`，已裁则 Join。delay：空洞几乎已裁，NACK 立刻 Join。通信回合仍靠 Resend |
 | TCP | 队头阻塞 | 禁止 |
 
 k 随丢包升高是王者的做法。本插件 k 写死为 3。

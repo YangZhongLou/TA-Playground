@@ -44,6 +44,18 @@ static void DelayPump(FNsFakeNet& Net, FNsLockstepDelayServer& Sv,
 	NsPumpLockstepDelayClient(Net, C1);
 }
 
+static void DelaySendAt(FNsFakeNet& Net, const FNsLockstepDelayClient& C, int32 Seq, int8 Dx)
+{
+	const int8 Clamped = NsClampDx(Dx);
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SInput;
+	Pkt.PlayerId = C.PlayerId;
+	Pkt.Dx = Clamped;
+	Pkt.SeqWindow.Add(Seq);
+	Pkt.DxWindow.Add(Clamped);
+	Net.Send(C.Addr, ENsAddr::Sv, Pkt);
+}
+
 static void DelayCatchUp(FNsFakeNet& Net, FNsLockstepDelayClient& C0, FNsLockstepDelayClient& C1)
 {
 	Net.Advance(Net.RttMs + Net.JitterMs + 1.0);
@@ -343,4 +355,84 @@ FNsSelfTestResult NsRunLockstepDelayRecoverySelfTest()
 		return DelayFail(TEXT("lockstep-delay-recovery: clients diverged"));
 	}
 	return DelayOk(FString::Printf(TEXT("lockstep-delay-recovery frame=%d"), C0.ExecFrame));
+}
+
+FNsSelfTestResult NsRunLockstepDelayNackSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepDelayServer Sv;
+	FNsLockstepDelayClient C0;
+	FNsLockstepDelayClient C1;
+	DelayInit(C0, C1);
+
+	for (int32 i = 0; i < 8; ++i)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		DelayPump(Net, Sv, C0, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+
+	for (int32 i = 0; i < 6; ++i)
+	{
+		const int32 Seq = (C1.KnownFrame < 0) ? C1.DelayFrames : C1.KnownFrame + C1.DelayFrames;
+		DelaySendAt(Net, C0, Seq, 1);
+		C1.SendInput(Net, -1);
+		NsPumpLockstepDelayServer(Net, Sv);
+		NsPumpLockstepDelayClient(Net, C1);
+		TArray<FNsPacket> Dropped;
+		Net.Drain(ENsAddr::C0, Dropped);
+		Net.Advance(Ns::LogicDtMs);
+	}
+
+	const int32 Hole = C0.ExecFrame;
+	{
+		const int32 Seq = (C1.KnownFrame < 0) ? C1.DelayFrames : C1.KnownFrame + C1.DelayFrames;
+		DelaySendAt(Net, C0, Seq, 1);
+	}
+	C1.SendInput(Net, -1);
+	NsPumpLockstepDelayServer(Net, Sv);
+	NsPumpLockstepDelayClient(Net, C0);
+	NsPumpLockstepDelayClient(Net, C1);
+	if (C0.ExecFrame != Hole || C0.Buf.Contains(Hole) || C0.ExecFrame >= C1.ExecFrame)
+	{
+		return DelayFailStr(FString::Printf(
+			TEXT("lockstep-delay-nack: no hole exec=%d peer=%d"), C0.ExecFrame, C1.ExecFrame));
+	}
+
+	NsPumpLockstepDelayServer(Net, Sv);
+	NsPumpLockstepDelayClient(Net, C1);
+	TArray<FNsPacket> Reply;
+	Net.Drain(ENsAddr::C0, Reply);
+	bool bJoin = false;
+	for (const FNsPacket& P : Reply)
+	{
+		if (P.Type == ENsMsg::S2CJoinSnap)
+		{
+			bJoin = true;
+			C0.ApplyJoin(P);
+		}
+		else if (P.Type == ENsMsg::S2CFrame)
+		{
+			C0.OnS2C(P.Frames);
+		}
+	}
+	if (!bJoin)
+	{
+		return DelayFail(TEXT("lockstep-delay-nack: expected Join"));
+	}
+	C0.Logic(Net);
+	if (C0.ExecFrame != C1.ExecFrame)
+	{
+		return DelayFailStr(FString::Printf(
+			TEXT("lockstep-delay-nack: stuck exec=%d peer=%d"), C0.ExecFrame, C1.ExecFrame));
+	}
+	if (!C0.World.Equals(C1.World) || !C0.World.Equals(Sv.World))
+	{
+		return DelayFail(TEXT("lockstep-delay-nack: worlds diverged"));
+	}
+	return DelayOk(FString::Printf(TEXT("lockstep-delay-nack hole=%d exec=%d"), Hole, C0.ExecFrame));
 }

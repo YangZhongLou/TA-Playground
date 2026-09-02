@@ -35,7 +35,7 @@ type（`ENsMsg`）：
 | 6 | `C2SChecksum` | 锁步校验 |
 | 7 | `S2CJoinSnap` | 锁步重连快照 |
 | 8 | `S2CDoorOpen` | 锁步加门开关 |
-| 9 | `C2SFrameNack` | 乐观锁步按号补发 |
+| 9 | `C2SFrameNack` | 锁步按号补发 |
 
 payload 紧跟 24 字节头。逐字段宽度、示例和长度公式见 [packet-format.md](packet-format.md)。
 单数据报 UDP 载荷 ≤ 1200 字节，避免 IP 分片把丢包放大。超长在应用层拆成多个完整 Ns 包，见 `NsSplitForMtu`。Src/Dst 不进字节。

@@ -44,6 +44,18 @@ static void WaitPump(FNsFakeNet& Net, FNsLockstepWaitServer& Sv,
 	NsPumpLockstepWaitClient(Net, C1);
 }
 
+static void WaitSendAt(FNsFakeNet& Net, const FNsLockstepWaitClient& C, int32 Tick, int8 Dx)
+{
+	const int8 Clamped = NsClampDx(Dx);
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SInput;
+	Pkt.PlayerId = C.PlayerId;
+	Pkt.Dx = Clamped;
+	Pkt.SeqWindow.Add(Tick);
+	Pkt.DxWindow.Add(Clamped);
+	Net.Send(C.Addr, ENsAddr::Sv, Pkt);
+}
+
 FNsSelfTestResult NsRunLockstepWaitCleanSelfTest()
 {
 	FNsFakeNet Net;
@@ -441,4 +453,136 @@ FNsSelfTestResult NsRunLockstepWaitKickResumeSelfTest()
 			Sv.Frame, Sv.Alive[1] ? 1 : 0));
 	}
 	return WaitOk(TEXT("lockstep-wait-kick-resume"));
+}
+
+FNsSelfTestResult NsRunLockstepWaitNackSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepWaitServer Sv;
+	FNsLockstepWaitClient C0;
+	FNsLockstepWaitClient C1;
+	WaitInit(C0, C1);
+
+	for (int32 i = 0; i < 8; ++i)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		WaitPump(Net, Sv, C0, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+
+	for (int32 i = 0; i < 6; ++i)
+	{
+		WaitSendAt(Net, C0, Sv.Frame, 1);
+		C1.SendInput(Net, -1);
+		NsPumpLockstepWaitServer(Net, Sv);
+		NsPumpLockstepWaitClient(Net, C1);
+		TArray<FNsPacket> Dropped;
+		Net.Drain(ENsAddr::C0, Dropped);
+		Net.Advance(Ns::LogicDtMs);
+	}
+
+	const int32 Hole = C0.ExecFrame;
+	WaitSendAt(Net, C0, Sv.Frame, 1);
+	C1.SendInput(Net, -1);
+	NsPumpLockstepWaitServer(Net, Sv);
+	NsPumpLockstepWaitClient(Net, C0);
+	NsPumpLockstepWaitClient(Net, C1);
+	if (C0.ExecFrame != Hole || C0.Buf.Contains(Hole) || C0.ExecFrame >= C1.ExecFrame)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-nack: no hole exec=%d peer=%d"), C0.ExecFrame, C1.ExecFrame));
+	}
+
+	NsPumpLockstepWaitServer(Net, Sv);
+	TArray<FNsPacket> Reply;
+	Net.Drain(ENsAddr::C0, Reply);
+	bool bFrame = false;
+	for (const FNsPacket& P : Reply)
+	{
+		if (P.Type == ENsMsg::S2CJoinSnap)
+		{
+			return WaitFail(TEXT("lockstep-wait-nack: used Join"));
+		}
+		if (P.Type == ENsMsg::S2CFrame && P.Frames.Contains(Hole))
+		{
+			bFrame = true;
+			C0.OnS2C(P.Frames);
+		}
+	}
+	if (!bFrame)
+	{
+		return WaitFail(TEXT("lockstep-wait-nack: no Hist replay"));
+	}
+	C0.Logic(Net);
+	if (C0.ExecFrame != C1.ExecFrame)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-nack: stuck exec=%d peer=%d"), C0.ExecFrame, C1.ExecFrame));
+	}
+	if (!C0.World.Equals(C1.World))
+	{
+		return WaitFail(TEXT("lockstep-wait-nack: worlds diverged"));
+	}
+	return WaitOk(FString::Printf(TEXT("lockstep-wait-nack hole=%d exec=%d"), Hole, C0.ExecFrame));
+}
+
+FNsSelfTestResult NsRunLockstepWaitNackJoinSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepWaitServer Sv;
+	FNsLockstepWaitClient C0;
+	FNsLockstepWaitClient C1;
+	WaitInit(C0, C1);
+
+	for (int32 i = 0; i < 5; ++i)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		WaitPump(Net, Sv, C0, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+	const int32 Stale = C0.ExecFrame;
+
+	for (int32 i = 0; i < Ns::JoinSnapEvery + 10; ++i)
+	{
+		WaitSendAt(Net, C0, Sv.Frame, 1);
+		C1.SendInput(Net, -1);
+		NsPumpLockstepWaitServer(Net, Sv);
+		NsPumpLockstepWaitClient(Net, C1);
+		TArray<FNsPacket> Dropped;
+		Net.Drain(ENsAddr::C0, Dropped);
+		Net.Advance(Ns::LogicDtMs);
+	}
+
+	if (Sv.Hist.Contains(Stale) || Sv.SnapFrame < 0)
+	{
+		return WaitFail(TEXT("lockstep-wait-nack-join: Hist still has stale"));
+	}
+
+	FNsPacket Nack;
+	Nack.Type = ENsMsg::C2SFrameNack;
+	Nack.PlayerId = 0;
+	Nack.SeqWindow.Add(Stale);
+	Net.Send(ENsAddr::C0, ENsAddr::Sv, Nack);
+	NsPumpLockstepWaitServer(Net, Sv);
+	NsPumpLockstepWaitClient(Net, C0);
+	NsPumpLockstepWaitClient(Net, C1);
+	if (C0.ExecFrame <= Stale + 8)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-nack-join: still stuck exec=%d"), C0.ExecFrame));
+	}
+	if (!C0.World.Equals(C1.World) || C0.ExecFrame != C1.ExecFrame)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-nack-join: worlds exec=%d peer=%d"), C0.ExecFrame, C1.ExecFrame));
+	}
+	return WaitOk(FString::Printf(TEXT("lockstep-wait-nack-join stale=%d exec=%d"), Stale, C0.ExecFrame));
 }

@@ -28,6 +28,45 @@ void FNsLockstepWaitServer::OnChecksum(int32 FrameIndex, uint32 Hash)
 	}
 }
 
+void FNsLockstepWaitServer::OnNack(INsNet& Net, ENsAddr Dst, const TArray<int32>& Frames)
+{
+	if (Dst != ENsAddr::C0 && Dst != ENsAddr::C1)
+	{
+		return;
+	}
+	TMap<int32, FNsInputs> Packed;
+	bool bMiss = false;
+	for (int32 F : Frames)
+	{
+		if (F < 0)
+		{
+			continue;
+		}
+		if (const FNsInputs* Found = Hist.Find(F))
+		{
+			Packed.Add(F, *Found);
+		}
+		else
+		{
+			bMiss = true;
+			break;
+		}
+	}
+	if (bMiss)
+	{
+		SendJoin(Net, Dst);
+		return;
+	}
+	if (Packed.Num() == 0)
+	{
+		return;
+	}
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::S2CFrame;
+	Pkt.Frames = Packed;
+	Net.Send(ENsAddr::Sv, Dst, Pkt);
+}
+
 void FNsLockstepWaitServer::Tick(INsNet& Net)
 {
 	bool bWaiting = false;
@@ -221,6 +260,37 @@ void FNsLockstepWaitClient::Logic(INsNet& Net)
 		Buf.Remove(ExecFrame);
 		++ExecFrame;
 	}
+
+	int32 Future = ExecFrame;
+	bool bHole = false;
+	for (const TPair<int32, FNsInputs>& Kv : Buf)
+	{
+		if (Kv.Key > ExecFrame)
+		{
+			bHole = true;
+			Future = FMath::Max(Future, Kv.Key);
+		}
+	}
+	if (!bHole)
+	{
+		return;
+	}
+
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SFrameNack;
+	Pkt.PlayerId = PlayerId;
+	for (int32 F = ExecFrame; F < Future && Pkt.SeqWindow.Num() < Ns::LockstepNackMax; ++F)
+	{
+		if (Buf.Contains(F))
+		{
+			break;
+		}
+		Pkt.SeqWindow.Add(F);
+	}
+	if (Pkt.SeqWindow.Num() > 0)
+	{
+		Net.Send(Addr, ENsAddr::Sv, Pkt);
+	}
 }
 
 void NsPumpLockstepWaitServer(INsNet& Net, FNsLockstepWaitServer& Sv, bool bWait)
@@ -241,6 +311,10 @@ void NsPumpLockstepWaitServer(INsNet& Net, FNsLockstepWaitServer& Sv, bool bWait
 		else if (P.Type == ENsMsg::C2SChecksum)
 		{
 			Sv.OnChecksum(P.Tick, P.Hash);
+		}
+		else if (P.Type == ENsMsg::C2SFrameNack && !Sv.bDesync)
+		{
+			Sv.OnNack(Net, P.Src, P.SeqWindow);
 		}
 	}
 	Sv.Tick(Net);

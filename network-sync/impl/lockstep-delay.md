@@ -70,4 +70,10 @@ Manager 默认仍是 3。`HighRtt` 继续用默认 3，证明 `d` 不够会停�
 仍在 `NsLockstepDelay.*` 里加，不要新 Kind。
 `NsLockstepDelayFromRtt` / `NsLockstepDelayApplyFrames`。验收：`NetworkSync.Lockstep.Delay.FromRtt` / `Adapt`。
 
+## 第五里程碑：按号 NACK
+
+仍在 `NsLockstepDelay.*` 里加，不要新 Kind，不要改 `Tick`。
+空洞时发 `C2SFrameNack`。`Hist` 只留冗余窗，真实空洞几乎总是已裁：`OnNack` 走 `SendJoin`（当前世界，`count=1`）。停拍时忽略。
+验收：`NetworkSync.Lockstep.Delay.Nack`。
+
 格斗手感不够再去 `ENsScheme::Rollback`，不要在本 Kind 里猜远程输入。
