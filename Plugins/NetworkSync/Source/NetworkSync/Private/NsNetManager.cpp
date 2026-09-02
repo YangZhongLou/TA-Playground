@@ -175,6 +175,7 @@ bool ANsNetManager::BindUdp()
 		return false;
 	}
 	QueryStunIfNeeded();
+	QueryTurnIfNeeded();
 	if (UdpRole != ENsUdpRole::LocalMesh)
 	{
 		bool bPeers = false;
@@ -258,6 +259,48 @@ void ANsNetManager::QueryStunIfNeeded()
 		else
 		{
 			UE_LOG(LogNetworkSyncManager, Warning, TEXT("stun no mapped addr=%d"), static_cast<int32>(Addr));
+		}
+	}
+}
+
+void ANsNetManager::QueryTurnIfNeeded()
+{
+	if (UdpTurnHost.IsEmpty() || UdpTurnPort <= 0)
+	{
+		return;
+	}
+	const ENsAddr Slots[] = {ENsAddr::Sv, ENsAddr::C0, ENsAddr::C1};
+	for (ENsAddr Addr : Slots)
+	{
+		if (!Udp.Owns(Addr))
+		{
+			continue;
+		}
+		uint8 TxId[NsStunTxIdBytes];
+		NsStunFillTxId(TxId);
+		if (!Udp.StunSendAllocate(Addr, *UdpTurnHost, UdpTurnPort, TxId))
+		{
+			UE_LOG(LogNetworkSyncManager, Warning, TEXT("turn send failed addr=%d"), static_cast<int32>(Addr));
+			continue;
+		}
+		FString Host;
+		int32 Port = 0;
+		for (int32 Try = 0; Try < 50 && Port <= 0; ++Try)
+		{
+			if (Udp.StunRecvRelayed(Addr, TxId, Host, Port))
+			{
+				break;
+			}
+			FPlatformProcess::Sleep(0.001f);
+		}
+		if (Port > 0)
+		{
+			UE_LOG(LogNetworkSyncManager, Display, TEXT("turn relayed addr=%d %s:%d"),
+				static_cast<int32>(Addr), *Host, Port);
+		}
+		else
+		{
+			UE_LOG(LogNetworkSyncManager, Warning, TEXT("turn no relayed addr=%d"), static_cast<int32>(Addr));
 		}
 	}
 }

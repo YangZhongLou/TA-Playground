@@ -9,9 +9,14 @@ namespace
 constexpr uint16 NsStunBindRequest = 0x0001;
 constexpr uint16 NsStunBindIndication = 0x0011;
 constexpr uint16 NsStunBindSuccess = 0x0101;
+constexpr uint16 NsStunAllocateRequest = 0x0003;
+constexpr uint16 NsStunAllocateSuccess = 0x0103;
 constexpr uint16 NsStunAttrMapped = 0x0001;
 constexpr uint16 NsStunAttrXorMapped = 0x0020;
+constexpr uint16 NsStunAttrXorRelayed = 0x0016;
+constexpr uint16 NsStunAttrRequestedTransport = 0x0019;
 constexpr uint8 NsStunFamilyIpv4 = 0x01;
+constexpr uint8 NsStunProtoUdp = 17;
 
 void NsStunW16(TArray<uint8>& Out, uint16 Value)
 {
@@ -135,6 +140,49 @@ bool NsStunEncodeXorMappedReply(
 	return Out.Num() == NsStunHeaderBytes + 12;
 }
 
+bool NsStunEncodeAllocateRequest(const uint8 TxId[NsStunTxIdBytes], TArray<uint8>& Out)
+{
+	if (!TxId)
+	{
+		return false;
+	}
+	Out.Reset();
+	NsStunW16(Out, NsStunAllocateRequest);
+	NsStunW16(Out, 8);
+	NsStunW32(Out, NsStunMagic);
+	Out.Append(TxId, NsStunTxIdBytes);
+	NsStunW16(Out, NsStunAttrRequestedTransport);
+	NsStunW16(Out, 4);
+	Out.Add(NsStunProtoUdp);
+	Out.Add(0);
+	Out.Add(0);
+	Out.Add(0);
+	return Out.Num() == NsStunHeaderBytes + 8;
+}
+
+bool NsStunEncodeXorRelayedReply(
+	const uint8 TxId[NsStunTxIdBytes], uint32 Ipv4Host, int32 Port, TArray<uint8>& Out)
+{
+	if (!TxId || Port <= 0 || Port > 65535)
+	{
+		return false;
+	}
+	const uint16 XPort = static_cast<uint16>(Port) ^ static_cast<uint16>(NsStunMagic >> 16);
+	const uint32 XAddr = Ipv4Host ^ NsStunMagic;
+	Out.Reset();
+	NsStunW16(Out, NsStunAllocateSuccess);
+	NsStunW16(Out, 12);
+	NsStunW32(Out, NsStunMagic);
+	Out.Append(TxId, NsStunTxIdBytes);
+	NsStunW16(Out, NsStunAttrXorRelayed);
+	NsStunW16(Out, 8);
+	Out.Add(0);
+	Out.Add(NsStunFamilyIpv4);
+	NsStunW16(Out, XPort);
+	NsStunW32(Out, XAddr);
+	return Out.Num() == NsStunHeaderBytes + 12;
+}
+
 bool NsStunDecodeMapped(
 	const TArray<uint8>& Bytes, const uint8 TxId[NsStunTxIdBytes], uint32& OutIpv4Host, int32& OutPort)
 {
@@ -205,6 +253,68 @@ bool NsStunDecodeMapped(
 	return bHit;
 }
 
+bool NsStunDecodeRelayed(
+	const TArray<uint8>& Bytes, const uint8 TxId[NsStunTxIdBytes], uint32& OutIpv4Host, int32& OutPort)
+{
+	OutIpv4Host = 0;
+	OutPort = 0;
+	if (!TxId)
+	{
+		return false;
+	}
+	uint16 Type = 0;
+	uint16 Length = 0;
+	const uint8* GotTx = nullptr;
+	if (!NsStunReadHeader(Bytes, Type, Length, GotTx) || Type != NsStunAllocateSuccess)
+	{
+		return false;
+	}
+	if (FMemory::Memcmp(GotTx, TxId, NsStunTxIdBytes) != 0)
+	{
+		return false;
+	}
+
+	const uint8* Data = Bytes.GetData();
+	int32 At = NsStunHeaderBytes;
+	const int32 End = NsStunHeaderBytes + static_cast<int32>(Length);
+	bool bHit = false;
+	while (At + 4 <= End)
+	{
+		uint16 Attr = 0;
+		uint16 AttrLen = 0;
+		if (!NsStunR16(Data, Bytes.Num(), At, Attr) || !NsStunR16(Data, Bytes.Num(), At + 2, AttrLen))
+		{
+			return false;
+		}
+		const int32 Val = At + 4;
+		const int32 Next = Val + ((AttrLen + 3) & ~3);
+		if (Val + AttrLen > End)
+		{
+			return false;
+		}
+		if (Attr == NsStunAttrXorRelayed && AttrLen >= 8)
+		{
+			if (Data[Val + 1] != NsStunFamilyIpv4)
+			{
+				At = Next;
+				continue;
+			}
+			uint16 WirePort = 0;
+			uint32 WireAddr = 0;
+			if (!NsStunR16(Data, Bytes.Num(), Val + 2, WirePort)
+				|| !NsStunR32(Data, Bytes.Num(), Val + 4, WireAddr))
+			{
+				return false;
+			}
+			OutPort = static_cast<int32>(WirePort ^ static_cast<uint16>(NsStunMagic >> 16));
+			OutIpv4Host = WireAddr ^ NsStunMagic;
+			bHit = OutPort > 0;
+		}
+		At = Next;
+	}
+	return bHit;
+}
+
 bool NsStunIsBindIndication(const TArray<uint8>& Bytes)
 {
 	uint16 Type = 0;
@@ -219,6 +329,14 @@ bool NsStunIsBindRequest(const TArray<uint8>& Bytes)
 	uint16 Length = 0;
 	const uint8* TxId = nullptr;
 	return NsStunReadHeader(Bytes, Type, Length, TxId) && Type == NsStunBindRequest;
+}
+
+bool NsStunIsAllocateRequest(const TArray<uint8>& Bytes)
+{
+	uint16 Type = 0;
+	uint16 Length = 0;
+	const uint8* TxId = nullptr;
+	return NsStunReadHeader(Bytes, Type, Length, TxId) && Type == NsStunAllocateRequest;
 }
 
 bool NsStunReadTxId(const TArray<uint8>& Bytes, uint8 TxId[NsStunTxIdBytes])

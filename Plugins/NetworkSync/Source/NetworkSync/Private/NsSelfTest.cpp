@@ -2767,6 +2767,7 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunStunPunchSelfTest,
 		&NsRunStunRendezvousSelfTest,
 		&NsRunStunCheckSelfTest,
+		&NsRunStunTurnSelfTest,
 		&NsRunWorldStressSelfTest,
 		&NsRunCodecStressSelfTest,
 		&NsRunFakeNetStressSelfTest,

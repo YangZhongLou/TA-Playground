@@ -385,6 +385,21 @@ bool FNsUdpNet::StunSendBind(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 
 	return NsUdpSendTo(Socks[i], Host, Port, Bytes);
 }
 
+bool FNsUdpNet::StunSendAllocate(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes])
+{
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i] || !TxId)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	if (!NsStunEncodeAllocateRequest(TxId, Bytes))
+	{
+		return false;
+	}
+	return NsUdpSendTo(Socks[i], Host, Port, Bytes);
+}
+
 bool FNsUdpNet::StunSendIndication(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes])
 {
 	const int32 i = static_cast<int32>(Addr);
@@ -433,6 +448,40 @@ bool FNsUdpNet::StunRecvMapped(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes], 
 	OutPort = MappedPort;
 	MappedIpv4[i] = Ipv4;
 	MappedPorts[i] = OutPort;
+	return true;
+}
+
+bool FNsUdpNet::StunRecvRelayed(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes], FString& OutHost, int32& OutPort)
+{
+	OutHost.Reset();
+	OutPort = 0;
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i] || !TxId)
+	{
+		return false;
+	}
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return false;
+	}
+	uint8 Buf[512];
+	TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+	int32 Read = 0;
+	if (!Socks[i]->RecvFrom(Buf, 512, Read, *From) || Read <= 0)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	Bytes.Append(Buf, Read);
+	uint32 Ipv4 = 0;
+	int32 RelayedPort = 0;
+	if (!NsStunDecodeRelayed(Bytes, TxId, Ipv4, RelayedPort))
+	{
+		return false;
+	}
+	OutHost = NsStunIpv4ToString(Ipv4);
+	OutPort = RelayedPort;
 	return true;
 }
 

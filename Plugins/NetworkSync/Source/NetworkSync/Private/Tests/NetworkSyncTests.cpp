@@ -342,6 +342,7 @@ NS_WRAP(FNsStun_Loopback, "NetworkSync.Stun.Loopback", NsRunStunLoopbackSelfTest
 NS_WRAP(FNsStun_Punch, "NetworkSync.Stun.Punch", NsRunStunPunchSelfTest, NsAutoFlags)
 NS_WRAP(FNsStun_Rendezvous, "NetworkSync.Stun.Rendezvous", NsRunStunRendezvousSelfTest, NsAutoFlags)
 NS_WRAP(FNsStun_Check, "NetworkSync.Stun.Check", NsRunStunCheckSelfTest, NsAutoFlags)
+NS_WRAP(FNsStun_Turn, "NetworkSync.Stun.Turn", NsRunStunTurnSelfTest, NsAutoFlags)
 
 NS_WRAP(FNsWorld_Stress, "NetworkSync.Stress.World", NsRunWorldStressSelfTest, NsAutoFlags)
 NS_WRAP(FNsCodec_Stress, "NetworkSync.Stress.Codec", NsRunCodecStressSelfTest, NsAutoFlags)

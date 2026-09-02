@@ -27,8 +27,10 @@ public:
 	int32 PeerPort(ENsAddr Addr) const;
 
 	bool StunSendBind(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes]);
+	bool StunSendAllocate(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes]);
 	bool StunSendIndication(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes]);
 	bool StunRecvMapped(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes], FString& OutHost, int32& OutPort);
+	bool StunRecvRelayed(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes], FString& OutHost, int32& OutPort);
 	bool StunRecvIndication(ENsAddr Addr);
 	bool StunServe(ENsAddr Addr, const uint8* ExpectTxId, FString& OutHost, int32& OutPort);
 	bool PunchPeers();

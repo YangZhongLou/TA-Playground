@@ -236,6 +236,53 @@ FNsSelfTestResult NsRunStunBindSelfTest()
 		return StunFail(TEXT("stun: parse ipv4"));
 	}
 
+	TArray<uint8> Alloc;
+	if (!NsStunEncodeAllocateRequest(TxId, Alloc) || Alloc.Num() != NsStunHeaderBytes + 8)
+	{
+		return StunFail(TEXT("stun: allocate size"));
+	}
+	if (Alloc[0] != 0 || Alloc[1] != 3)
+	{
+		return StunFail(TEXT("stun: allocate type"));
+	}
+	if (Alloc[20] != 0 || Alloc[21] != 0x19 || Alloc[24] != 17)
+	{
+		return StunFail(TEXT("stun: requested transport"));
+	}
+	if (!NsStunIsAllocateRequest(Alloc) || NsStunIsAllocateRequest(Req) || NsStunIsBindRequest(Alloc))
+	{
+		return StunFail(TEXT("stun: allocate detect"));
+	}
+
+	const uint32 RelayedIp = 0x0A000001u;
+	const int32 RelayedPort = 23456;
+	TArray<uint8> Relayed;
+	if (!NsStunEncodeXorRelayedReply(TxId, RelayedIp, RelayedPort, Relayed))
+	{
+		return StunFail(TEXT("stun: xor relayed encode"));
+	}
+	uint32 GotRelayIp = 0;
+	int32 GotRelayPort = 0;
+	if (!NsStunDecodeRelayed(Relayed, TxId, GotRelayIp, GotRelayPort)
+		|| GotRelayIp != RelayedIp || GotRelayPort != RelayedPort)
+	{
+		return StunFail(TEXT("stun: xor relayed decode"));
+	}
+	if (NsStunDecodeMapped(Relayed, TxId, GotIp, GotPort)
+		|| NsStunDecodeRelayed(Reply, TxId, GotRelayIp, GotRelayPort))
+	{
+		return StunFail(TEXT("stun: bind/allocate cross decode"));
+	}
+	TArray<uint8> AllocErr;
+	StunW16(AllocErr, 0x0113);
+	StunW16(AllocErr, 0);
+	StunW32(AllocErr, NsStunMagic);
+	AllocErr.Append(TxId, NsStunTxIdBytes);
+	if (NsStunDecodeRelayed(AllocErr, TxId, GotRelayIp, GotRelayPort))
+	{
+		return StunFail(TEXT("stun: allocate error accepted"));
+	}
+
 	return StunOk(TEXT("stun bind codec"));
 }
 
@@ -649,4 +696,120 @@ FNsSelfTestResult NsRunStunCheckSelfTest()
 	}
 
 	return StunOk(TEXT("stun check"));
+}
+
+FNsSelfTestResult NsRunStunTurnSelfTest()
+{
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return StunFail(TEXT("stun-turn: no sockets"));
+	}
+
+	FSocket* TurnSock = SS->CreateSocket(NAME_DGram, TEXT("NsTurnFake"), FName(FNetworkProtocolTypes::IPv4));
+	if (!TurnSock)
+	{
+		return StunFail(TEXT("stun-turn: create"));
+	}
+	TurnSock->SetNonBlocking(true);
+	TSharedRef<FInternetAddr> BindAddr = SS->CreateInternetAddr();
+	BindAddr->SetLoopbackAddress();
+	BindAddr->SetPort(0);
+	if (!TurnSock->Bind(*BindAddr))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-turn: bind turn"));
+	}
+	TSharedRef<FInternetAddr> Bound = SS->CreateInternetAddr();
+	TurnSock->GetAddress(*Bound);
+	const int32 TurnPort = Bound->GetPort();
+	if (TurnPort <= 0)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-turn: turn port"));
+	}
+
+	FNsUdpNet Net;
+	if (!Net.Bind(ENsAddr::C0, 0, false))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-turn: bind c0"));
+	}
+
+	uint8 TxId[NsStunTxIdBytes];
+	NsStunFillTxId(TxId);
+	if (!Net.StunSendAllocate(ENsAddr::C0, TEXT("127.0.0.1"), TurnPort, TxId))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-turn: send allocate"));
+	}
+
+	uint8 Buf[512];
+	int32 Read = 0;
+	TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+	bool bGotReq = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Read = 0;
+		if (TurnSock->RecvFrom(Buf, 512, Read, *From) && Read >= NsStunHeaderBytes)
+		{
+			bGotReq = true;
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (!bGotReq)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-turn: no request"));
+	}
+
+	TArray<uint8> Req;
+	Req.Append(Buf, Read);
+	if (!NsStunIsAllocateRequest(Req)
+		|| FMemory::Memcmp(Req.GetData() + 8, TxId, NsStunTxIdBytes) != 0)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-turn: bad request"));
+	}
+
+	const uint32 RelayedIp = 0x7F000001u;
+	const int32 RelayedPort = 23456;
+	TArray<uint8> Reply;
+	if (!NsStunEncodeXorRelayedReply(TxId, RelayedIp, RelayedPort, Reply))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-turn: encode reply"));
+	}
+	int32 Sent = 0;
+	if (!TurnSock->SendTo(Reply.GetData(), Reply.Num(), Sent, *From) || Sent != Reply.Num())
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-turn: send reply"));
+	}
+
+	FString Host;
+	int32 Port = 0;
+	bool bGotRelayed = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		if (Net.StunRecvRelayed(ENsAddr::C0, TxId, Host, Port))
+		{
+			bGotRelayed = true;
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	StunDestroy(TurnSock);
+	if (!bGotRelayed)
+	{
+		return StunFail(TEXT("stun-turn: no relayed"));
+	}
+	if (Port != RelayedPort || Host != NsStunIpv4ToString(RelayedIp))
+	{
+		return StunFail(*FString::Printf(TEXT("stun-turn: relayed %s:%d want %s:%d"),
+			*Host, Port, *NsStunIpv4ToString(RelayedIp), RelayedPort));
+	}
+
+	return StunOk(FString::Printf(TEXT("stun turn %s:%d"), *Host, Port));
 }
