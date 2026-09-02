@@ -1,50 +1,9 @@
 // Copyright (c) 2026 TA-Playground. All Rights Reserved.
 
-#include "NsLockstepResync.h"
-#include "NsLockstepDoor.h"
+#include "NsLockstepWaitResync.h"
 #include "NsPump.h"
 
-void FNsLockstepResync::CaptureLive(const FNsWorld& World, int32 Frame)
-{
-	LiveSnap = World;
-	LiveSnapTick = Frame;
-	bCaptured = true;
-	bResumed = false;
-	Acked[0] = false;
-	Acked[1] = false;
-	PumpCycles = 0;
-	bGiveUp = false;
-}
-
-void FNsLockstepResync::SendLiveSnap(INsNet& Net, ENsAddr Dst) const
-{
-	FNsPacket Pkt;
-	Pkt.Type = ENsMsg::S2CJoinSnap;
-	Pkt.Tick = LiveSnapTick;
-	Pkt.SnapX[0] = LiveSnap.X[0];
-	Pkt.SnapX[1] = LiveSnap.X[1];
-	Pkt.SnapRng = LiveSnap.Rng;
-	Net.Send(ENsAddr::Sv, Dst, Pkt);
-	Net.Send(ENsAddr::Sv, Dst, Pkt);
-}
-
-void FNsLockstepResync::FinishResume()
-{
-	bResumed = true;
-	bCaptured = false;
-	Acked[0] = false;
-	Acked[1] = false;
-	PumpCycles = 0;
-}
-
-void FNsLockstepResync::Resume(FNsLockstepServer& Sv, INsNet& Net)
-{
-	Sv.bDesync = false;
-	FinishResume();
-	Sv.NextMs = Net.Now + Ns::LogicDtMs;
-}
-
-void NsApplyResyncSnap(FNsLockstepClient& Client, const FNsPacket& Packet)
+void NsApplyWaitResyncSnap(FNsLockstepWaitClient& Client, const FNsPacket& Packet)
 {
 	Client.World.X[0] = Packet.SnapX[0];
 	Client.World.X[1] = Packet.SnapX[1];
@@ -55,7 +14,7 @@ void NsApplyResyncSnap(FNsLockstepClient& Client, const FNsPacket& Packet)
 	Client.Buf.Reset();
 }
 
-void NsPumpLockstepResyncServer(INsNet& Net, FNsLockstepServer& Sv, FNsLockstepResync& Resync, bool bWait)
+void NsPumpLockstepWaitResyncServer(INsNet& Net, FNsLockstepWaitServer& Sv, FNsLockstepResync& Resync, bool bWait)
 {
 	TArray<FNsPacket> ToSv;
 	NsDrain(Net, ENsAddr::Sv, ToSv, bWait);
@@ -64,10 +23,11 @@ void NsPumpLockstepResyncServer(INsNet& Net, FNsLockstepServer& Sv, FNsLockstepR
 		if (P.Type == ENsMsg::C2SInput)
 		{
 			const int32 Id = NsPlayerIdFromAddr(P.Src);
-			if (Id >= 0)
+			if (Id < 0 || P.SeqWindow.Num() == 0 || P.DxWindow.Num() == 0)
 			{
-				Sv.OnInput(Id, P.Dx);
+				continue;
 			}
+			Sv.OnInput(Id, P.SeqWindow[0], P.DxWindow[0]);
 		}
 		else if (P.Type == ENsMsg::C2SChecksum)
 		{
@@ -87,7 +47,9 @@ void NsPumpLockstepResyncServer(INsNet& Net, FNsLockstepServer& Sv, FNsLockstepR
 
 	if (Sv.bDesync && Resync.Acked[0] && Resync.Acked[1] && !Resync.bGiveUp)
 	{
-		Resync.Resume(Sv, Net);
+		Sv.bDesync = false;
+		Resync.FinishResume();
+		Sv.FrameStartMs = Net.Now;
 	}
 
 	if (!Sv.bDesync)
@@ -112,7 +74,7 @@ void NsPumpLockstepResyncServer(INsNet& Net, FNsLockstepServer& Sv, FNsLockstepR
 	Resync.SendLiveSnap(Net, ENsAddr::C1);
 }
 
-void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, FNsLockstepResyncClient& View, bool bWait, FNsDoorOpen* Door)
+void NsPumpLockstepWaitResyncClient(INsNet& Net, FNsLockstepWaitClient& C, FNsLockstepResyncClient& View, bool bWait)
 {
 	TArray<FNsPacket> ToC;
 	NsDrain(Net, C.Addr, ToC, bWait);
@@ -121,7 +83,7 @@ void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, FNsLockstepRe
 	{
 		if (NsIsResyncLiveSnap(P) && P.Tick != View.DoneSnapTick)
 		{
-			NsApplyResyncSnap(C, P);
+			NsApplyWaitResyncSnap(C, P);
 			View.HaltTick = P.Tick;
 			bApplied = true;
 		}
@@ -140,10 +102,6 @@ void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, FNsLockstepRe
 				View.HaltTick = -1;
 				C.OnS2C(P.Frames);
 			}
-			else if (Door)
-			{
-				NsApplyDoorOpen(*Door, P);
-			}
 			continue;
 		}
 		if (P.Type == ENsMsg::S2CJoinSnap)
@@ -153,10 +111,6 @@ void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, FNsLockstepRe
 		else if (P.Type == ENsMsg::S2CFrame)
 		{
 			C.OnS2C(P.Frames);
-		}
-		else if (Door)
-		{
-			NsApplyDoorOpen(*Door, P);
 		}
 	}
 	if (bApplied)

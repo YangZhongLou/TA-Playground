@@ -53,7 +53,9 @@
 
 逻辑 bug 拉齐后仍会分叉；Resume 后若 checksum 再对不上，再次停拍。
 
-热切 `ApplyScheme` 会重建 `LsResync` 与两端 `FNsLockstepResyncClient`。分进程 `Host` / `Client` 各有一份客户端 View；停拍只认 LiveSnap 包，不共享 `bCaptured`。乐观 Manager 一律走 `NsPumpLockstepResync*`。
+热切 `ApplyScheme` 会重建 `LsResync` 与两端 `FNsLockstepResyncClient`。
+分进程 `Host` / `Client` 各有一份客户端 View；停拍只认 LiveSnap 包，不共享 `bCaptured`。
+乐观 Manager 一律走 `NsPumpLockstepResync*`。等齐停拍拉齐是另一包，见 [wait-resync.md](wait-resync.md)。
 
 第一版不做按视野裁快照，不做踢人替代。恢复打拍是本包第二里程碑，已做。
 

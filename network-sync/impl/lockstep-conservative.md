@@ -96,3 +96,8 @@ Join 与乐观同一套 `S2CJoinSnap`：`Tick > ExecFrame` 才跳世界，尾巴
 仍在 `NsLockstepWait.*` 里加，不要新 Kind，不要改乐观 `ApplyJoin`。
 
 `SendJoin` / `ApplyJoin` 字段与 [lockstep.md](lockstep.md) 重连节相同。验收：`NetworkSync.Lockstep.Wait.Join`。
+
+## 第三里程碑：停拍拉齐
+
+另开 `NsLockstepWaitResync.*`，不要新 Kind，不要改 `Tick`。
+规格：[hybrid/wait-resync.md](hybrid/wait-resync.md)。验收：`NetworkSync.Lockstep.Wait.Resync.*`。

@@ -15,6 +15,7 @@
 | [hybrid/checkpoint.md](hybrid/checkpoint.md) | 检查点 | 重连快照；平时 `X` 仍只由 `F` 写 |
 | [hybrid/session.md](hybrid/session.md) | 会话切段 | 大厅状态 / PvP 锁步，一次硬切 |
 | [hybrid/resync.md](hybrid/resync.md) | 停拍拉齐 | 停拍；当前世界强制回跳；不恢复推进 |
+| [hybrid/wait-resync.md](hybrid/wait-resync.md) | 等齐停拍拉齐 | 同一切法叠在等齐内核；独立泵 |
 | [hybrid/door.md](hybrid/door.md) | 锁步加门 | pawn 锁步，FakeNet 门；门不进 `F` |
 | [replication.md](replication.md) | 状态同步的对象接口 | Role / Owner；属性对 RPC；相关性穷举会先炸 CPU |
 
