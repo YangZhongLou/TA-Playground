@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "NsNet.h"
+#include "NsStun.h"
 
 class FSocket;
 class FInternetAddr;
@@ -24,6 +25,9 @@ public:
 	bool Owns(ENsAddr Addr) const;
 	int32 BoundPort(ENsAddr Addr) const;
 	int32 PeerPort(ENsAddr Addr) const;
+
+	bool StunSendBind(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes]);
+	bool StunRecvMapped(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes], FString& OutHost, int32& OutPort);
 
 	virtual void Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet) override;
 	virtual void Drain(ENsAddr Dst, TArray<FNsPacket>& Out) override;

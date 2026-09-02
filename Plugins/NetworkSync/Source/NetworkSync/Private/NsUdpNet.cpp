@@ -320,3 +320,89 @@ void FNsUdpNet::Drain(ENsAddr Dst, TArray<FNsPacket>& Out)
 		}
 	}
 }
+
+namespace
+{
+bool NsUdpResolve(const TCHAR* Host, int32 Port, TSharedRef<FInternetAddr>& Out)
+{
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS || Host == nullptr || Host[0] == 0 || Port <= 0)
+	{
+		return false;
+	}
+	TSharedPtr<FInternetAddr> Resolved = SS->GetAddressFromString(Host);
+	if (!Resolved.IsValid())
+	{
+		Resolved = SS->CreateInternetAddr();
+		bool bOk = false;
+		Resolved->SetIp(Host, bOk);
+		if (!bOk)
+		{
+			return false;
+		}
+	}
+	Resolved->SetPort(Port);
+	Out = Resolved.ToSharedRef();
+	return true;
+}
+}
+
+bool FNsUdpNet::StunSendBind(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes])
+{
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i] || !TxId)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	if (!NsStunEncodeBindRequest(TxId, Bytes))
+	{
+		return false;
+	}
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return false;
+	}
+	TSharedRef<FInternetAddr> Dest = SS->CreateInternetAddr();
+	if (!NsUdpResolve(Host, Port, Dest))
+	{
+		return false;
+	}
+	int32 Sent = 0;
+	return Socks[i]->SendTo(Bytes.GetData(), Bytes.Num(), Sent, *Dest) && Sent == Bytes.Num();
+}
+
+bool FNsUdpNet::StunRecvMapped(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes], FString& OutHost, int32& OutPort)
+{
+	OutHost.Reset();
+	OutPort = 0;
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i] || !TxId)
+	{
+		return false;
+	}
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return false;
+	}
+	uint8 Buf[512];
+	TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+	int32 Read = 0;
+	if (!Socks[i]->RecvFrom(Buf, 512, Read, *From) || Read <= 0)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	Bytes.Append(Buf, Read);
+	uint32 Ipv4 = 0;
+	int32 MappedPort = 0;
+	if (!NsStunDecodeMapped(Bytes, TxId, Ipv4, MappedPort))
+	{
+		return false;
+	}
+	OutHost = NsStunIpv4ToString(Ipv4);
+	OutPort = MappedPort;
+	return true;
+}

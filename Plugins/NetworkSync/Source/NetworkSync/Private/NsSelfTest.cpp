@@ -2681,6 +2681,8 @@ FNsSelfTestResult NsRunAllSelfTests()
 		&NsRunUdpSplitRollbackSelfTest,
 		&NsRunUdpBurstSelfTest,
 		&NsRunUdpSessionRestartSelfTest,
+		&NsRunStunBindSelfTest,
+		&NsRunStunLoopbackSelfTest,
 		&NsRunWorldStressSelfTest,
 		&NsRunCodecStressSelfTest,
 		&NsRunFakeNetStressSelfTest,

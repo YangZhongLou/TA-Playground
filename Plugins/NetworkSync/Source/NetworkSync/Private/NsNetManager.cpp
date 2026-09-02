@@ -7,10 +7,12 @@
 #include "NsLockstepTurnResync.h"
 #include "NsLockstepDelayResync.h"
 #include "NsPump.h"
+#include "NsStun.h"
 #include "NsTypes.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/PlatformProcess.h"
 #include "InputCoreTypes.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogNetworkSyncManager, Log, All);
@@ -143,32 +145,89 @@ bool ANsNetManager::RunsC1() const
 bool ANsNetManager::BindUdp()
 {
 	Udp.Close();
+	bool bOk = false;
 	if (UdpRole == ENsUdpRole::LocalMesh)
 	{
-		return Udp.BindLoopback(UdpBasePort);
+		bOk = Udp.BindLoopback(UdpBasePort);
 	}
-	const int32 Base = (UdpBasePort > 0) ? UdpBasePort : 27000;
-	const int32 RemoteBase = (UdpRemoteBasePort > 0) ? UdpRemoteBasePort : Base;
-	const TCHAR* Remote = UdpRemoteHost.IsEmpty() ? TEXT("127.0.0.1") : *UdpRemoteHost;
-	if (AppliedScheme == ENsScheme::Rollback)
+	else
 	{
-		if (UdpRole == ENsUdpRole::Host)
+		const int32 Base = (UdpBasePort > 0) ? UdpBasePort : 27000;
+		const int32 RemoteBase = (UdpRemoteBasePort > 0) ? UdpRemoteBasePort : Base;
+		const TCHAR* Remote = UdpRemoteHost.IsEmpty() ? TEXT("127.0.0.1") : *UdpRemoteHost;
+		if (AppliedScheme == ENsScheme::Rollback)
 		{
-			return Udp.Bind(ENsAddr::C0, Base + 1, bUdpLan)
+			if (UdpRole == ENsUdpRole::Host)
+			{
+				bOk = Udp.Bind(ENsAddr::C0, Base + 1, bUdpLan)
+					&& Udp.SetPeer(ENsAddr::C1, Remote, RemoteBase + 2);
+			}
+			else
+			{
+				bOk = Udp.Bind(ENsAddr::C1, Base + 2, bUdpLan)
+					&& Udp.SetPeer(ENsAddr::C0, Remote, RemoteBase + 1);
+			}
+		}
+		else if (UdpRole == ENsUdpRole::Host)
+		{
+			bOk = Udp.Bind(ENsAddr::Sv, Base, bUdpLan)
+				&& Udp.Bind(ENsAddr::C0, Base + 1, bUdpLan)
 				&& Udp.SetPeer(ENsAddr::C1, Remote, RemoteBase + 2);
 		}
-		return Udp.Bind(ENsAddr::C1, Base + 2, bUdpLan)
-			&& Udp.SetPeer(ENsAddr::C0, Remote, RemoteBase + 1);
+		else
+		{
+			bOk = Udp.Bind(ENsAddr::C1, Base + 2, bUdpLan)
+				&& Udp.SetPeer(ENsAddr::Sv, Remote, RemoteBase)
+				&& Udp.SetPeer(ENsAddr::C0, Remote, RemoteBase + 1);
+		}
 	}
-	if (UdpRole == ENsUdpRole::Host)
+	if (bOk)
 	{
-		return Udp.Bind(ENsAddr::Sv, Base, bUdpLan)
-			&& Udp.Bind(ENsAddr::C0, Base + 1, bUdpLan)
-			&& Udp.SetPeer(ENsAddr::C1, Remote, RemoteBase + 2);
+		QueryStunIfNeeded();
 	}
-	return Udp.Bind(ENsAddr::C1, Base + 2, bUdpLan)
-		&& Udp.SetPeer(ENsAddr::Sv, Remote, RemoteBase)
-		&& Udp.SetPeer(ENsAddr::C0, Remote, RemoteBase + 1);
+	return bOk;
+}
+
+void ANsNetManager::QueryStunIfNeeded()
+{
+	if (UdpStunHost.IsEmpty() || UdpStunPort <= 0)
+	{
+		return;
+	}
+	const ENsAddr Slots[] = {ENsAddr::Sv, ENsAddr::C0, ENsAddr::C1};
+	for (ENsAddr Addr : Slots)
+	{
+		if (!Udp.Owns(Addr))
+		{
+			continue;
+		}
+		uint8 TxId[NsStunTxIdBytes];
+		NsStunFillTxId(TxId);
+		if (!Udp.StunSendBind(Addr, *UdpStunHost, UdpStunPort, TxId))
+		{
+			UE_LOG(LogNetworkSyncManager, Warning, TEXT("stun send failed addr=%d"), static_cast<int32>(Addr));
+			continue;
+		}
+		FString Host;
+		int32 Port = 0;
+		for (int32 Try = 0; Try < 50 && Port <= 0; ++Try)
+		{
+			if (Udp.StunRecvMapped(Addr, TxId, Host, Port))
+			{
+				break;
+			}
+			FPlatformProcess::Sleep(0.001f);
+		}
+		if (Port > 0)
+		{
+			UE_LOG(LogNetworkSyncManager, Display, TEXT("stun mapped addr=%d %s:%d"),
+				static_cast<int32>(Addr), *Host, Port);
+		}
+		else
+		{
+			UE_LOG(LogNetworkSyncManager, Warning, TEXT("stun no mapped addr=%d"), static_cast<int32>(Addr));
+		}
+	}
 }
 
 void ANsNetManager::EndPlay(const EEndPlayReason::Type EndPlayReason)

@@ -335,6 +335,8 @@ NS_WRAP(FNsUdp_Rollback, "NetworkSync.Udp.Rollback", NsRunUdpRollbackSelfTest, N
 NS_WRAP(FNsUdp_SplitState, "NetworkSync.Udp.SplitState", NsRunUdpSplitStateSyncSelfTest, NsAutoFlags)
 NS_WRAP(FNsUdp_SplitRollback, "NetworkSync.Udp.SplitRollback", NsRunUdpSplitRollbackSelfTest, NsAutoFlags)
 NS_WRAP(FNsUdp_SessionRestart, "NetworkSync.Udp.SessionRestart", NsRunUdpSessionRestartSelfTest, NsAutoFlags)
+NS_WRAP(FNsStun_Bind, "NetworkSync.Stun.Bind", NsRunStunBindSelfTest, NsAutoFlags)
+NS_WRAP(FNsStun_Loopback, "NetworkSync.Stun.Loopback", NsRunStunLoopbackSelfTest, NsAutoFlags)
 
 NS_WRAP(FNsWorld_Stress, "NetworkSync.Stress.World", NsRunWorldStressSelfTest, NsAutoFlags)
 NS_WRAP(FNsCodec_Stress, "NetworkSync.Stress.Codec", NsRunCodecStressSelfTest, NsAutoFlags)

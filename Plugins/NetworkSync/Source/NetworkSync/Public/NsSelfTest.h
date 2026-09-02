@@ -75,6 +75,9 @@ NETWORKSYNC_API FNsSelfTestResult NsRunUdpSplitRollbackSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunUdpBurstSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunUdpSessionRestartSelfTest();
 
+NETWORKSYNC_API FNsSelfTestResult NsRunStunBindSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunStunLoopbackSelfTest();
+
 NETWORKSYNC_API FNsSelfTestResult NsRunCodecStressSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunFakeNetStressSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunWorldStressSelfTest();

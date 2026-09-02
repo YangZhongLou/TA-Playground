@@ -8,6 +8,23 @@
 `Bind` 使用 IPv4 数据报（`FNetworkProtocolTypes::IPv4`）。载荷上限仍按 IPv6 最小 MTU 留余量，见 [packet-format.md](packet-format.md)。
 `BindLoopback` 用于单进程自测；`Bind` + `SetPeer` 用于 Host/Client 两进程。
 
+## STUN Binding（RFC 5389）
+
+STUN 不是 `FNsPacket`。字节大端，magic `0x2112A442`，与 TANS 小端 `0x54414E53` 分开。
+`Drain` 解不出 TANS 就丢，所以 Binding 走 `StunSendBind` / `StunRecvMapped`，不要塞进 `ENsMsg`。
+
+只做 Binding：问 STUN 服务器“我的映射 IPv4:port 是什么”。不实现 ICE、打洞、信令。
+`UdpRemoteHost` 仍要人手填。查询发生在 `BindUdp` 成功之后、玩法包之前。`UdpStunHost` 为空则跳过（自动化保持空）。失败只打警告，不拆 socket。
+
+| 项 | 值 |
+| --- | --- |
+| Binding Request | `0x0001` |
+| Success Response | `0x0101` |
+| XOR-MAPPED-ADDRESS | `0x0020`（IPv4 family `0x01`） |
+| 编解码 | `NsStun.h` |
+
+自动化：`NetworkSync.Stun.Bind`（编解码）、`NetworkSync.Stun.Loopback`（进程内假 STUN + `FNsUdpNet` C0）。不打公网 STUN。
+
 ## 包头（所有类型共用）
 
 按小端。`magic` 用来扔掉非本游戏的包。`NsEncodePacket` / `NsDecodePacket` 实现这份布局。
@@ -98,6 +115,7 @@ void OnRecvSeq(uint32 Session, int32 S)
 
 两份编辑器：都勾 `bUseUdp`，一份 `Host`、一份 `Client`，同一 `UdpBasePort`（如 27000），
 `UdpRemoteHost` 填对端 IPv4。局域网勾 `bUdpLan`。
+可选填 `UdpStunHost`（点分 IPv4，不解析 DNS）在 Bind 后打一次 Binding；不要靠它自动改 `UdpRemoteHost`。
 锁步 / 状态同步的 Host 绑 Sv+C0；回滚 Host 只绑 C0，对端 C1。
 自动化：`NetworkSync.Udp.Split`（锁步）、`.SplitState`、`.SplitRollback`。
 
