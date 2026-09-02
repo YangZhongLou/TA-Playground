@@ -11,5 +11,5 @@
 | 锁步加门 | [door.md](door.md) | `NsLockstepDoor.*` | `NetworkSync.LockstepDoor.*` |
 
 共用 `INsNet` 与编码。各包自己写泵。禁止 `NsPumpLockstep` 调用 `OnSnap`。
-停拍后不调用 `Tick`，直到两槽对 `LiveSnap` checksum ack。乐观 `ANsNetManager` 在假网络 / LocalMesh 走停拍拉齐泵，并在同一轮 Drain 叠 `S2CDoorOpen`。锁步加门不新增 `ENsScheme`。
+停拍后不调用 `Tick`，直到两槽对 `LiveSnap` checksum ack。乐观 `ANsNetManager` 走停拍拉齐泵（假网络 / LocalMesh / Host/Client），并在同一轮 Drain 叠 `S2CDoorOpen`。锁步加门不新增 `ENsScheme`。
 新线上 type 先改 [packet-format.md](../packet-format.md)。门用 `S2CDoorOpen=8`；停拍拉齐复用 `S2CJoinSnap`。

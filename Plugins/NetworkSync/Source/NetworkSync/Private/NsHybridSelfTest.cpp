@@ -2,6 +2,7 @@
 
 #include "NsSelfTest.h"
 #include "NsFakeNet.h"
+#include "NsUdpNet.h"
 #include "NsLockstep.h"
 #include "NsLockstepResync.h"
 #include "NsLockstepDoor.h"
@@ -42,13 +43,15 @@ static void HyInitLs(FNsLockstepClient& C0, FNsLockstepClient& C1)
 static void HyWarmLockstep(FNsFakeNet& Net, FNsLockstepServer& Sv, FNsLockstepClient& C0, FNsLockstepClient& C1, int32 Steps)
 {
 	FNsLockstepResync Warm;
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
 	for (int32 S = 0; S < Steps; ++S)
 	{
 		C0.SendInput(Net, 1);
 		C1.SendInput(Net, -1);
 		NsPumpLockstepResyncServer(Net, Sv, Warm);
-		NsPumpLockstepResyncClient(Net, C0, Warm);
-		NsPumpLockstepResyncClient(Net, C1, Warm);
+		NsPumpLockstepResyncClient(Net, C0, V0);
+		NsPumpLockstepResyncClient(Net, C1, V1);
 		Net.Advance(Ns::LogicDtMs);
 	}
 }
@@ -91,6 +94,8 @@ FNsSelfTestResult NsRunLockstepResyncAlignSelfTest()
 	FNsLockstepClient C0;
 	FNsLockstepClient C1;
 	HyInitLs(C0, C1);
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
 	HyWarmLockstep(Net, Sv, C0, C1, 24);
 	if (!HyForceDesync(Sv))
 	{
@@ -99,8 +104,8 @@ FNsSelfTestResult NsRunLockstepResyncAlignSelfTest()
 	const int32 FrameAt = Sv.Frame;
 	FNsLockstepResync Repair;
 	NsPumpLockstepResyncServer(Net, Sv, Repair);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
-	NsPumpLockstepResyncClient(Net, C1, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
 	if (Sv.Frame != FrameAt)
 	{
 		return HyFailStr(FString::Printf(TEXT("lockstep-resync-align: ticked frame=%d was=%d"), Sv.Frame, FrameAt));
@@ -126,6 +131,8 @@ FNsSelfTestResult NsRunLockstepResyncForceSelfTest()
 	FNsLockstepClient C0;
 	FNsLockstepClient C1;
 	HyInitLs(C0, C1);
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
 	HyWarmLockstep(Net, Sv, C0, C1, 24);
 	if (!HyForceDesync(Sv))
 	{
@@ -136,8 +143,8 @@ FNsSelfTestResult NsRunLockstepResyncForceSelfTest()
 	C0.ExecFrame = Repair.LiveSnapTick + 8;
 	C0.World.X[0] = 999;
 	C0.World.Rng = 7;
-	NsPumpLockstepResyncClient(Net, C0, Repair);
-	NsPumpLockstepResyncClient(Net, C1, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
 	if (C0.ExecFrame != Repair.LiveSnapTick || !C0.World.Equals(Repair.LiveSnap))
 	{
 		return HyFail(TEXT("lockstep-resync-force: ahead client not rewound"));
@@ -155,6 +162,8 @@ FNsSelfTestResult NsRunLockstepResyncIgnoreFrameSelfTest()
 	FNsLockstepClient C0;
 	FNsLockstepClient C1;
 	HyInitLs(C0, C1);
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
 	HyWarmLockstep(Net, Sv, C0, C1, 24);
 	if (!HyForceDesync(Sv))
 	{
@@ -162,8 +171,8 @@ FNsSelfTestResult NsRunLockstepResyncIgnoreFrameSelfTest()
 	}
 	FNsLockstepResync Repair;
 	NsPumpLockstepResyncServer(Net, Sv, Repair);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
-	NsPumpLockstepResyncClient(Net, C1, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
 	const FNsWorld Before = C0.World;
 	const int32 Exec = C0.ExecFrame;
 	FNsInputs In;
@@ -172,7 +181,7 @@ FNsSelfTestResult NsRunLockstepResyncIgnoreFrameSelfTest()
 	TMap<int32, FNsInputs> Extra;
 	Extra.Add(Exec, In);
 	C0.OnS2C(Extra);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
 	if (!C0.World.Equals(Before) || C0.ExecFrame != Exec)
 	{
 		return HyFail(TEXT("lockstep-resync-ignore: S2CFrame still stepped"));
@@ -191,6 +200,8 @@ FNsSelfTestResult NsRunLockstepResyncDropSelfTest()
 	FNsLockstepClient C0;
 	FNsLockstepClient C1;
 	HyInitLs(C0, C1);
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
 	HyWarmLockstep(Net, Sv, C0, C1, 24);
 	if (!HyForceDesync(Sv))
 	{
@@ -201,8 +212,8 @@ FNsSelfTestResult NsRunLockstepResyncDropSelfTest()
 	for (int32 i = 0; i < Ns::ResyncGiveUpPumps; ++i)
 	{
 		NsPumpLockstepResyncServer(Net, Sv, Repair);
-		NsPumpLockstepResyncClient(Net, C0, Repair);
-		NsPumpLockstepResyncClient(Net, C1, Repair);
+		NsPumpLockstepResyncClient(Net, C0, V0);
+		NsPumpLockstepResyncClient(Net, C1, V1);
 		Net.Advance(1.0);
 		if (HyAligned(Sv, Repair, C0, C1))
 		{
@@ -247,6 +258,8 @@ FNsSelfTestResult NsRunLockstepResyncStaleJoinSelfTest()
 	FNsLockstepClient C0;
 	FNsLockstepClient C1;
 	HyInitLs(C0, C1);
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
 	HyWarmLockstep(Net, Sv, C0, C1, 24);
 	if (!HyForceDesync(Sv))
 	{
@@ -254,8 +267,8 @@ FNsSelfTestResult NsRunLockstepResyncStaleJoinSelfTest()
 	}
 	FNsLockstepResync Repair;
 	NsPumpLockstepResyncServer(Net, Sv, Repair);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
-	NsPumpLockstepResyncClient(Net, C1, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
 	if (!HyAligned(Sv, Repair, C0, C1))
 	{
 		return HyFail(TEXT("lockstep-resync-stale: not aligned"));
@@ -268,7 +281,7 @@ FNsSelfTestResult NsRunLockstepResyncStaleJoinSelfTest()
 	Stale.SnapX[1] = -999;
 	Stale.SnapRng = 99;
 	Net.Send(ENsAddr::Sv, ENsAddr::C0, Stale);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
 	if (!C0.World.Equals(Repair.LiveSnap) || C0.ExecFrame != Repair.LiveSnapTick)
 	{
 		return HyFail(TEXT("lockstep-resync-stale: Tick=0 JoinSnap overwrote live snap"));
@@ -283,7 +296,7 @@ FNsSelfTestResult NsRunLockstepResyncStaleJoinSelfTest()
 	Tail.Dx[0] = 1;
 	Periodic.Frames.Add(Repair.LiveSnapTick, Tail);
 	Net.Send(ENsAddr::Sv, ENsAddr::C0, Periodic);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
 	if (C0.World.X[0] == 777 || !C0.World.Equals(Repair.LiveSnap))
 	{
 		return HyFail(TEXT("lockstep-resync-stale: Join with Frames overwrote live snap"));
@@ -301,6 +314,8 @@ FNsSelfTestResult NsRunLockstepResyncGiveUpSelfTest()
 	FNsLockstepClient C0;
 	FNsLockstepClient C1;
 	HyInitLs(C0, C1);
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
 	HyWarmLockstep(Net, Sv, C0, C1, 24);
 	if (!HyForceDesync(Sv))
 	{
@@ -313,8 +328,8 @@ FNsSelfTestResult NsRunLockstepResyncGiveUpSelfTest()
 	for (int32 i = 0; i <= Ns::ResyncGiveUpPumps; ++i)
 	{
 		NsPumpLockstepResyncServer(Net, Sv, Repair);
-		NsPumpLockstepResyncClient(Net, C0, Repair);
-		NsPumpLockstepResyncClient(Net, C1, Repair);
+		NsPumpLockstepResyncClient(Net, C0, V0);
+		NsPumpLockstepResyncClient(Net, C1, V1);
 	}
 	if (!Repair.bGiveUp)
 	{
@@ -338,6 +353,8 @@ FNsSelfTestResult NsRunLockstepResyncResumeSelfTest()
 	FNsLockstepClient C0;
 	FNsLockstepClient C1;
 	HyInitLs(C0, C1);
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
 	HyWarmLockstep(Net, Sv, C0, C1, 24);
 	if (!HyForceDesync(Sv))
 	{
@@ -346,8 +363,8 @@ FNsSelfTestResult NsRunLockstepResyncResumeSelfTest()
 	const int32 FrameAt = Sv.Frame;
 	FNsLockstepResync Repair;
 	NsPumpLockstepResyncServer(Net, Sv, Repair);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
-	NsPumpLockstepResyncClient(Net, C1, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
 	if (!HyAligned(Sv, Repair, C0, C1))
 	{
 		return HyFail(TEXT("lockstep-resync-resume: not aligned"));
@@ -371,12 +388,12 @@ FNsSelfTestResult NsRunLockstepResyncResumeSelfTest()
 
 	C0.SendInput(Net, 1);
 	C1.SendInput(Net, -1);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
-	NsPumpLockstepResyncClient(Net, C1, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
 	Net.Advance(Ns::LogicDtMs);
 	NsPumpLockstepResyncServer(Net, Sv, Repair);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
-	NsPumpLockstepResyncClient(Net, C1, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
 	if (Sv.Frame <= FrameAt || C0.ExecFrame != Sv.Frame || C1.ExecFrame != Sv.Frame)
 	{
 		return HyFailStr(FString::Printf(
@@ -400,6 +417,8 @@ FNsSelfTestResult NsRunLockstepResyncAgainSelfTest()
 	FNsLockstepClient C0;
 	FNsLockstepClient C1;
 	HyInitLs(C0, C1);
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
 	HyWarmLockstep(Net, Sv, C0, C1, 24);
 	if (!HyForceDesync(Sv))
 	{
@@ -408,8 +427,8 @@ FNsSelfTestResult NsRunLockstepResyncAgainSelfTest()
 	const int32 FirstHalt = Sv.Frame;
 	FNsLockstepResync Repair;
 	NsPumpLockstepResyncServer(Net, Sv, Repair);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
-	NsPumpLockstepResyncClient(Net, C1, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
 	NsPumpLockstepResyncServer(Net, Sv, Repair);
 	if (!Repair.bResumed || Repair.bCaptured || Sv.bDesync)
 	{
@@ -418,24 +437,24 @@ FNsSelfTestResult NsRunLockstepResyncAgainSelfTest()
 
 	C0.SendInput(Net, 1);
 	C1.SendInput(Net, -1);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
-	NsPumpLockstepResyncClient(Net, C1, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
 	Net.Advance(Ns::LogicDtMs);
 	NsPumpLockstepResyncServer(Net, Sv, Repair);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
-	NsPumpLockstepResyncClient(Net, C1, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
 
 	const int32 SecondTick = Ns::ChecksumEvery * 2;
 	for (int32 S = 0; S < 40 && !Sv.Checksums.Contains(SecondTick); ++S)
 	{
 		C0.SendInput(Net, 1);
 		C1.SendInput(Net, -1);
-		NsPumpLockstepResyncClient(Net, C0, Repair);
-		NsPumpLockstepResyncClient(Net, C1, Repair);
+		NsPumpLockstepResyncClient(Net, C0, V0);
+		NsPumpLockstepResyncClient(Net, C1, V1);
 		Net.Advance(Ns::LogicDtMs);
 		NsPumpLockstepResyncServer(Net, Sv, Repair);
-		NsPumpLockstepResyncClient(Net, C0, Repair);
-		NsPumpLockstepResyncClient(Net, C1, Repair);
+		NsPumpLockstepResyncClient(Net, C0, V0);
+		NsPumpLockstepResyncClient(Net, C1, V1);
 	}
 	if (!HyForceDesyncAt(Sv, SecondTick))
 	{
@@ -461,8 +480,8 @@ FNsSelfTestResult NsRunLockstepResyncAgainSelfTest()
 			Sv.Frame, SecondHalt));
 	}
 
-	NsPumpLockstepResyncClient(Net, C0, Repair);
-	NsPumpLockstepResyncClient(Net, C1, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
 	if (!HyAligned(Sv, Repair, C0, C1))
 	{
 		return HyFail(TEXT("lockstep-resync-again: second align"));
@@ -475,12 +494,12 @@ FNsSelfTestResult NsRunLockstepResyncAgainSelfTest()
 
 	C0.SendInput(Net, 1);
 	C1.SendInput(Net, -1);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
-	NsPumpLockstepResyncClient(Net, C1, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
 	Net.Advance(Ns::LogicDtMs);
 	NsPumpLockstepResyncServer(Net, Sv, Repair);
-	NsPumpLockstepResyncClient(Net, C0, Repair);
-	NsPumpLockstepResyncClient(Net, C1, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
 	if (Sv.Frame <= SecondHalt || C0.ExecFrame != Sv.Frame || C1.ExecFrame != Sv.Frame)
 	{
 		return HyFailStr(FString::Printf(
@@ -504,6 +523,8 @@ FNsSelfTestResult NsRunLockstepResyncCleanSelfTest()
 	FNsLockstepClient C0;
 	FNsLockstepClient C1;
 	HyInitLs(C0, C1);
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
 	HyWarmLockstep(Net, Sv, C0, C1, 40);
 	if (Sv.Frame != 40 || C0.ExecFrame != 40 || C1.ExecFrame != 40)
 	{
@@ -520,6 +541,140 @@ FNsSelfTestResult NsRunLockstepResyncCleanSelfTest()
 		return HyFail(TEXT("lockstep-resync-clean: checksum"));
 	}
 	return HyOk(TEXT("lockstep-resync-clean"));
+}
+
+FNsSelfTestResult NsRunLockstepResyncWireSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	FNsLockstepClient C1;
+	HyInitLs(C0, C1);
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
+	HyWarmLockstep(Net, Sv, C0, C1, 24);
+	if (!HyForceDesync(Sv))
+	{
+		return HyFail(TEXT("lockstep-resync-wire: no checksum record"));
+	}
+	FNsLockstepResync Repair;
+	NsPumpLockstepResyncServer(Net, Sv, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
+	if (V0.HaltTick != Repair.LiveSnapTick || V1.HaltTick != Repair.LiveSnapTick)
+	{
+		return HyFailStr(FString::Printf(
+			TEXT("lockstep-resync-wire: halt from packet v0=%d v1=%d snap=%d"),
+			V0.HaltTick, V1.HaltTick, Repair.LiveSnapTick));
+	}
+	if (!HyAligned(Sv, Repair, C0, C1))
+	{
+		return HyFail(TEXT("lockstep-resync-wire: not aligned"));
+	}
+	NsPumpLockstepResyncServer(Net, Sv, Repair);
+	C0.SendInput(Net, 1);
+	C1.SendInput(Net, -1);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
+	Net.Advance(Ns::LogicDtMs);
+	NsPumpLockstepResyncServer(Net, Sv, Repair);
+	NsPumpLockstepResyncClient(Net, C0, V0);
+	NsPumpLockstepResyncClient(Net, C1, V1);
+	if (V0.HaltTick >= 0 || V1.HaltTick >= 0)
+	{
+		return HyFail(TEXT("lockstep-resync-wire: still halted after S2CFrame"));
+	}
+	if (!C0.World.Equals(C1.World) || !C0.World.Equals(Sv.World))
+	{
+		return HyFail(TEXT("lockstep-resync-wire: worlds"));
+	}
+	return HyOk(FString::Printf(TEXT("lockstep-resync-wire snap=%d"), Repair.LiveSnapTick));
+}
+
+FNsSelfTestResult NsRunLockstepResyncUdpSelfTest()
+{
+	FNsUdpNet Host;
+	FNsUdpNet Client;
+	if (!Host.Bind(ENsAddr::Sv, 0, false) || !Host.Bind(ENsAddr::C0, 0, false)
+		|| !Client.Bind(ENsAddr::C1, 0, false))
+	{
+		return HyFail(TEXT("lockstep-resync-udp: bind failed"));
+	}
+	if (!Host.SetPeer(ENsAddr::C1, TEXT("127.0.0.1"), Client.BoundPort(ENsAddr::C1))
+		|| !Client.SetPeer(ENsAddr::Sv, TEXT("127.0.0.1"), Host.BoundPort(ENsAddr::Sv))
+		|| !Client.SetPeer(ENsAddr::C0, TEXT("127.0.0.1"), Host.BoundPort(ENsAddr::C0)))
+	{
+		return HyFail(TEXT("lockstep-resync-udp: set peer failed"));
+	}
+	FNsLockstepServer Sv;
+	FNsLockstepClient C0;
+	FNsLockstepClient C1;
+	HyInitLs(C0, C1);
+	FNsLockstepResync Repair;
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
+	const int8 Script[][2] = {{1, 0}, {1, -1}, {0, -1}, {-1, 1}};
+	for (int32 S = 0; S < 24; ++S)
+	{
+		const int8* Pair = Script[S % 4];
+		C0.SendInput(Host, Pair[0]);
+		C1.SendInput(Client, Pair[1]);
+		NsPumpLockstepResyncServer(Host, Sv, Repair, true);
+		NsPumpLockstepResyncClient(Host, C0, V0, true);
+		NsPumpLockstepResyncClient(Client, C1, V1, true);
+		Host.Advance(Ns::LogicDtMs);
+		Client.Advance(Ns::LogicDtMs);
+	}
+	if (!HyForceDesync(Sv))
+	{
+		return HyFail(TEXT("lockstep-resync-udp: no checksum record"));
+	}
+	const int32 HaltAt = Sv.Frame;
+	for (int32 i = 0; i < 16; ++i)
+	{
+		NsPumpLockstepResyncServer(Host, Sv, Repair, true);
+		NsPumpLockstepResyncClient(Host, C0, V0, true);
+		NsPumpLockstepResyncClient(Client, C1, V1, true);
+		Host.Advance(1.0);
+		Client.Advance(1.0);
+		if (V0.HaltTick == HaltAt && V1.HaltTick == HaltAt
+			&& C0.World.Equals(Sv.World) && C1.World.Equals(Sv.World)
+			&& C0.ExecFrame == HaltAt && C1.ExecFrame == HaltAt)
+		{
+			break;
+		}
+	}
+	if (V1.HaltTick != HaltAt || !C1.World.Equals(Sv.World) || C1.ExecFrame != HaltAt)
+	{
+		return HyFailStr(FString::Printf(
+			TEXT("lockstep-resync-udp: C1 not halted from packet halt=%d snap=%d x=%d/%d"),
+			V1.HaltTick, HaltAt, C1.World.X[0], Sv.World.X[0]));
+	}
+	for (int32 i = 0; i < 16; ++i)
+	{
+		C0.SendInput(Host, 1);
+		C1.SendInput(Client, -1);
+		NsPumpLockstepResyncClient(Host, C0, V0, true);
+		NsPumpLockstepResyncClient(Client, C1, V1, true);
+		Host.Advance(Ns::LogicDtMs);
+		Client.Advance(Ns::LogicDtMs);
+		NsPumpLockstepResyncServer(Host, Sv, Repair, true);
+		NsPumpLockstepResyncClient(Host, C0, V0, true);
+		NsPumpLockstepResyncClient(Client, C1, V1, true);
+		if (Repair.bResumed && V0.HaltTick < 0 && V1.HaltTick < 0
+			&& C0.ExecFrame == Sv.Frame && C1.ExecFrame == Sv.Frame
+			&& C0.World.Equals(C1.World) && C0.World.Equals(Sv.World)
+			&& Sv.Frame > HaltAt)
+		{
+			return HyOk(FString::Printf(TEXT("lockstep-resync-udp snap=%d frame=%d"), HaltAt, Sv.Frame));
+		}
+	}
+	return HyFailStr(FString::Printf(
+		TEXT("lockstep-resync-udp: no resume resumed=%d v0=%d v1=%d sv=%d c0=%d c1=%d"),
+		Repair.bResumed ? 1 : 0, V0.HaltTick, V1.HaltTick, Sv.Frame, C0.ExecFrame, C1.ExecFrame));
 }
 
 static void DoorInit(FNsLockstepDoorServer& Sv, FNsLockstepDoorClient& C0, FNsLockstepDoorClient& C1)
@@ -716,14 +871,15 @@ FNsSelfTestResult NsRunLockstepDoorComposeSelfTest()
 	FNsLockstepClient C0;
 	FNsLockstepClient C1;
 	HyInitLs(C0, C1);
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
 	HyWarmLockstep(Net, Sv, C0, C1, 24);
 	const int32 X0 = C0.World.X[0];
 	FNsDoorOpen DoorC0;
 	FNsDoorOpen DoorC1;
 	NsBroadcastDoorOpen(Net, 1);
-	FNsLockstepResync Idle;
-	NsPumpLockstepResyncClient(Net, C0, Idle, false, &DoorC0);
-	NsPumpLockstepResyncClient(Net, C1, Idle, false, &DoorC1);
+	NsPumpLockstepResyncClient(Net, C0, V0, false, &DoorC0);
+	NsPumpLockstepResyncClient(Net, C1, V1, false, &DoorC1);
 	if (DoorC0.Open != 1 || DoorC1.Open != 1)
 	{
 		return HyFail(TEXT("lockstep-door-compose: open not applied"));
@@ -740,8 +896,8 @@ FNsSelfTestResult NsRunLockstepDoorComposeSelfTest()
 	FNsLockstepResync Repair;
 	NsPumpLockstepResyncServer(Net, Sv, Repair);
 	NsBroadcastDoorOpen(Net, 0);
-	NsPumpLockstepResyncClient(Net, C0, Repair, false, &DoorC0);
-	NsPumpLockstepResyncClient(Net, C1, Repair, false, &DoorC1);
+	NsPumpLockstepResyncClient(Net, C0, V0, false, &DoorC0);
+	NsPumpLockstepResyncClient(Net, C1, V1, false, &DoorC1);
 	if (!HyAligned(Sv, Repair, C0, C1))
 	{
 		return HyFail(TEXT("lockstep-door-compose: halt align"));

@@ -25,6 +25,8 @@ void ANsNetManager::InitProtocols()
 	LsC0 = FNsLockstepClient();
 	LsC1 = FNsLockstepClient();
 	LsResync = FNsLockstepResync();
+	LsResyncC0 = FNsLockstepResyncClient();
+	LsResyncC1 = FNsLockstepResyncClient();
 	DoorSv = FNsDoorOpen();
 	DoorC0 = FNsDoorOpen();
 	DoorC1 = FNsDoorOpen();
@@ -502,40 +504,18 @@ void ANsNetManager::TickLockstep()
 			LsC1.SendInput(Wire(), ReadDx(bClientOnly));
 		}
 
-		const bool bResync = !bUseUdp || UdpRole == ENsUdpRole::LocalMesh;
 		if (RunsServer())
 		{
-			if (bResync)
-			{
-				NsPumpLockstepResyncServer(Wire(), LsSv, LsResync);
-			}
-			else
-			{
-				NsPumpLockstepServer(Wire(), LsSv);
-			}
+			NsPumpLockstepResyncServer(Wire(), LsSv, LsResync);
 			NsBroadcastDoorOpen(Wire(), DoorSv.Open);
 		}
 		if (RunsC0())
 		{
-			if (bResync)
-			{
-				NsPumpLockstepResyncClient(Wire(), LsC0, LsResync, false, &DoorC0);
-			}
-			else
-			{
-				NsPumpLockstepClient(Wire(), LsC0, false, &DoorC0);
-			}
+			NsPumpLockstepResyncClient(Wire(), LsC0, LsResyncC0, false, &DoorC0);
 		}
 		if (RunsC1())
 		{
-			if (bResync)
-			{
-				NsPumpLockstepResyncClient(Wire(), LsC1, LsResync, false, &DoorC1);
-			}
-			else
-			{
-				NsPumpLockstepClient(Wire(), LsC1, false, &DoorC1);
-			}
+			NsPumpLockstepResyncClient(Wire(), LsC1, LsResyncC1, false, &DoorC1);
 		}
 
 		Wire().Advance(Ns::LogicDtMs);

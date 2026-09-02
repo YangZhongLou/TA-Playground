@@ -221,7 +221,7 @@ payload 9 字节。整包 33 字节。锁步客户端每 15 拍发一次。服�
 payload 长度：`17 + 6×count`。乐观锁步服务器每 75 拍存一份 `SnapWorld`，`SendJoin` 连发两次。
 固定延迟锁步每 4 拍发送 `count=0` 的权威恢复快照，跨过连续丢失的 `S2CFrame` 缺口。
 超 MTU 时同一快照切成多个 JoinSnap，每片独立成 UDP 包。
-停拍拉齐复用本 type：`count=0`，`exec_frame` / x / rng 来自**当前**服务器世界，见 [hybrid/resync.md](hybrid/resync.md)。
+停拍拉齐复用本 type：`count=0`，`exec_frame` / x / rng 来自**当前**服务器世界。客户端据此停拍；带 `frame >= HaltTick` 的 `S2CFrame` 恢复。见 [hybrid/resync.md](hybrid/resync.md)。
 
 ## 8 `S2CDoorOpen`
 

@@ -23,6 +23,12 @@ public:
 	void Resume(FNsLockstepServer& Sv, INsNet& Net);
 };
 
+struct FNsLockstepResyncClient
+{
+	int32 HaltTick = -1;
+	int32 DoneSnapTick = -1;
+};
+
 NETWORKSYNC_API void NsApplyResyncSnap(FNsLockstepClient& Client, const FNsPacket& Packet);
 NETWORKSYNC_API void NsPumpLockstepResyncServer(INsNet& Net, FNsLockstepServer& Sv, FNsLockstepResync& Resync, bool bWait = false);
-NETWORKSYNC_API void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, const FNsLockstepResync& Resync, bool bWait = false, FNsDoorOpen* Door = nullptr);
+NETWORKSYNC_API void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, FNsLockstepResyncClient& View, bool bWait = false, FNsDoorOpen* Door = nullptr);

@@ -4,7 +4,7 @@
 内部组合 `FNsLockstep*`，不复制乐观循环，不改 `NsLockstep.cpp`。
 概念：[../../schemes/hybrid/door.md](../../schemes/hybrid/door.md)。
 
-不要命名 `NsHybrid`。不要新增 `ENsScheme`。自测走 `NsPumpLockstepDoor*`。`ANsNetManager` 乐观锁步在同一轮 Drain 里叠加 `Open`（`NsPumpLockstepResyncClient` / `NsPumpLockstepClient` 的可选门指针），不替换停拍拉齐，不双写 `X`。
+不要命名 `NsHybrid`。不要新增 `ENsScheme`。自测走 `NsPumpLockstepDoor*`。`ANsNetManager` 乐观锁步在同一轮 Drain 里叠加 `Open`（`NsPumpLockstepResyncClient` 的可选门指针），不替换停拍拉齐，不双写 `X`。
 
 ## 所有权
 

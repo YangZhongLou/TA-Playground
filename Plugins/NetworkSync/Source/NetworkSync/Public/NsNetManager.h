@@ -110,6 +110,8 @@ private:
 	FNsLockstepClient LsC0;
 	FNsLockstepClient LsC1;
 	FNsLockstepResync LsResync;
+	FNsLockstepResyncClient LsResyncC0;
+	FNsLockstepResyncClient LsResyncC1;
 	FNsDoorOpen DoorSv;
 	FNsDoorOpen DoorC0;
 	FNsDoorOpen DoorC1;

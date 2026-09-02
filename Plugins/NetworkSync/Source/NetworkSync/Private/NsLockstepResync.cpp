@@ -107,22 +107,57 @@ void NsPumpLockstepResyncServer(INsNet& Net, FNsLockstepServer& Sv, FNsLockstepR
 	Resync.SendLiveSnap(Net, ENsAddr::C1);
 }
 
-void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, const FNsLockstepResync& Resync, bool bWait, FNsDoorOpen* Door)
+namespace
+{
+bool NsIsResyncLiveSnap(const FNsPacket& Packet)
+{
+	return Packet.Type == ENsMsg::S2CJoinSnap && Packet.Frames.Num() == 0 && Packet.Tick > 0;
+}
+
+bool NsS2CResumesHalt(const FNsPacket& Packet, int32 HaltTick)
+{
+	if (Packet.Type != ENsMsg::S2CFrame || HaltTick < 0)
+	{
+		return false;
+	}
+	for (const TPair<int32, FNsInputs>& Kv : Packet.Frames)
+	{
+		if (Kv.Key >= HaltTick)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+}
+
+void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, FNsLockstepResyncClient& View, bool bWait, FNsDoorOpen* Door)
 {
 	TArray<FNsPacket> ToC;
 	NsDrain(Net, C.Addr, ToC, bWait);
-	const bool bHalt = Resync.bCaptured && !Resync.bResumed;
 	bool bApplied = false;
 	for (const FNsPacket& P : ToC)
 	{
-		if (bHalt)
+		if (NsIsResyncLiveSnap(P) && P.Tick != View.DoneSnapTick)
 		{
-			if (P.Type == ENsMsg::S2CJoinSnap
-				&& P.Tick == Resync.LiveSnapTick
-				&& P.Frames.Num() == 0)
+			NsApplyResyncSnap(C, P);
+			View.HaltTick = P.Tick;
+			bApplied = true;
+		}
+	}
+	for (const FNsPacket& P : ToC)
+	{
+		if (NsIsResyncLiveSnap(P))
+		{
+			continue;
+		}
+		if (View.HaltTick >= 0)
+		{
+			if (NsS2CResumesHalt(P, View.HaltTick))
 			{
-				NsApplyResyncSnap(C, P);
-				bApplied = true;
+				View.DoneSnapTick = View.HaltTick;
+				View.HaltTick = -1;
+				C.OnS2C(P.Frames);
 			}
 			else if (Door)
 			{
@@ -152,7 +187,7 @@ void NsPumpLockstepResyncClient(INsNet& Net, FNsLockstepClient& C, const FNsLock
 		Pkt.Hash = C.World.Checksum();
 		Net.Send(C.Addr, ENsAddr::Sv, Pkt);
 	}
-	if (!bHalt)
+	if (View.HaltTick < 0)
 	{
 		C.Logic(Net);
 	}

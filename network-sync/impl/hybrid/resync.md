@@ -39,9 +39,9 @@
 2. 清空 `Buf`。
 3. 不合并 `Frames`（payload 为空）。
 
-停拍期间（`bCaptured && !bResumed`）`NsPumpLockstepResyncClient`：仅当 `Tick == LiveSnapTick` 且 `Frames` 为空时走 `NsApplyResyncSnap`。周期 Join（`Tick=0` / 旧检查点 / 带尾巴）一律忽略。**忽略** `S2CFrame`；**不**调用 `Logic`。回跳成功后发 `C2SChecksum`。`bResumed` 后走平时 `ApplyJoin` / `OnS2C` / `Logic`。
+停拍期间客户端**只看包**：`S2CJoinSnap` 且 `Frames` 空且 `Tick>0` 视为 LiveSnap，走 `NsApplyResyncSnap`，本地 `HaltTick=Tick`。周期 Join（`Tick=0` / 带尾巴）一律忽略。**忽略** 不含 `HaltTick` 的 `S2CFrame`；**不**调用 `Logic`。回跳成功后发 `C2SChecksum`。带 `frame >= HaltTick` 的 `S2CFrame` 清停拍，再走平时 `ApplyJoin` / `OnS2C` / `Logic`。迟到的同 Tick LiveSnap 用 `DoneSnapTick` 丢掉。
 
-在途的旧输入帧不得在回跳后再执行。
+在途的旧输入帧不得在回跳后再执行。客户端泵不再读服务器的 `bCaptured`。
 
 ## 收场
 
@@ -53,7 +53,7 @@
 
 逻辑 bug 拉齐后仍会分叉；Resume 后若 checksum 再对不上，再次停拍。
 
-热切 `ApplyScheme` 会重建 `LsResync`。分进程 `Host` / `Client` 两端各有一份 `FNsLockstepResync`，C1 看不到 `bCaptured`，那些角色仍走 `NsPumpLockstep*`。
+热切 `ApplyScheme` 会重建 `LsResync` 与两端 `FNsLockstepResyncClient`。分进程 `Host` / `Client` 各有一份客户端 View；停拍只认 LiveSnap 包，不共享 `bCaptured`。乐观 Manager 一律走 `NsPumpLockstepResync*`。
 
 第一版不做按视野裁快照，不做踢人替代。恢复打拍是本包第二里程碑，已做。
 
@@ -80,3 +80,5 @@
 9. 对齐且两槽 checksum ack 后：`bResumed`，再过一个 `LogicDtMs` 后 `Frame` 增加，两端 `World` 同位。Ack 当拍 `Frame` 仍等于 `LiveSnapTick`。
 10. `NetworkSync.Lockstep.Resync.Clean`：Manager 同序泵（SendInput → Resync 泵 → Advance）40 拍对齐且 checksum 通过。
 11. `NetworkSync.Lockstep.Resync.Again`：Resume 后再人为 checksum 失败。新的 `LiveSnapTick`，再次停拍，ack 后再 Resume，两端同位。
+12. `NetworkSync.Lockstep.Resync.Wire`：客户端 View 不读服务器 `bCaptured`；空 `S2CJoinSnap` 停拍，随后 `S2CFrame` 恢复。
+13. `NetworkSync.Lockstep.Resync.Udp`：Host Sv+C0 / Client C1 分进程 UDP，C1 只靠包停拍拉齐并恢复。

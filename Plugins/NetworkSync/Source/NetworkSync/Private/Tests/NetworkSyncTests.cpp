@@ -249,6 +249,8 @@ NS_WRAP(FNsLockstep_ResyncGiveUp, "NetworkSync.Lockstep.Resync.GiveUp", NsRunLoc
 NS_WRAP(FNsLockstep_ResyncResume, "NetworkSync.Lockstep.Resync.Resume", NsRunLockstepResyncResumeSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_ResyncAgain, "NetworkSync.Lockstep.Resync.Again", NsRunLockstepResyncAgainSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstep_ResyncClean, "NetworkSync.Lockstep.Resync.Clean", NsRunLockstepResyncCleanSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_ResyncWire, "NetworkSync.Lockstep.Resync.Wire", NsRunLockstepResyncWireSelfTest, NsAutoFlags)
+NS_WRAP(FNsLockstep_ResyncUdp, "NetworkSync.Lockstep.Resync.Udp", NsRunLockstepResyncUdpSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstepDoor_Clean, "NetworkSync.LockstepDoor.Clean", NsRunLockstepDoorCleanSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstepDoor_DropOpen, "NetworkSync.LockstepDoor.DropOpen", NsRunLockstepDoorDropOpenSelfTest, NsAutoFlags)
 NS_WRAP(FNsLockstepDoor_DropFrame, "NetworkSync.LockstepDoor.DropFrame", NsRunLockstepDoorDropFrameSelfTest, NsAutoFlags)
