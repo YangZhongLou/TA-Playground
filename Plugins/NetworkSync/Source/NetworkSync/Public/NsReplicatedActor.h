@@ -25,7 +25,4 @@ public:
 
 	UFUNCTION()
 	void OnRep_Counter();
-
-private:
-	void TryBumpFromInput();
 };

@@ -10,6 +10,7 @@
 #include "NsDoor.h"
 #include "NsNetManager.h"
 #include "NsReplicatedActor.h"
+#include "NsInputProxy.h"
 #include "UObject/Package.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FNsWorld_Determinism, "NetworkSync.World.Determinism",
@@ -370,6 +371,15 @@ bool FNsActors_Cdo::RunTest(const FString& Parameters)
 	ANsNetManager* Manager = NewObject<ANsNetManager>(Pkg);
 	TestNotNull(TEXT("manager"), Manager);
 	TestEqual(TEXT("invalid player id"), Manager->GetPawnLocation(-1), Manager->GetActorLocation());
+
+	ANsInputProxy* Proxy = NewObject<ANsInputProxy>(Pkg);
+	TestNotNull(TEXT("proxy"), Proxy);
+	TestTrue(TEXT("proxy replicates"), Proxy->GetIsReplicated());
+	TestTrue(TEXT("proxy owner only"), Proxy->bOnlyRelevantToOwner);
+	Proxy->ServerBumpCounter_Implementation();
+	Proxy->ServerToggleDoor_Implementation();
+	TestEqual(TEXT("proxy no world leaves counter"), Counter->Counter, 2);
+	TestFalse(TEXT("proxy no world leaves door"), Door->bOpen);
 	return true;
 }
 

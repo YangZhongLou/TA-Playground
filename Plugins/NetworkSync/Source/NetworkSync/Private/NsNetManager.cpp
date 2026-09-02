@@ -3,6 +3,7 @@
 #include "NsNetManager.h"
 #include "NsReplicatedActor.h"
 #include "NsDoor.h"
+#include "NsInputProxy.h"
 #include "NsLockstepWaitResync.h"
 #include "NsLockstepTurnResync.h"
 #include "NsLockstepDelayResync.h"
@@ -11,6 +12,7 @@
 #include "NsTypes.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/PlatformProcess.h"
 #include "InputCoreTypes.h"
@@ -259,6 +261,10 @@ void ANsNetManager::Tick(float DeltaSeconds)
 		TickRollback();
 		break;
 	case ENsScheme::Replication:
+		if (HasAuthority())
+		{
+			EnsureInputProxies();
+		}
 		break;
 	}
 
@@ -736,6 +742,43 @@ void ANsNetManager::SpawnReplicatedDemo()
 		FRotator::ZeroRotator,
 		Params);
 	DoorActor = Door;
+	EnsureInputProxies();
+}
+
+void ANsNetManager::EnsureInputProxies()
+{
+	UWorld* World = GetWorld();
+	if (!HasAuthority() || !World || AppliedScheme != ENsScheme::Replication)
+	{
+		return;
+	}
+	TSet<APlayerController*> Have;
+	TArray<ANsInputProxy*> Stale;
+	for (TActorIterator<ANsInputProxy> It(World); It; ++It)
+	{
+		APlayerController* OwnerPc = Cast<APlayerController>(It->GetOwner());
+		if (!OwnerPc || !IsValid(OwnerPc))
+		{
+			Stale.Add(*It);
+			continue;
+		}
+		Have.Add(OwnerPc);
+	}
+	for (ANsInputProxy* Proxy : Stale)
+	{
+		Proxy->Destroy();
+	}
+	for (FConstPlayerControllerIterator It = World->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* Pc = It->Get();
+		if (!Pc || Have.Contains(Pc))
+		{
+			continue;
+		}
+		FActorSpawnParameters Params;
+		Params.Owner = Pc;
+		World->SpawnActor<ANsInputProxy>(GetActorLocation(), FRotator::ZeroRotator, Params);
+	}
 }
 
 void ANsNetManager::DestroyReplicatedDemo()
@@ -750,4 +793,16 @@ void ANsNetManager::DestroyReplicatedDemo()
 		Door->Destroy();
 	}
 	DoorActor.Reset();
+	if (UWorld* World = GetWorld())
+	{
+		TArray<ANsInputProxy*> Kill;
+		for (TActorIterator<ANsInputProxy> It(World); It; ++It)
+		{
+			Kill.Add(*It);
+		}
+		for (ANsInputProxy* Proxy : Kill)
+		{
+			Proxy->Destroy();
+		}
+	}
 }

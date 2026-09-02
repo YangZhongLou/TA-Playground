@@ -3,8 +3,6 @@
 #include "NsReplicatedActor.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
-#include "GameFramework/PlayerController.h"
-#include "InputCoreTypes.h"
 #include "Net/UnrealNetwork.h"
 
 ANsReplicatedActor::ANsReplicatedActor()
@@ -17,7 +15,6 @@ ANsReplicatedActor::ANsReplicatedActor()
 void ANsReplicatedActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	TryBumpFromInput();
 
 	UWorld* World = GetWorld();
 	if (!World)
@@ -43,25 +40,4 @@ void ANsReplicatedActor::ServerBump_Implementation()
 
 void ANsReplicatedActor::OnRep_Counter()
 {
-}
-
-void ANsReplicatedActor::TryBumpFromInput()
-{
-	APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
-	if (!PC || !PC->IsLocalController())
-	{
-		return;
-	}
-	if (!PC->WasInputKeyJustPressed(EKeys::E))
-	{
-		return;
-	}
-	if (HasAuthority())
-	{
-		++Counter;
-	}
-	else
-	{
-		ServerBump();
-	}
 }

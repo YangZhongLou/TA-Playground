@@ -79,10 +79,10 @@ void AMyReplicatedActor::ServerBump_Implementation()
 }
 ```
 
-客户端按键：引擎只允许 Owner 调 `ServerBump()`。非 Owner 调 Server RPC 会被丢。
-本插件 **不** `SetOwner`。Listen 主机本地按 `E`/`F` 走 authority 实现；远端客户端按键可能被丢，用主机操作验收复制。
+客户端按键：引擎只允许 **Owner** 调 Server RPC。Counter / Door 是共享世界物，**不** `SetOwner`（设了只剩一个客户端能调）。
+每名 `PlayerController` 由服务器 spawn 一份 `ANsInputProxy`（`SetOwner(PC)`，`bOnlyRelevantToOwner`）。本地按 `E`/`F` 走这份代理上的 Server RPC，服务器再改 Counter / Door。Listen 主机和远端客户端同一条路径。
 
-验收：Listen 上按键，Client 的 `Counter` 变。
+验收：Listen 上按键，Client 的 `Counter` 变；Client 上按 `E`/`F`，Listen 的值也变。
 
 ## 第二步：门用属性，不用每帧 RPC
 

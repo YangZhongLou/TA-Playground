@@ -27,6 +27,5 @@ public:
 	void OnRep_Open();
 
 private:
-	void TryToggleFromInput();
 	void DrawDoor() const;
 };

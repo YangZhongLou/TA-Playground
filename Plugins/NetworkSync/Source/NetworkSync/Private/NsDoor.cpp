@@ -3,8 +3,6 @@
 #include "NsDoor.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
-#include "GameFramework/PlayerController.h"
-#include "InputCoreTypes.h"
 #include "Net/UnrealNetwork.h"
 
 ANsDoor::ANsDoor()
@@ -17,7 +15,6 @@ ANsDoor::ANsDoor()
 void ANsDoor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	TryToggleFromInput();
 	DrawDoor();
 }
 
@@ -34,27 +31,6 @@ void ANsDoor::ServerSetOpen_Implementation(bool bNewOpen)
 
 void ANsDoor::OnRep_Open()
 {
-}
-
-void ANsDoor::TryToggleFromInput()
-{
-	APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
-	if (!PC || !PC->IsLocalController())
-	{
-		return;
-	}
-	if (!PC->WasInputKeyJustPressed(EKeys::F))
-	{
-		return;
-	}
-	if (HasAuthority())
-	{
-		bOpen = !bOpen;
-	}
-	else
-	{
-		ServerSetOpen(!bOpen);
-	}
 }
 
 void ANsDoor::DrawDoor() const

@@ -218,11 +218,11 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 
 | Actor | 复制内容 | 输入 |
 | --- | --- | --- |
-| `ANsReplicatedActor` | `Counter` | 主机按 `E` → `ServerBump` |
-| `ANsDoor` | `bOpen` | 主机按 `F` → `ServerSetOpen` |
+| `ANsReplicatedActor` | `Counter` | 各端按 `E` → 自己的 `ANsInputProxy` Server RPC |
+| `ANsDoor` | `bOpen` | 各端按 `F` → 同上 |
+| `ANsInputProxy` | 无属性 | 每名 PC 一份，Owner 才能调 Server RPC |
 
-只在 `HasAuthority` 时 spawn。不 `SetOwner`。
-Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按键可能被引擎丢掉。
+只在 `HasAuthority` 时 spawn Counter / Door / Proxy。Counter / Door 不 `SetOwner`。
 本插件不接入角色移动（Mover / CMC）。复制只演示属性和 RPC。
 
 规格：[impl/replication_ue.md](impl/replication_ue.md)。
@@ -263,7 +263,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | 状态同步 | `StateSync.*` | 和解、倒带、倒带开火、nack 全量、Inbox 空洞/上限、长断线排空、旧快照忽略、Src 身份 |
 | 回滚 | `Rollback.*` | 干净、WAIT、Confirmed 不跳空洞（前缀/中间）、冲突输入终止态 |
 | 运行时 | `Runtime.SchemeSwitch` / `Runtime.SchemeApply` | 热切后锁步不追 `Now`、队列清空；`ApplyScheme` 重建协议且锁步不继承 `PredX` |
-| 复制 | `Actors.Cdo` | Door / Counter RPC |
+| 复制 | `Actors.Cdo` | Door / Counter RPC / InputProxy |
 | 压力 | `Stress.*` | 长跑限时（World / Codec / FakeNet / 三套协议） |
 
 改 `Drop` 后若偶发失败，先看冷却循环是否排空在途包。
@@ -271,7 +271,7 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 
 ## 已知边界
 
-已闭环：两人整数世界、假网络字节头、本机与分进程 UDP、STUN Binding 查询映射地址、三套协议主循环、checksum、有序 Inbox、增量 nack、回滚空洞、锁步周期 Join、乐观/等齐/delay 按号 NACK、四支停拍踢分叉者、状态同步倒带开火、复制整数与门。
+已闭环：两人整数世界、假网络字节头、本机与分进程 UDP、STUN Binding 查询映射地址、三套协议主循环、checksum、有序 Inbox、增量 nack、回滚空洞、锁步周期 Join、乐观/等齐/delay 按号 NACK、四支停拍踢分叉者、状态同步倒带开火、复制整数与门、Owner 输入代理。
 
 | 未做 | 影响 |
 | --- | --- |
@@ -280,10 +280,10 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | NAT / STUN | Binding 可查出映射 IPv4:port；仍无打洞 / ICE / 信令。`UdpRemoteHost` 仍要填 |
 | 多人 / AOI | 地址写死 Sv/C0/C1 |
 | 开火命中 | 倒带开火已接；无血量 / 无真正射线 |
-| 客户端 Owner RPC | 远端按 `E`/`F` 可能被丢 |
+| 客户端 Owner RPC | 每名 PC 一份 `ANsInputProxy`；Counter / Door 仍不 SetOwner |
 | 角色移动 | 不在本插件；玩法项目自选引擎移动系统 |
 
-后续：Owner RPC，或跨机填 `UdpRemoteHost`。
+后续：ICE / 打洞，或跨机填 `UdpRemoteHost`。
 
 ## 索引
 
@@ -322,4 +322,5 @@ Server RPC 仍须 Owner：Listen 主机按 `E`/`F` 可改；远端客户端按�
 | `FNsRollbackPeer` | `Public/NsRollback.h` |
 | `ANsNetManager` | `Public/NsNetManager.h` |
 | `ANsReplicatedActor` | `Public/NsReplicatedActor.h` |
+| `ANsInputProxy` | `Public/NsInputProxy.h` |
 | `ANsDoor` | `Public/NsDoor.h` |

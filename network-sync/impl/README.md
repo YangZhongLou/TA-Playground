@@ -24,7 +24,7 @@
 | 会话切段 | [hybrid/session.md](hybrid/session.md) | 已在 `ApplyScheme` |
 | 停拍拉齐 | [hybrid/resync.md](hybrid/resync.md) | `NsLockstepResync.*` |
 | 锁步加门 | [hybrid/door.md](hybrid/door.md) | `NsLockstepDoor.*`，FakeNet 门，禁止双写 `X` |
-| UE 联机原型 | [replication_ue.md](replication_ue.md) | `NsReplicatedActor` / `NsDoor` |
+| UE 联机原型 | [replication_ue.md](replication_ue.md) | `NsReplicatedActor` / `NsDoor` / `NsInputProxy` |
 
 公共传输：[transport.md](transport.md)、[packet-format.md](packet-format.md)、`NsPacket.h`、`NsNet.h`、`NsFakeNet.h`、`NsUdpNet.h`、`NsStun.h`、`NsCodec.h`、`NsPump.h`。
 共享世界：`NsTypes.h`（`FNsWorld::Step` / `Checksum`）。
@@ -59,6 +59,6 @@
    未实现的 Kind 不会偷偷跑乐观循环。
    乐观锁步走停拍拉齐泵（含 Host/Client）。等齐走 `NsPumpLockstepWaitResync*`。通信回合走 `NsPumpLockstepTurnResync*`。delay 走 `NsPumpLockstepDelayResync*`。
 6. 勾选 `bUseUdp`：`LocalMesh` 本机三端口；`Host`/`Client` 填 `UdpRemoteHost` 做两进程。可选 `UdpStunHost`（点分 IPv4）只查询映射地址，不打洞。
-7. Replication：Listen Server 下按 `E` 增加 `Counter`，按 `F` 开关门。
+7. Replication：Listen Server 下本机或远端按 `E` 增加 `Counter`，按 `F` 开关门（经 `ANsInputProxy`）。
 
 源码根目录：`Plugins/NetworkSync/Source/NetworkSync/`。

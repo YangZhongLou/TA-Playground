@@ -104,6 +104,7 @@ private:
 	void DrawLockstepDoor() const;
 	void SpawnReplicatedDemo();
 	void DestroyReplicatedDemo();
+	void EnsureInputProxies();
 	void InitProtocols();
 	void ResetWire();
 	void ApplyScheme(ENsScheme NewScheme);
