@@ -24,7 +24,7 @@ LiveSnap 仍是空 `S2CJoinSnap` 且 `Tick>0`，见 [resync.md](resync.md)。
 ack 当拍 **不要** `Tick`：已关闭的 `Cmds` 足够 `TryStep`，会让 `Frame` 立刻 +1。
 
 回跳后用 `NsLockstepTurnSyncCursor` 从 `TurnLen` 重建 `ExecTurn` / `ExecTurnStart`，并清空 `Cmds`。
-`SendTurn` 保持，下一发仍对准 `CollectTurn`。不叠门。
+`SendTurn` 保持，下一发仍对准 `CollectTurn`。可选 `FNsDoorOpen*`：halt 期间仍 `NsApplyDoorOpen`，不改回合 `Tick`。
 
 客户端泵：空 `S2CJoinSnap` 且 `Tick>0` 走 `NsApplyTurnResyncSnap`，停拍期间不 `Logic`。
 空 `S2CFrame` 清停拍。带回合的 Resend 在停拍期间丢掉。
@@ -45,3 +45,4 @@ ack 当拍 **不要** `Tick`：已关闭的 `Cmds` 足够 `TryStep`，会让 `Fr
 4. 两槽 ack 后 `bResumed`；ack 当拍 `Frame` 仍等于 `LiveSnapTick`；再打拍后两端同位。
 5. Resume 后再人为 checksum 失败：新的 `LiveSnapTick`，再次停拍，ack 后再 Resume。
 6. 客户端 View 不读服务器 `bCaptured`；空 `S2CJoinSnap` 停拍，空 `S2CFrame` 恢复。
+7. `NetworkSync.Lockstep.Turn.Resync.Udp`：Host Sv+C0 / Client C1 分进程 UDP，C1 只靠包停拍拉齐并用空 `S2CFrame` 恢复。

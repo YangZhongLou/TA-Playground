@@ -2,6 +2,8 @@
 
 #include "NsSelfTest.h"
 #include "NsFakeNet.h"
+#include "NsUdpNet.h"
+#include "NsLockstepDoor.h"
 #include "NsLockstepTurn.h"
 #include "NsLockstepTurnResync.h"
 
@@ -403,4 +405,145 @@ FNsSelfTestResult NsRunLockstepTurnResyncWireSelfTest()
 		return TrFail(TEXT("lockstep-turn-resync-wire: worlds"));
 	}
 	return TrOk(FString::Printf(TEXT("lockstep-turn-resync-wire snap=%d"), Repair.LiveSnapTick));
+}
+
+FNsSelfTestResult NsRunLockstepTurnResyncUdpSelfTest()
+{
+	FNsUdpNet Host;
+	FNsUdpNet Client;
+	if (!Host.Bind(ENsAddr::Sv, 0, false) || !Host.Bind(ENsAddr::C0, 0, false)
+		|| !Client.Bind(ENsAddr::C1, 0, false))
+	{
+		return TrFail(TEXT("lockstep-turn-resync-udp: bind failed"));
+	}
+	if (!Host.SetPeer(ENsAddr::C1, TEXT("127.0.0.1"), Client.BoundPort(ENsAddr::C1))
+		|| !Client.SetPeer(ENsAddr::Sv, TEXT("127.0.0.1"), Host.BoundPort(ENsAddr::Sv))
+		|| !Client.SetPeer(ENsAddr::C0, TEXT("127.0.0.1"), Host.BoundPort(ENsAddr::C0)))
+	{
+		return TrFail(TEXT("lockstep-turn-resync-udp: set peer failed"));
+	}
+	FNsLockstepTurnServer Sv;
+	FNsLockstepTurnClient C0;
+	FNsLockstepTurnClient C1;
+	TrInit(C0, C1);
+	FNsLockstepResync Repair;
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
+	const int8 Script[][2] = {{1, 0}, {1, -1}, {0, -1}, {-1, 1}};
+	for (int32 S = 0; S < 24; ++S)
+	{
+		const int8* Pair = Script[S % 4];
+		C0.SendInput(Host, Pair[0]);
+		C1.SendInput(Client, Pair[1]);
+		NsPumpLockstepTurnResyncServer(Host, Sv, Repair, true);
+		NsPumpLockstepTurnResyncClient(Host, C0, V0, true);
+		NsPumpLockstepTurnResyncClient(Client, C1, V1, true);
+		Host.Advance(Ns::LogicDtMs);
+		Client.Advance(Ns::LogicDtMs);
+	}
+	if (!TrForceDesync(Sv))
+	{
+		return TrFail(TEXT("lockstep-turn-resync-udp: no checksum record"));
+	}
+	const int32 HaltAt = Sv.Frame;
+	for (int32 i = 0; i < 16; ++i)
+	{
+		NsPumpLockstepTurnResyncServer(Host, Sv, Repair, true);
+		NsPumpLockstepTurnResyncClient(Host, C0, V0, true);
+		NsPumpLockstepTurnResyncClient(Client, C1, V1, true);
+		Host.Advance(1.0);
+		Client.Advance(1.0);
+		if (V0.HaltTick == HaltAt && V1.HaltTick == HaltAt
+			&& C0.World.Equals(Sv.World) && C1.World.Equals(Sv.World)
+			&& C0.ExecFrame == HaltAt && C1.ExecFrame == HaltAt)
+		{
+			break;
+		}
+	}
+	if (V1.HaltTick != HaltAt || !C1.World.Equals(Sv.World) || C1.ExecFrame != HaltAt)
+	{
+		return TrFailStr(FString::Printf(
+			TEXT("lockstep-turn-resync-udp: C1 not halted from packet halt=%d snap=%d x=%d/%d"),
+			V1.HaltTick, HaltAt, C1.World.X[0], Sv.World.X[0]));
+	}
+	for (int32 i = 0; i < 16; ++i)
+	{
+		C0.SendInput(Host, 1);
+		C1.SendInput(Client, -1);
+		NsPumpLockstepTurnResyncClient(Host, C0, V0, true);
+		NsPumpLockstepTurnResyncClient(Client, C1, V1, true);
+		Host.Advance(Ns::LogicDtMs);
+		Client.Advance(Ns::LogicDtMs);
+		NsPumpLockstepTurnResyncServer(Host, Sv, Repair, true);
+		NsPumpLockstepTurnResyncClient(Host, C0, V0, true);
+		NsPumpLockstepTurnResyncClient(Client, C1, V1, true);
+		if (Repair.bResumed && V0.HaltTick < 0 && V1.HaltTick < 0
+			&& C0.ExecFrame == Sv.Frame && C1.ExecFrame == Sv.Frame
+			&& C0.World.Equals(C1.World) && C0.World.Equals(Sv.World)
+			&& Sv.Frame > HaltAt)
+		{
+			return TrOk(FString::Printf(TEXT("lockstep-turn-resync-udp snap=%d frame=%d"), HaltAt, Sv.Frame));
+		}
+	}
+	return TrFailStr(FString::Printf(
+		TEXT("lockstep-turn-resync-udp: no resume resumed=%d v0=%d v1=%d sv=%d c0=%d c1=%d"),
+		Repair.bResumed ? 1 : 0, V0.HaltTick, V1.HaltTick, Sv.Frame, C0.ExecFrame, C1.ExecFrame));
+}
+
+FNsSelfTestResult NsRunLockstepTurnDoorComposeSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepTurnServer Sv;
+	FNsLockstepTurnClient C0;
+	FNsLockstepTurnClient C1;
+	TrInit(C0, C1);
+	FNsLockstepResyncClient V0;
+	FNsLockstepResyncClient V1;
+	TrWarm(Net, Sv, C0, C1, 24);
+	for (int32 i = 0; i < NsLockstepTurnFptMax * NsLockstepTurnLead; ++i)
+	{
+		const int32 Before = C0.ExecFrame;
+		NsPumpLockstepTurnResyncClient(Net, C0, V0);
+		NsPumpLockstepTurnResyncClient(Net, C1, V1);
+		if (C0.ExecFrame == Before)
+		{
+			break;
+		}
+	}
+	const int32 X0 = C0.World.X[0];
+	FNsDoorOpen DoorC0;
+	FNsDoorOpen DoorC1;
+	NsBroadcastDoorOpen(Net, 1);
+	NsPumpLockstepTurnResyncClient(Net, C0, V0, false, &DoorC0);
+	NsPumpLockstepTurnResyncClient(Net, C1, V1, false, &DoorC1);
+	if (DoorC0.Open != 1 || DoorC1.Open != 1)
+	{
+		return TrFail(TEXT("lockstep-turn-door-compose: open not applied"));
+	}
+	if (C0.World.X[0] != X0)
+	{
+		return TrFail(TEXT("lockstep-turn-door-compose: open wrote X"));
+	}
+
+	if (!TrForceDesync(Sv))
+	{
+		return TrFail(TEXT("lockstep-turn-door-compose: no checksum record"));
+	}
+	FNsLockstepResync Repair;
+	NsPumpLockstepTurnResyncServer(Net, Sv, Repair);
+	NsBroadcastDoorOpen(Net, 0);
+	NsPumpLockstepTurnResyncClient(Net, C0, V0, false, &DoorC0);
+	NsPumpLockstepTurnResyncClient(Net, C1, V1, false, &DoorC1);
+	if (!TrAligned(Sv, Repair, C0, C1))
+	{
+		return TrFail(TEXT("lockstep-turn-door-compose: halt align"));
+	}
+	if (DoorC0.Open != 0 || DoorC1.Open != 0)
+	{
+		return TrFail(TEXT("lockstep-turn-door-compose: halt ignored door"));
+	}
+	return TrOk(TEXT("lockstep-turn-door-compose"));
 }

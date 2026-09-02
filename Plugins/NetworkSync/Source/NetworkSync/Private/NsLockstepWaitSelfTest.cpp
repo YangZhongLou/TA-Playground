@@ -269,3 +269,176 @@ FNsSelfTestResult NsRunLockstepWaitJoinSelfTest()
 	}
 	return WaitOk(FString::Printf(TEXT("lockstep-wait-join frame=%d"), Sv.Frame));
 }
+
+FNsSelfTestResult NsRunLockstepWaitKickSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepWaitServer Sv;
+	FNsLockstepWaitClient C0;
+	FNsLockstepWaitClient C1;
+	WaitInit(C0, C1);
+	Sv.KickAfterStalls = 2;
+
+	for (int32 S = 0; S < 5; ++S)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		WaitPump(Net, Sv, C0, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+
+	const int32 SilentX = C0.World.X[1];
+	int32 Held = Sv.Frame;
+	double StallFrom = Sv.FrameStartMs;
+	while (Net.Now < StallFrom + NsLockstepWaitStallMs)
+	{
+		C0.SendInput(Net, 1);
+		WaitPump(Net, Sv, C0, C1);
+		if (Sv.Frame != Held)
+		{
+			return WaitFail(TEXT("lockstep-wait-kick: first stall stepped early"));
+		}
+		Net.Advance(1.0);
+	}
+	C0.SendInput(Net, 1);
+	WaitPump(Net, Sv, C0, C1);
+	if (Sv.Frame != Held + 1 || !Sv.Alive[1] || C0.World.X[1] != SilentX)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-kick: first stall frame=%d alive=%d x1=%d"),
+			Sv.Frame, Sv.Alive[1] ? 1 : 0, C0.World.X[1]));
+	}
+
+	Held = Sv.Frame;
+	StallFrom = Sv.FrameStartMs;
+	while (Net.Now < StallFrom + NsLockstepWaitStallMs)
+	{
+		C0.SendInput(Net, 1);
+		WaitPump(Net, Sv, C0, C1);
+		if (Sv.Frame != Held)
+		{
+			return WaitFail(TEXT("lockstep-wait-kick: second stall stepped early"));
+		}
+		Net.Advance(1.0);
+	}
+	C0.SendInput(Net, 1);
+	WaitPump(Net, Sv, C0, C1);
+	if (Sv.Frame != Held + 1 || Sv.Alive[1] || C0.World.X[1] != SilentX)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-kick: after two stalls frame=%d alive=%d x1=%d"),
+			Sv.Frame, Sv.Alive[1] ? 1 : 0, C0.World.X[1]));
+	}
+
+	Held = Sv.Frame;
+	const int32 X0 = C0.World.X[0];
+	C0.SendInput(Net, 1);
+	WaitPump(Net, Sv, C0, C1);
+	if (Sv.Frame != Held + 1)
+	{
+		return WaitFail(TEXT("lockstep-wait-kick: still waiting for kicked slot"));
+	}
+	if (C0.World.X[0] == X0 || C0.World.X[1] != SilentX)
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-kick: post-kick x0=%d was=%d x1=%d"),
+			C0.World.X[0], X0, C0.World.X[1]));
+	}
+
+	C1.SendInput(Net, 1);
+	C0.SendInput(Net, 1);
+	WaitPump(Net, Sv, C0, C1);
+	if (C0.World.X[1] != SilentX || C1.World.X[1] != SilentX || Sv.World.X[1] != SilentX)
+	{
+		return WaitFail(TEXT("lockstep-wait-kick: kicked input wrote x1"));
+	}
+	if (!C0.World.Equals(C1.World) || !C0.World.Equals(Sv.World))
+	{
+		return WaitFail(TEXT("lockstep-wait-kick: worlds"));
+	}
+	return WaitOk(TEXT("lockstep-wait-kick"));
+}
+
+FNsSelfTestResult NsRunLockstepWaitKickResumeSelfTest()
+{
+	FNsFakeNet Net;
+	Net.Drop = 0.f;
+	Net.RttMs = 0.f;
+	Net.JitterMs = 0.f;
+	FNsLockstepWaitServer Sv;
+	FNsLockstepWaitClient C0;
+	FNsLockstepWaitClient C1;
+	WaitInit(C0, C1);
+	Sv.KickAfterStalls = 2;
+
+	for (int32 S = 0; S < 5; ++S)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		WaitPump(Net, Sv, C0, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+
+	int32 Held = Sv.Frame;
+	double StallFrom = Sv.FrameStartMs;
+	while (Net.Now < StallFrom + NsLockstepWaitStallMs)
+	{
+		C0.SendInput(Net, 1);
+		WaitPump(Net, Sv, C0, C1);
+		if (Sv.Frame != Held)
+		{
+			return WaitFail(TEXT("lockstep-wait-kick-resume: stall stepped early"));
+		}
+		Net.Advance(1.0);
+	}
+	C0.SendInput(Net, 1);
+	WaitPump(Net, Sv, C0, C1);
+	if (!Sv.Alive[1] || Sv.MissStreak[1] != 1)
+	{
+		return WaitFail(TEXT("lockstep-wait-kick-resume: expected one miss"));
+	}
+
+	for (int32 S = 0; S < 3; ++S)
+	{
+		C0.SendInput(Net, 1);
+		C1.SendInput(Net, -1);
+		WaitPump(Net, Sv, C0, C1);
+		Net.Advance(Ns::LogicDtMs);
+	}
+	if (!Sv.Alive[1] || Sv.MissStreak[1] != 0)
+	{
+		return WaitFail(TEXT("lockstep-wait-kick-resume: streak not cleared"));
+	}
+
+	Held = Sv.Frame;
+	C0.SendInput(Net, 1);
+	WaitPump(Net, Sv, C0, C1);
+	if (Sv.Frame != Held)
+	{
+		return WaitFail(TEXT("lockstep-wait-kick-resume: stepped without C1"));
+	}
+
+	StallFrom = Sv.FrameStartMs;
+	while (Net.Now < StallFrom + NsLockstepWaitStallMs)
+	{
+		C0.SendInput(Net, 1);
+		WaitPump(Net, Sv, C0, C1);
+		if (Sv.Frame != Held)
+		{
+			return WaitFail(TEXT("lockstep-wait-kick-resume: still waiting stepped early"));
+		}
+		Net.Advance(1.0);
+	}
+	C0.SendInput(Net, 1);
+	WaitPump(Net, Sv, C0, C1);
+	if (Sv.Frame != Held + 1 || !Sv.Alive[1])
+	{
+		return WaitFailStr(FString::Printf(
+			TEXT("lockstep-wait-kick-resume: after return stall frame=%d alive=%d"),
+			Sv.Frame, Sv.Alive[1] ? 1 : 0));
+	}
+	return WaitOk(TEXT("lockstep-wait-kick-resume"));
+}

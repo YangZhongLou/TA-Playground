@@ -260,7 +260,7 @@ PC MOBA（Dota 2、英雄联盟）是状态同步。Dota 1 / 星际是帧同步�
 
 ## 和本插件的距离
 
-已实现：`Optimistic`（`NsLockstep.*`）；`Conservative`（`NsLockstepWait.*`，收齐再 `F`，超时填空）。
+已实现：`Optimistic`（`NsLockstep.*`）；`Conservative`（`NsLockstepWait.*`，收齐再 `F`，超时填空；`KickAfterStalls>0` 时从等待集踢槽）。
 
 未实现的两支内核各有独立规格，**另开类型和泵**，不要改 `NsLockstep.cpp`：
 

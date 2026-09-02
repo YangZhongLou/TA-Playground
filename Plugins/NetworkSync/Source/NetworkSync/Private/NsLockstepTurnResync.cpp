@@ -1,6 +1,7 @@
 // Copyright (c) 2026 TA-Playground. All Rights Reserved.
 
 #include "NsLockstepTurnResync.h"
+#include "NsLockstepDoor.h"
 #include "NsPump.h"
 
 namespace
@@ -95,7 +96,8 @@ void NsPumpLockstepTurnResyncServer(INsNet& Net, FNsLockstepTurnServer& Sv, FNsL
 	Resync.SendLiveSnap(Net, ENsAddr::C1);
 }
 
-void NsPumpLockstepTurnResyncClient(INsNet& Net, FNsLockstepTurnClient& C, FNsLockstepResyncClient& View, bool bWait)
+void NsPumpLockstepTurnResyncClient(
+	INsNet& Net, FNsLockstepTurnClient& C, FNsLockstepResyncClient& View, bool bWait, FNsDoorOpen* Door)
 {
 	TArray<FNsPacket> ToC;
 	NsDrain(Net, C.Addr, ToC, bWait);
@@ -122,11 +124,19 @@ void NsPumpLockstepTurnResyncClient(INsNet& Net, FNsLockstepTurnClient& C, FNsLo
 				View.DoneSnapTick = View.HaltTick;
 				View.HaltTick = -1;
 			}
+			else if (Door)
+			{
+				NsApplyDoorOpen(*Door, P);
+			}
 			continue;
 		}
 		if (P.Type == ENsMsg::S2CFrame)
 		{
 			C.OnS2C(P.Frames, P.Tick, P.BaseTick, P.TurnFpt);
+		}
+		else if (Door)
+		{
+			NsApplyDoorOpen(*Door, P);
 		}
 	}
 	if (bApplied)

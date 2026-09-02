@@ -14,4 +14,4 @@ LiveSnap 与乐观相同，见 [resync.md](resync.md)。
 | --- | --- | --- |
 | 按回合等齐，指令两回合后进 `F` | 停拍；广播当前 `World`；两端强制回跳 | 清 `bDesync`，发空 `S2CFrame`，下一泵再 `Tick` |
 
-不要和其它停拍泵合成一个 `if (Kind)`。门仍只叠在乐观 Manager。
+不要和其它停拍泵合成一个 `if (Kind)`。门叠在通信回合停拍客户端泵上，不进 `World.Step`。

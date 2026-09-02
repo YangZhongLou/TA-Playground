@@ -5,7 +5,7 @@
 
 void FNsLockstepWaitServer::OnInput(int32 PlayerId, int32 Tick, int8 Dx)
 {
-	if (PlayerId < 0 || PlayerId >= Ns::PlayerCount || Tick != Frame)
+	if (PlayerId < 0 || PlayerId >= Ns::PlayerCount || Tick != Frame || !Alive[PlayerId])
 	{
 		return;
 	}
@@ -30,21 +30,45 @@ void FNsLockstepWaitServer::OnChecksum(int32 FrameIndex, uint32 Hash)
 
 void FNsLockstepWaitServer::Tick(INsNet& Net)
 {
-	const bool bAll = Got[0] && Got[1];
+	bool bWaiting = false;
+	bool bAll = true;
+	for (int32 Id = 0; Id < Ns::PlayerCount; ++Id)
+	{
+		if (!Alive[Id])
+		{
+			continue;
+		}
+		bWaiting = true;
+		if (!Got[Id])
+		{
+			bAll = false;
+		}
+	}
+	if (!bWaiting)
+	{
+		return;
+	}
 	const bool bStall = (Net.Now - FrameStartMs) >= NsLockstepWaitStallMs;
 	if (!bAll && !bStall)
 	{
 		return;
 	}
-	if (bStall)
+	for (int32 Id = 0; Id < Ns::PlayerCount; ++Id)
 	{
-		if (!Got[0])
+		if (!Alive[Id])
 		{
-			Slot.Dx[0] = 0;
+			continue;
 		}
-		if (!Got[1])
+		if (Got[Id])
 		{
-			Slot.Dx[1] = 0;
+			MissStreak[Id] = 0;
+			continue;
+		}
+		Slot.Dx[Id] = 0;
+		++MissStreak[Id];
+		if (KickAfterStalls > 0 && MissStreak[Id] >= KickAfterStalls)
+		{
+			Alive[Id] = false;
 		}
 	}
 

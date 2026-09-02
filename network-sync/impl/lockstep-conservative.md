@@ -24,7 +24,7 @@
 constexpr int32 NsLockstepWaitStallMs = 500; // 超时后缺槽填 0 再开拍，避免测试挂死
 ```
 
-第一版超时填空不是踢人；踢人是后续字段。
+`KickAfterStalls` 默认 0：一直超时填空，不踢。大于 0 时，同一槽连续缺席这么多次后从**等待集**拿掉；`World` 仍是两人，该槽之后永远填 0，迟到输入丢掉。不是新 Kind，也不新开 `ENsMsg`。
 
 Join 是本 Kind 的第二里程碑：落后超过冗余窗时靠 `S2CJoinSnap` 追上，不要改 `NsLockstep.cpp`。
 
@@ -33,26 +33,40 @@ Join 是本 Kind 的第二里程碑：落后超过冗余窗时靠 `S2CJoinSnap` 
 ```cpp
 int32 Frame = 0;
 bool Got[2] = {};
+bool Alive[2] = {true, true};
+int32 MissStreak[2] = {};
+int32 KickAfterStalls = 0;
 FNsInputs Slot;
 double FrameStartMs = 0.0;
 FNsWorld World;
 
 void OnInput(int32 Id, int32 Tick, int8 Dx)
 {
-    if (Id < 0 || Id >= 2 || Tick != Frame) return;
+    if (Id < 0 || Id >= 2 || Tick != Frame || !Alive[Id]) return;
     Slot.Dx[Id] = NsClampDx(Dx);
     Got[Id] = true;
 }
 
 void Tick(INsNet& Net)
 {
-    const bool bAll = Got[0] && Got[1];
+    bool bWaiting = false;
+    bool bAll = true;
+    for (int32 Id = 0; Id < 2; ++Id)
+    {
+        if (!Alive[Id]) continue;
+        bWaiting = true;
+        if (!Got[Id]) bAll = false;
+    }
+    if (!bWaiting) return;
     const bool bStall = (Net.Now - FrameStartMs) >= NsLockstepWaitStallMs;
     if (!bAll && !bStall) return;
-    if (bStall)
+    for (int32 Id = 0; Id < 2; ++Id)
     {
-        if (!Got[0]) Slot.Dx[0] = 0;
-        if (!Got[1]) Slot.Dx[1] = 0;
+        if (!Alive[Id]) continue;
+        if (Got[Id]) { MissStreak[Id] = 0; continue; }
+        Slot.Dx[Id] = 0;
+        ++MissStreak[Id];
+        if (KickAfterStalls > 0 && MissStreak[Id] >= KickAfterStalls) Alive[Id] = false;
     }
     World.Step(Slot.Dx, Ns::LockstepSpeed);
     // S2CFrame：只带本拍 n，可仍打包前 3 拍冗余
@@ -87,6 +101,8 @@ Join 与乐观同一套 `S2CJoinSnap`：`Tick > ExecFrame` 才跳世界，尾巴
 2. C1 停发：全场 `Frame` 停住，直到 `NsLockstepWaitStallMs` 后才进一步；缺槽填 0，不是沿用上一拍。
 3. Drop=0.1：靠冗余仍不跳拍；允许因停等变慢，不允许分叉。
 4. C1 收不到包、服务器靠超时推进超过冗余窗：`S2CFrame` 追不上；`SendJoin` 后 `ExecFrame` 对齐且 `World` 同位。
+5. `KickAfterStalls=2`：两次超时后不再等该槽；被踢槽迟到输入改不了 `X`。
+6. 一次超时后对方恢复：缺席计数清零，再缺席仍要等 `StallMs`。
 
 不要复用 `NetworkSync.Lockstep.Drop10`：那条假定到点就走。
 不要复用 `NetworkSync.Lockstep.Join*`：那是乐观泵。
@@ -101,3 +117,9 @@ Join 与乐观同一套 `S2CJoinSnap`：`Tick > ExecFrame` 才跳世界，尾巴
 
 另开 `NsLockstepWaitResync.*`，不要新 Kind，不要改 `Tick`。
 规格：[hybrid/wait-resync.md](hybrid/wait-resync.md)。验收：`NetworkSync.Lockstep.Wait.Resync.*`。
+
+## 第四里程碑：超时踢人
+
+仍在 `NsLockstepWait.*` 的 `Tick` 里加，不要新 Kind，不要新消息。
+`KickAfterStalls=0`（默认）保持验收 2 的填空。大于 0 时从等待集拿掉槽，不缩小 `FNsWorld`。
+验收：`NetworkSync.Lockstep.Wait.Kick` / `KickResume`。

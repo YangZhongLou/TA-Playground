@@ -13,6 +13,9 @@ class NETWORKSYNC_API FNsLockstepWaitServer
 public:
 	int32 Frame = 0;
 	bool Got[Ns::PlayerCount] = {};
+	bool Alive[Ns::PlayerCount] = {true, true};
+	int32 MissStreak[Ns::PlayerCount] = {};
+	int32 KickAfterStalls = 0;
 	FNsInputs Slot;
 	double FrameStartMs = 0.0;
 	FNsWorld World;

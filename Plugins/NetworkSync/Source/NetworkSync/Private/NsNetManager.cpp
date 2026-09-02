@@ -378,6 +378,14 @@ int8 ANsNetManager::ReadDx(bool bPlayer0) const
 
 void ANsNetManager::TickLockstep()
 {
+	if (RunsServer())
+	{
+		const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+		if (PC && PC->WasInputKeyJustPressed(EKeys::F))
+		{
+			DoorSv.Open = DoorSv.Open ? 0 : 1;
+		}
+	}
 	if (AppliedLockstepKind == ENsLockstepKind::Conservative)
 	{
 		AccumMs += GetWorld()->GetDeltaSeconds() * 1000.0;
@@ -398,14 +406,15 @@ void ANsNetManager::TickLockstep()
 			if (RunsServer())
 			{
 				NsPumpLockstepWaitResyncServer(Wire(), WaitSv, LsResync);
+				NsBroadcastDoorOpen(Wire(), DoorSv.Open);
 			}
 			if (RunsC0())
 			{
-				NsPumpLockstepWaitResyncClient(Wire(), WaitC0, LsResyncC0);
+				NsPumpLockstepWaitResyncClient(Wire(), WaitC0, LsResyncC0, false, &DoorC0);
 			}
 			if (RunsC1())
 			{
-				NsPumpLockstepWaitResyncClient(Wire(), WaitC1, LsResyncC1);
+				NsPumpLockstepWaitResyncClient(Wire(), WaitC1, LsResyncC1, false, &DoorC1);
 			}
 
 			Wire().Advance(Ns::LogicDtMs);
@@ -432,14 +441,15 @@ void ANsNetManager::TickLockstep()
 			if (RunsServer())
 			{
 				NsPumpLockstepTurnResyncServer(Wire(), TurnSv, LsResync);
+				NsBroadcastDoorOpen(Wire(), DoorSv.Open);
 			}
 			if (RunsC0())
 			{
-				NsPumpLockstepTurnResyncClient(Wire(), TurnC0, LsResyncC0);
+				NsPumpLockstepTurnResyncClient(Wire(), TurnC0, LsResyncC0, false, &DoorC0);
 			}
 			if (RunsC1())
 			{
-				NsPumpLockstepTurnResyncClient(Wire(), TurnC1, LsResyncC1);
+				NsPumpLockstepTurnResyncClient(Wire(), TurnC1, LsResyncC1, false, &DoorC1);
 			}
 
 			Wire().Advance(Ns::LogicDtMs);
@@ -466,14 +476,15 @@ void ANsNetManager::TickLockstep()
 			if (RunsServer())
 			{
 				NsPumpLockstepDelayResyncServer(Wire(), DelaySv, LsResync);
+				NsBroadcastDoorOpen(Wire(), DoorSv.Open);
 			}
 			if (RunsC0())
 			{
-				NsPumpLockstepDelayResyncClient(Wire(), DelayC0, LsResyncC0);
+				NsPumpLockstepDelayResyncClient(Wire(), DelayC0, LsResyncC0, false, &DoorC0);
 			}
 			if (RunsC1())
 			{
-				NsPumpLockstepDelayResyncClient(Wire(), DelayC1, LsResyncC1);
+				NsPumpLockstepDelayResyncClient(Wire(), DelayC1, LsResyncC1, false, &DoorC1);
 			}
 
 			Wire().Advance(Ns::LogicDtMs);
@@ -483,14 +494,6 @@ void ANsNetManager::TickLockstep()
 	if (AppliedLockstepKind != ENsLockstepKind::Optimistic)
 	{
 		return;
-	}
-	if (RunsServer())
-	{
-		const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
-		if (PC && PC->WasInputKeyJustPressed(EKeys::F))
-		{
-			DoorSv.Open = DoorSv.Open ? 0 : 1;
-		}
 	}
 	AccumMs += GetWorld()->GetDeltaSeconds() * 1000.0;
 	while (AccumMs >= Ns::LogicDtMs)
@@ -610,7 +613,7 @@ void ANsNetManager::DrawPawns() const
 	}
 	DrawDebugSphere(World, GetPawnLocation(0), 24.f, 8, FColor::Cyan, false, -1.f, 0, 1.5f);
 	DrawDebugSphere(World, GetPawnLocation(1), 24.f, 8, FColor::Orange, false, -1.f, 0, 1.5f);
-	if (Scheme == ENsScheme::Lockstep && AppliedLockstepKind == ENsLockstepKind::Optimistic)
+	if (Scheme == ENsScheme::Lockstep)
 	{
 		DrawLockstepDoor();
 	}

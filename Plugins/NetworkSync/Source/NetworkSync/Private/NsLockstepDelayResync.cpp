@@ -1,6 +1,7 @@
 // Copyright (c) 2026 TA-Playground. All Rights Reserved.
 
 #include "NsLockstepDelayResync.h"
+#include "NsLockstepDoor.h"
 #include "NsPump.h"
 
 void NsApplyDelayResyncSnap(FNsLockstepDelayClient& Client, const FNsPacket& Packet)
@@ -80,7 +81,8 @@ void NsPumpLockstepDelayResyncServer(INsNet& Net, FNsLockstepDelayServer& Sv, FN
 	Resync.SendLiveSnap(Net, ENsAddr::C1);
 }
 
-void NsPumpLockstepDelayResyncClient(INsNet& Net, FNsLockstepDelayClient& C, FNsLockstepResyncClient& View, bool bWait)
+void NsPumpLockstepDelayResyncClient(
+	INsNet& Net, FNsLockstepDelayClient& C, FNsLockstepResyncClient& View, bool bWait, FNsDoorOpen* Door)
 {
 	TArray<FNsPacket> ToC;
 	NsDrain(Net, C.Addr, ToC, bWait);
@@ -108,6 +110,10 @@ void NsPumpLockstepDelayResyncClient(INsNet& Net, FNsLockstepDelayClient& C, FNs
 				View.HaltTick = -1;
 				C.OnS2C(P.Frames);
 			}
+			else if (Door)
+			{
+				NsApplyDoorOpen(*Door, P);
+			}
 			continue;
 		}
 		if (P.Type == ENsMsg::S2CJoinSnap)
@@ -117,6 +123,10 @@ void NsPumpLockstepDelayResyncClient(INsNet& Net, FNsLockstepDelayClient& C, FNs
 		else if (P.Type == ENsMsg::S2CFrame)
 		{
 			C.OnS2C(P.Frames);
+		}
+		else if (Door)
+		{
+			NsApplyDoorOpen(*Door, P);
 		}
 	}
 	if (bApplied)
