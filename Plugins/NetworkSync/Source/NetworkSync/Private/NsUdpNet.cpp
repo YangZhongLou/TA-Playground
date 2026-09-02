@@ -460,6 +460,63 @@ bool FNsUdpNet::StunRecvIndication(ENsAddr Addr)
 	return NsStunIsBindIndication(Bytes);
 }
 
+bool FNsUdpNet::StunServe(ENsAddr Addr, const uint8* ExpectTxId, FString& OutHost, int32& OutPort)
+{
+	OutHost.Reset();
+	OutPort = 0;
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i])
+	{
+		return false;
+	}
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return false;
+	}
+	uint8 Buf[512];
+	TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+	int32 Read = 0;
+	if (!Socks[i]->RecvFrom(Buf, 512, Read, *From) || Read <= 0)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	Bytes.Append(Buf, Read);
+	if (NsStunIsBindRequest(Bytes))
+	{
+		uint8 ReqTx[NsStunTxIdBytes];
+		uint32 FromIp = 0;
+		const int32 FromPort = From->GetPort();
+		if (!NsStunReadTxId(Bytes, ReqTx) || FromPort <= 0
+			|| !NsStunParseIpv4(From->ToString(false), FromIp))
+		{
+			return false;
+		}
+		TArray<uint8> Reply;
+		if (!NsStunEncodeXorMappedReply(ReqTx, FromIp, FromPort, Reply))
+		{
+			return false;
+		}
+		int32 Sent = 0;
+		Socks[i]->SendTo(Reply.GetData(), Reply.Num(), Sent, *From);
+		return false;
+	}
+	if (!ExpectTxId)
+	{
+		return false;
+	}
+	uint32 Ipv4 = 0;
+	int32 MappedPort = 0;
+	if (!NsStunDecodeMapped(Bytes, ExpectTxId, Ipv4, MappedPort))
+	{
+		return false;
+	}
+	OutHost = NsStunIpv4ToString(Ipv4);
+	OutPort = MappedPort;
+	return true;
+}
+
 bool FNsUdpNet::PunchPeers()
 {
 	bool bSent = false;
@@ -487,6 +544,63 @@ bool FNsUdpNet::PunchPeers()
 		}
 	}
 	return bSent;
+}
+
+bool FNsUdpNet::StunCheckPeers()
+{
+	uint8 TxIds[3][NsStunTxIdBytes] = {};
+	bool bExpect[3] = {};
+	bool bSent = false;
+	for (int32 From = 0; From < 3; ++From)
+	{
+		if (!Socks[From])
+		{
+			continue;
+		}
+		NsStunFillTxId(TxIds[From]);
+		for (int32 To = 0; To < 3; ++To)
+		{
+			if (Socks[To] || PeerPorts[To] <= 0 || PeerHosts[To].IsEmpty())
+			{
+				continue;
+			}
+			for (int32 n = 0; n < 3; ++n)
+			{
+				if (StunSendBind(static_cast<ENsAddr>(From), *PeerHosts[To], PeerPorts[To], TxIds[From]))
+				{
+					bSent = true;
+					bExpect[From] = true;
+				}
+			}
+		}
+	}
+	if (!bSent)
+	{
+		return false;
+	}
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		bool bHit = false;
+		for (int32 i = 0; i < 3; ++i)
+		{
+			if (!Socks[i])
+			{
+				continue;
+			}
+			FString Host;
+			int32 Port = 0;
+			if (StunServe(static_cast<ENsAddr>(i), bExpect[i] ? TxIds[i] : nullptr, Host, Port))
+			{
+				bHit = true;
+			}
+		}
+		if (bHit)
+		{
+			return true;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	return false;
 }
 
 bool FNsUdpNet::RendezvousSendOffer(ENsAddr From, const TCHAR* HubHost, int32 HubPort)

@@ -16,6 +16,8 @@ NETWORKSYNC_API bool NsStunEncodeXorMappedReply(
 NETWORKSYNC_API bool NsStunDecodeMapped(
 	const TArray<uint8>& Bytes, const uint8 TxId[NsStunTxIdBytes], uint32& OutIpv4Host, int32& OutPort);
 NETWORKSYNC_API bool NsStunIsBindIndication(const TArray<uint8>& Bytes);
+NETWORKSYNC_API bool NsStunIsBindRequest(const TArray<uint8>& Bytes);
+NETWORKSYNC_API bool NsStunReadTxId(const TArray<uint8>& Bytes, uint8 TxId[NsStunTxIdBytes]);
 NETWORKSYNC_API FString NsStunIpv4ToString(uint32 Ipv4Host);
 NETWORKSYNC_API bool NsStunParseIpv4(const FString& Host, uint32& OutIpv4Host);
 

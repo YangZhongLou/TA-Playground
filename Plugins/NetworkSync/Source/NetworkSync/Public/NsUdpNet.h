@@ -30,7 +30,9 @@ public:
 	bool StunSendIndication(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes]);
 	bool StunRecvMapped(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes], FString& OutHost, int32& OutPort);
 	bool StunRecvIndication(ENsAddr Addr);
+	bool StunServe(ENsAddr Addr, const uint8* ExpectTxId, FString& OutHost, int32& OutPort);
 	bool PunchPeers();
+	bool StunCheckPeers();
 	bool RendezvousSendOffer(ENsAddr From, const TCHAR* HubHost, int32 HubPort);
 	bool RendezvousRecvPeer(ENsAddr From);
 	bool RendezvousExchange(const TCHAR* HubHost, int32 HubPort);

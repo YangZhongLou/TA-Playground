@@ -199,6 +199,15 @@ FNsSelfTestResult NsRunStunBindSelfTest()
 	{
 		return StunFail(TEXT("stun: request treated as indication"));
 	}
+	if (!NsStunIsBindRequest(Req) || NsStunIsBindRequest(Ind))
+	{
+		return StunFail(TEXT("stun: bind request detect"));
+	}
+	uint8 GotTx[NsStunTxIdBytes];
+	if (!NsStunReadTxId(Req, GotTx) || FMemory::Memcmp(GotTx, TxId, NsStunTxIdBytes) != 0)
+	{
+		return StunFail(TEXT("stun: read txid"));
+	}
 
 	TArray<uint8> Offer;
 	if (!NsRendezvousEncode(1, MappedIp, MappedPort, Offer) || Offer.Num() != NsRendezvousBytes)
@@ -560,4 +569,84 @@ FNsSelfTestResult NsRunStunRendezvousSelfTest()
 	}
 
 	return StunOk(TEXT("stun rendezvous"));
+}
+
+FNsSelfTestResult NsRunStunCheckSelfTest()
+{
+	FNsUdpNet Sv;
+	FNsUdpNet C0;
+	if (!Sv.Bind(ENsAddr::Sv, 0, false) || !C0.Bind(ENsAddr::C0, 0, false))
+	{
+		return StunFail(TEXT("stun-check: bind"));
+	}
+	if (!Sv.SetPeer(ENsAddr::C0, TEXT("127.0.0.1"), C0.BoundPort(ENsAddr::C0))
+		|| !C0.SetPeer(ENsAddr::Sv, TEXT("127.0.0.1"), Sv.BoundPort(ENsAddr::Sv)))
+	{
+		return StunFail(TEXT("stun-check: set peer"));
+	}
+	if (!Sv.PunchPeers() || !C0.PunchPeers())
+	{
+		return StunFail(TEXT("stun-check: punch"));
+	}
+
+	uint8 TxSv[NsStunTxIdBytes];
+	uint8 TxC0[NsStunTxIdBytes];
+	NsStunFillTxId(TxSv);
+	NsStunFillTxId(TxC0);
+	if (!Sv.StunSendBind(ENsAddr::Sv, TEXT("127.0.0.1"), C0.BoundPort(ENsAddr::C0), TxSv)
+		|| !C0.StunSendBind(ENsAddr::C0, TEXT("127.0.0.1"), Sv.BoundPort(ENsAddr::Sv), TxC0))
+	{
+		return StunFail(TEXT("stun-check: send bind"));
+	}
+
+	bool bSv = false;
+	bool bC0 = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		FString Host;
+		int32 Port = 0;
+		if (Sv.StunServe(ENsAddr::Sv, TxSv, Host, Port))
+		{
+			bSv = true;
+		}
+		if (C0.StunServe(ENsAddr::C0, TxC0, Host, Port))
+		{
+			bC0 = true;
+		}
+		if (bSv && bC0)
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (!bSv || !bC0)
+	{
+		return StunFail(TEXT("stun-check: no success"));
+	}
+
+	TArray<FNsPacket> Flush;
+	Sv.Drain(ENsAddr::Sv, Flush);
+	C0.Drain(ENsAddr::C0, Flush);
+
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SInput;
+	Pkt.PlayerId = 0;
+	Pkt.Dx = 1;
+	C0.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
+	TArray<FNsPacket> Got;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Sv.Drain(ENsAddr::Sv, Got);
+		if (Got.Num() > 0)
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (Got.Num() != 1 || Got[0].Dx != 1 || Got[0].Src != ENsAddr::C0)
+	{
+		return StunFail(TEXT("stun-check: tans"));
+	}
+
+	return StunOk(TEXT("stun check"));
 }

@@ -212,6 +212,10 @@ bool ANsNetManager::BindUdp()
 		{
 			UE_LOG(LogNetworkSyncManager, Warning, TEXT("udp punch sent none"));
 		}
+		if (!Udp.StunCheckPeers())
+		{
+			UE_LOG(LogNetworkSyncManager, Warning, TEXT("udp stun check none"));
+		}
 	}
 	return true;
 }

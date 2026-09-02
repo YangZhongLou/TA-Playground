@@ -213,6 +213,27 @@ bool NsStunIsBindIndication(const TArray<uint8>& Bytes)
 	return NsStunReadHeader(Bytes, Type, Length, TxId) && Type == NsStunBindIndication;
 }
 
+bool NsStunIsBindRequest(const TArray<uint8>& Bytes)
+{
+	uint16 Type = 0;
+	uint16 Length = 0;
+	const uint8* TxId = nullptr;
+	return NsStunReadHeader(Bytes, Type, Length, TxId) && Type == NsStunBindRequest;
+}
+
+bool NsStunReadTxId(const TArray<uint8>& Bytes, uint8 TxId[NsStunTxIdBytes])
+{
+	uint16 Type = 0;
+	uint16 Length = 0;
+	const uint8* Got = nullptr;
+	if (!TxId || !NsStunReadHeader(Bytes, Type, Length, Got))
+	{
+		return false;
+	}
+	FMemory::Memcpy(TxId, Got, NsStunTxIdBytes);
+	return true;
+}
+
 FString NsStunIpv4ToString(uint32 Ipv4Host)
 {
 	return FString::Printf(TEXT("%u.%u.%u.%u"),
