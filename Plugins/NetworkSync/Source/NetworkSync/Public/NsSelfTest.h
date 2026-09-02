@@ -120,6 +120,12 @@ NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayCleanSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayRttSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayHighRttSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayRecoverySelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayResyncAlignSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayResyncForceSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayResyncIgnoreFrameSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayResyncResumeSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayResyncAgainSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunLockstepDelayResyncWireSelfTest();
 
 NETWORKSYNC_API FNsSelfTestResult NsRunAllSelfTests();
 NETWORKSYNC_API void NsRunSelfTestAndLog();

@@ -49,6 +49,10 @@ void NsDelaySendSnapshot(INsNet& Net, const FNsLockstepDelayServer& Sv)
 	Pkt.SnapX[0] = Sv.World.X[0];
 	Pkt.SnapX[1] = Sv.World.X[1];
 	Pkt.SnapRng = Sv.World.Rng;
+	if (const FNsInputs* Found = Sv.Hist.Find(Sv.Frame))
+	{
+		Pkt.Frames.Add(Sv.Frame, *Found);
+	}
 	Net.Send(ENsAddr::Sv, ENsAddr::C0, Pkt);
 	Net.Send(ENsAddr::Sv, ENsAddr::C1, Pkt);
 }
@@ -57,6 +61,10 @@ void NsDelayFinishFrame(FNsLockstepDelayServer& Sv, INsNet& Net, const FNsInputs
 {
 	Sv.Hist.Add(Sv.Frame, Slot);
 	Sv.World.Step(Slot.Dx, Ns::LockstepSpeed);
+	if (Sv.Frame % Ns::ChecksumEvery == 0)
+	{
+		Sv.Checksums.Add(Sv.Frame, Sv.World.Checksum());
+	}
 	NsDelayBroadcast(Net, Sv.Hist, Sv.Frame);
 	if ((Sv.Frame + 1) % (Ns::RedundantFrames + 1) == 0)
 	{
@@ -82,6 +90,21 @@ void FNsLockstepDelayServer::OnInput(int32 PlayerId, int32 Tick, int8 Dx)
 	FNsDelayInbox& Entry = Inbox.FindOrAdd(Tick);
 	Entry.Slot.Dx[PlayerId] = NsClampDx(Dx);
 	Entry.Got[PlayerId] = true;
+}
+
+void FNsLockstepDelayServer::OnChecksum(int32 FrameIndex, uint32 Hash)
+{
+	if (const uint32* Found = Checksums.Find(FrameIndex))
+	{
+		if (*Found == Hash)
+		{
+			++ChecksumOk;
+		}
+		else
+		{
+			bDesync = true;
+		}
+	}
 }
 
 void FNsLockstepDelayServer::Tick(INsNet& Net)
@@ -180,13 +203,22 @@ void FNsLockstepDelayClient::ApplyJoin(const FNsPacket& Packet)
 	}
 }
 
-void FNsLockstepDelayClient::Logic()
+void FNsLockstepDelayClient::Logic(INsNet& Net)
 {
 	while (const FNsInputs* Found = Buf.Find(ExecFrame))
 	{
 		PrevX[0] = World.X[0];
 		PrevX[1] = World.X[1];
 		World.Step(Found->Dx, Ns::LockstepSpeed);
+		if (ExecFrame % Ns::ChecksumEvery == 0)
+		{
+			FNsPacket Pkt;
+			Pkt.Type = ENsMsg::C2SChecksum;
+			Pkt.PlayerId = PlayerId;
+			Pkt.Tick = ExecFrame;
+			Pkt.Hash = World.Checksum();
+			Net.Send(Addr, ENsAddr::Sv, Pkt);
+		}
 		Buf.Remove(ExecFrame);
 		++ExecFrame;
 	}
@@ -226,5 +258,5 @@ void NsPumpLockstepDelayClient(INsNet& Net, FNsLockstepDelayClient& C, bool bWai
 			C.OnS2C(P.Frames);
 		}
 	}
-	C.Logic();
+	C.Logic(Net);
 }

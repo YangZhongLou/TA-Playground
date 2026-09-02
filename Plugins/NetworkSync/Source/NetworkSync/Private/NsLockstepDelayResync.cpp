@@ -1,0 +1,144 @@
+// Copyright (c) 2026 TA-Playground. All Rights Reserved.
+
+#include "NsLockstepDelayResync.h"
+#include "NsPump.h"
+
+void NsApplyDelayResyncSnap(FNsLockstepDelayClient& Client, const FNsPacket& Packet)
+{
+	Client.World.X[0] = Packet.SnapX[0];
+	Client.World.X[1] = Packet.SnapX[1];
+	Client.World.Rng = Packet.SnapRng;
+	Client.PrevX[0] = Client.World.X[0];
+	Client.PrevX[1] = Client.World.X[1];
+	Client.ExecFrame = Packet.Tick;
+	Client.KnownFrame = Packet.Tick - NsLockstepDelayFrames;
+	if (Client.KnownFrame < -1)
+	{
+		Client.KnownFrame = -1;
+	}
+	Client.Buf.Reset();
+}
+
+void NsPumpLockstepDelayResyncServer(INsNet& Net, FNsLockstepDelayServer& Sv, FNsLockstepResync& Resync, bool bWait)
+{
+	TArray<FNsPacket> ToSv;
+	NsDrain(Net, ENsAddr::Sv, ToSv, bWait);
+	for (const FNsPacket& P : ToSv)
+	{
+		if (P.Type == ENsMsg::C2SInput)
+		{
+			const int32 Id = NsPlayerIdFromAddr(P.Src);
+			if (Id < 0 || P.SeqWindow.Num() == 0 || P.DxWindow.Num() == 0)
+			{
+				continue;
+			}
+			Sv.OnInput(Id, P.SeqWindow[0], P.DxWindow[0]);
+		}
+		else if (P.Type == ENsMsg::C2SChecksum)
+		{
+			const int32 Id = NsPlayerIdFromAddr(P.Src);
+			if (Sv.bDesync && Resync.bCaptured && !Resync.bGiveUp && !Resync.bResumed
+				&& Id >= 0 && P.Tick == Resync.LiveSnapTick
+				&& P.Hash == Resync.LiveSnap.Checksum())
+			{
+				Resync.Acked[Id] = true;
+			}
+			else
+			{
+				Sv.OnChecksum(P.Tick, P.Hash);
+			}
+		}
+	}
+
+	if (Sv.bDesync && Resync.Acked[0] && Resync.Acked[1] && !Resync.bGiveUp)
+	{
+		Sv.bDesync = false;
+		Resync.FinishResume();
+		Sv.FrameStartMs = Net.Now;
+	}
+
+	if (!Sv.bDesync)
+	{
+		Sv.Tick(Net);
+		return;
+	}
+
+	if (!Resync.bCaptured)
+	{
+		Resync.CaptureLive(Sv.World, Sv.Frame);
+		Sv.Inbox.Reset();
+	}
+
+	++Resync.PumpCycles;
+	if (Resync.PumpCycles > Ns::ResyncGiveUpPumps)
+	{
+		Resync.bGiveUp = true;
+		return;
+	}
+
+	Resync.SendLiveSnap(Net, ENsAddr::C0);
+	Resync.SendLiveSnap(Net, ENsAddr::C1);
+}
+
+void NsPumpLockstepDelayResyncClient(INsNet& Net, FNsLockstepDelayClient& C, FNsLockstepResyncClient& View, bool bWait)
+{
+	TArray<FNsPacket> ToC;
+	NsDrain(Net, C.Addr, ToC, bWait);
+	bool bApplied = false;
+	for (const FNsPacket& P : ToC)
+	{
+		if (NsIsResyncLiveSnap(P) && P.Tick != View.DoneSnapTick)
+		{
+			NsApplyDelayResyncSnap(C, P);
+			View.HaltTick = P.Tick;
+			bApplied = true;
+		}
+	}
+	for (const FNsPacket& P : ToC)
+	{
+		if (NsIsResyncLiveSnap(P))
+		{
+			continue;
+		}
+		if (View.HaltTick >= 0)
+		{
+			if (NsS2CResumesHalt(P, View.HaltTick))
+			{
+				View.DoneSnapTick = View.HaltTick;
+				View.HaltTick = -1;
+				C.OnS2C(P.Frames);
+			}
+			continue;
+		}
+		if (P.Type == ENsMsg::S2CJoinSnap)
+		{
+			C.ApplyJoin(P);
+		}
+		else if (P.Type == ENsMsg::S2CFrame)
+		{
+			C.OnS2C(P.Frames);
+		}
+	}
+	if (bApplied)
+	{
+		FNsPacket Pkt;
+		Pkt.Type = ENsMsg::C2SChecksum;
+		Pkt.PlayerId = C.PlayerId;
+		Pkt.Tick = C.ExecFrame;
+		Pkt.Hash = C.World.Checksum();
+		Net.Send(C.Addr, ENsAddr::Sv, Pkt);
+		for (int32 i = 1; i < NsLockstepDelayFrames; ++i)
+		{
+			FNsPacket Fill;
+			Fill.Type = ENsMsg::C2SInput;
+			Fill.PlayerId = C.PlayerId;
+			Fill.SeqWindow.Add(C.ExecFrame + i);
+			Fill.DxWindow.Add(0);
+			Net.Send(C.Addr, ENsAddr::Sv, Fill);
+		}
+	}
+	if (View.HaltTick < 0)
+	{
+		C.Logic(Net);
+	}
+}

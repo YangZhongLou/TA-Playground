@@ -42,8 +42,10 @@ constexpr int32 DelayFrames = 3; // 约 198ms @ 66ms
 不要墙钟到点用 `Latest`。
 
 普通 `S2CFrame` 只冗余最近 4 拍，连续丢失后会留下永久缺口。因此服务器每完成 4 拍另发一份
-`S2CJoinSnap count=0`，其中 `exec_frame=Frame+1`、x/rng 是该拍执行后的权威世界。
-客户端只应用 `exec_frame > ExecFrame` 的新快照，清理更早的缓冲，再从该帧继续；旧快照不得把世界倒退。
+`S2CJoinSnap`，`count=1`，带刚完成拍的 Hist；`exec_frame=Frame+1`、x/rng 是该拍执行后的权威世界。
+空 JoinSnap 留给停拍拉齐 LiveSnap。客户端只应用 `exec_frame > ExecFrame` 的新快照，清理更早的缓冲，再从该帧继续；旧快照不得把世界倒退。
+
+`ApplyJoin` 不把 Join 里的 Hist 并进 `Buf`。
 
 ## 验收
 
@@ -53,5 +55,11 @@ constexpr int32 DelayFrames = 3; // 约 198ms @ 66ms
 2. 两人对打同一 `d`：两端 `World` 同位，没有「只有高 ping 的人晚结算」。
 3. RTT=80、`DelayFrames=3`：多数拍不等超时；把 RTT 加到 400ms 后才频繁 `StallTimeoutMs`。
 4. 连续丢掉所有 `S2CFrame`：客户端仍会通过周期快照前进，且两端世界一致。
+
+## 第三里程碑：停拍拉齐
+
+另开 `NsLockstepDelayResync.*`，不要新 Kind，不要改 `Tick`。
+内核补 `Checksums` / `OnChecksum` / `bDesync`，供停拍泵读取。
+规格：[hybrid/delay-resync.md](hybrid/delay-resync.md)。验收：`NetworkSync.Lockstep.Delay.Resync.*`。
 
 格斗手感不够再去 `ENsScheme::Rollback`，不要在本 Kind 里猜远程输入。

@@ -9,10 +9,11 @@
 | 会话切段 | [session.md](session.md) | 已在 `ANsNetManager` | `NetworkSync.Runtime.SchemeSwitch` / `SchemeApply` |
 | 停拍拉齐 | [resync.md](resync.md) | `NsLockstepResync.*` | `NetworkSync.Lockstep.Resync.*` |
 | 等齐停拍拉齐 | [wait-resync.md](wait-resync.md) | `NsLockstepWaitResync.*` | `NetworkSync.Lockstep.Wait.Resync.*` |
+| 固定延迟停拍拉齐 | [delay-resync.md](delay-resync.md) | `NsLockstepDelayResync.*` | `NetworkSync.Lockstep.Delay.Resync.*` |
 | 锁步加门 | [door.md](door.md) | `NsLockstepDoor.*` | `NetworkSync.LockstepDoor.*` |
 
 共用 `INsNet` 与编码。各包自己写泵。禁止 `NsPumpLockstep` 调用 `OnSnap`。
 停拍后不调用 `Tick`，直到两槽对 `LiveSnap` checksum ack。
-乐观 `ANsNetManager` 走停拍拉齐泵；等齐走 `NsPumpLockstepWaitResync*`。
+乐观 `ANsNetManager` 走停拍拉齐泵；等齐走 `NsPumpLockstepWaitResync*`；delay 走 `NsPumpLockstepDelayResync*`。
 锁步加门不新增 `ENsScheme`，也不叠到等齐。
 新线上 type 先改 [packet-format.md](../packet-format.md)。门用 `S2CDoorOpen=8`；停拍拉齐复用 `S2CJoinSnap`。

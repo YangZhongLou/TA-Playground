@@ -23,10 +23,14 @@ public:
 	FNsWorld World;
 	TMap<int32, FNsInputs> Hist;
 	TMap<int32, FNsDelayInbox> Inbox;
+	TMap<int32, uint32> Checksums;
 	int32 StallFills = 0;
 	int32 WaitTicks = 0;
+	int32 ChecksumOk = 0;
+	bool bDesync = false;
 
 	void OnInput(int32 PlayerId, int32 Tick, int8 Dx);
+	void OnChecksum(int32 FrameIndex, uint32 Hash);
 	void Tick(INsNet& Net);
 };
 
@@ -44,7 +48,7 @@ public:
 	void SendInput(INsNet& Net, int8 Dx);
 	void OnS2C(const TMap<int32, FNsInputs>& Frames);
 	void ApplyJoin(const FNsPacket& Packet);
-	void Logic();
+	void Logic(INsNet& Net);
 };
 
 NETWORKSYNC_API void NsPumpLockstepDelayServer(INsNet& Net, FNsLockstepDelayServer& Sv, bool bWait = false);

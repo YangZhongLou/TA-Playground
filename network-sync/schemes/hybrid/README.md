@@ -11,10 +11,11 @@
 | 会话切段 | [session.md](session.md) | [../../impl/hybrid/session.md](../../impl/hybrid/session.md) | 已在 `ApplyScheme` / `ResetWire` |
 | 停拍拉齐 | [resync.md](resync.md) | [../../impl/hybrid/resync.md](../../impl/hybrid/resync.md) | `NsLockstepResync.*` |
 | 等齐停拍拉齐 | [wait-resync.md](wait-resync.md) | [../../impl/hybrid/wait-resync.md](../../impl/hybrid/wait-resync.md) | `NsLockstepWaitResync.*` |
+| 固定延迟停拍拉齐 | [delay-resync.md](delay-resync.md) | [../../impl/hybrid/delay-resync.md](../../impl/hybrid/delay-resync.md) | `NsLockstepDelayResync.*` |
 | 锁步加门 | [door.md](door.md) | [../../impl/hybrid/door.md](../../impl/hybrid/door.md) | `NsLockstepDoor.*`（FakeNet 门） |
 
 不要开「英雄快照 + 小兵锁步」那种双 `F` 包。那是同一战场两套结算。
-等齐停拍拉齐不是第五套主方案，也不是新 Kind：同一类切法叠在等齐内核上，单独成包。
+等齐 / delay 停拍拉齐不是第五套主方案，也不是新 Kind：同一类切法叠在对应内核上，单独成包。
 
 落地入口：[../../impl/hybrid/README.md](../../impl/hybrid/README.md)。
 锁步主线 [lockstep.md](../lockstep.md)。状态主线 [state-sync.md](../state-sync.md)。
