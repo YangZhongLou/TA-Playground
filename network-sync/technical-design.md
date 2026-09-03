@@ -257,7 +257,7 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 | --- | --- | --- |
 | 内核 | `World.*` | 确定性、clamp、Reset |
 | 编解码 | `Codec.*` | 往返（含 Frame/Checksum/JoinSnap）、拒收、MTU 拆包（S2C/Join/C2S/P2P） |
-| 传输 | `FakeNet.*`、`Udp.*`、`Stun.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程锁步/状态同步/回滚、突发、STUN Binding 编解码与环回、已知对端 Indication 打洞、会合换映射地址、对端 Binding 连通检查、TURN Allocate 查中继地址 |
+| 传输 | `FakeNet.*`、`Udp.*`、`Stun.*` | 序号窗、丢包延迟、**丢包率标定**、环回、对等、分进程锁步/状态同步/回滚、突发、STUN Binding 编解码与环回、已知对端 Indication 打洞、会合换映射地址、对端 Binding 连通检查、TURN Allocate 查中继地址、CreatePermission 放行对端 IP |
 | 锁步 | `Lockstep.*` | 乐观：干净、Drop、Join、空洞、按号 NACK、分叉。等齐：`Lockstep.Wait.*`（含 Join、按号 NACK、停拍拉齐、超时踢人）。通信回合：`Lockstep.Turn.*`（含 Speed / Recovery / 停拍拉齐）。delay：`Lockstep.Delay.*`（含停拍拉齐、按 RTT 调 `d`、按号 NACK） |
 | 结合 | `Lockstep.Resync.*` / `Lockstep.Wait.Resync.*` / `Lockstep.Turn.Resync.*` / `Lockstep.Delay.Resync.*` / `LockstepDoor.*` | 四支锁步停拍强制回跳与恢复（含包驱动 Host/Client 与 `*.Resync.Udp`）；四支停拍均可改踢分叉槽（`*.Resync.Kick*`）；假网络四支锁步走各自停拍泵并叠门；FakeNet 门；检查点用 `Lockstep.Join*`；切段 `SchemeSwitch` / `SchemeApply` |
 | 状态同步 | `StateSync.*` | 和解、倒带、倒带开火、nack 全量、Inbox 空洞/上限、长断线排空、旧快照忽略、Src 身份 |
@@ -271,19 +271,19 @@ Replication 才走引擎 `UNetDriver`。勾选 `bUseUdp` 后，前三套可改�
 
 ## 已知边界
 
-已闭环：两人整数世界、假网络字节头、本机与分进程 UDP、STUN Binding 查询映射地址、已知对端 Binding Indication 打洞、会合换映射地址、对端 Binding 连通检查、TURN Allocate 查询中继地址、三套协议主循环、checksum、有序 Inbox、增量 nack、回滚空洞、锁步周期 Join、乐观/等齐/delay 按号 NACK、四支停拍踢分叉者、状态同步倒带开火、复制整数与门、Owner 输入代理。
+已闭环：两人整数世界、假网络字节头、本机与分进程 UDP、STUN Binding 查询映射地址、已知对端 Binding Indication 打洞、会合换映射地址、对端 Binding 连通检查、TURN Allocate 查询中继地址、CreatePermission 放行对端 IP、三套协议主循环、checksum、有序 Inbox、增量 nack、回滚空洞、锁步周期 Join、乐观/等齐/delay 按号 NACK、四支停拍踢分叉者、状态同步倒带开火、复制整数与门、Owner 输入代理。
 
 | 未做 | 影响 |
 | --- | --- |
 | 停拍拉齐 | 四支锁步 Manager 走各自停拍泵；Host/Client 靠 LiveSnap 包。通信回合用空 `S2CFrame` 恢复 |
 | 锁步加门 | 四支锁步 Manager 已叠 FakeNet `S2CDoorOpen`；不接 `UNetDriver` / `ANsDoor` |
-| NAT / STUN | Binding 可查出映射 IPv4:port；会合可换对端地址；Indication 打洞后对端 Binding Request 确认路径；Allocate 可查出 XOR-RELAYED。仍无 CreatePermission / ChannelData、无 ICE 清单 / SDP。`UdpRendezvousHost` 为空时 `UdpRemoteHost` 仍要填 |
+| NAT / STUN | Binding 可查出映射 IPv4:port；会合可换对端地址；Indication 打洞后对端 Binding Request 确认路径；Allocate 可查出 XOR-RELAYED；CreatePermission 可放行对端 IP。仍无 ChannelData / Send，无 ICE 清单 / SDP。`UdpRendezvousHost` 为空时 `UdpRemoteHost` 仍要填 |
 | 多人 / AOI | 地址写死 Sv/C0/C1 |
 | 开火命中 | 倒带开火已接；无血量 / 无真正射线 |
 | 客户端 Owner RPC | 每名 PC 一份 `ANsInputProxy`；Counter / Door 仍不 SetOwner |
 | 角色移动 | 不在本插件；玩法项目自选引擎移动系统 |
 
-后续：TURN CreatePermission / ChannelData 把 TANS 走中继，或 ICE candidate 清单 / SDP。
+后续：TURN ChannelData / Send 把 TANS 走中继，或 ICE candidate 清单 / SDP。
 
 ## 索引
 

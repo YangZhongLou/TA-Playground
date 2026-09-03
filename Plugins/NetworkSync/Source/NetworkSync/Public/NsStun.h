@@ -23,6 +23,13 @@ NETWORKSYNC_API bool NsStunEncodeXorRelayedReply(
 NETWORKSYNC_API bool NsStunDecodeRelayed(
 	const TArray<uint8>& Bytes, const uint8 TxId[NsStunTxIdBytes], uint32& OutIpv4Host, int32& OutPort);
 NETWORKSYNC_API bool NsStunIsAllocateRequest(const TArray<uint8>& Bytes);
+NETWORKSYNC_API bool NsStunEncodeCreatePermissionRequest(
+	const uint8 TxId[NsStunTxIdBytes], uint32 PeerIpv4Host, int32 PeerPort, TArray<uint8>& Out);
+NETWORKSYNC_API bool NsStunEncodeCreatePermissionSuccess(const uint8 TxId[NsStunTxIdBytes], TArray<uint8>& Out);
+NETWORKSYNC_API bool NsStunDecodePeer(
+	const TArray<uint8>& Bytes, const uint8 TxId[NsStunTxIdBytes], uint32& OutIpv4Host, int32& OutPort);
+NETWORKSYNC_API bool NsStunDecodePermissionSuccess(const TArray<uint8>& Bytes, const uint8 TxId[NsStunTxIdBytes]);
+NETWORKSYNC_API bool NsStunIsCreatePermissionRequest(const TArray<uint8>& Bytes);
 NETWORKSYNC_API bool NsStunReadTxId(const TArray<uint8>& Bytes, uint8 TxId[NsStunTxIdBytes]);
 NETWORKSYNC_API FString NsStunIpv4ToString(uint32 Ipv4Host);
 NETWORKSYNC_API bool NsStunParseIpv4(const FString& Host, uint32& OutIpv4Host);

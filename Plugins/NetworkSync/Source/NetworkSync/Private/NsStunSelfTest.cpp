@@ -283,6 +283,53 @@ FNsSelfTestResult NsRunStunBindSelfTest()
 		return StunFail(TEXT("stun: allocate error accepted"));
 	}
 
+	const uint32 PeerIp = 0x0A000002u;
+	const int32 PeerPort = 1234;
+	TArray<uint8> Perm;
+	if (!NsStunEncodeCreatePermissionRequest(TxId, PeerIp, PeerPort, Perm)
+		|| Perm.Num() != NsStunHeaderBytes + 12)
+	{
+		return StunFail(TEXT("stun: permission size"));
+	}
+	if (Perm[0] != 0 || Perm[1] != 8)
+	{
+		return StunFail(TEXT("stun: permission type"));
+	}
+	if (!NsStunIsCreatePermissionRequest(Perm)
+		|| NsStunIsCreatePermissionRequest(Alloc)
+		|| NsStunIsAllocateRequest(Perm))
+	{
+		return StunFail(TEXT("stun: permission detect"));
+	}
+	uint32 GotPeerIp = 0;
+	int32 GotPeerPort = 0;
+	if (!NsStunDecodePeer(Perm, TxId, GotPeerIp, GotPeerPort)
+		|| GotPeerIp != PeerIp || GotPeerPort != PeerPort)
+	{
+		return StunFail(TEXT("stun: xor peer decode"));
+	}
+	TArray<uint8> PermOk;
+	if (!NsStunEncodeCreatePermissionSuccess(TxId, PermOk) || PermOk.Num() != NsStunHeaderBytes)
+	{
+		return StunFail(TEXT("stun: permission success size"));
+	}
+	if (!NsStunDecodePermissionSuccess(PermOk, TxId)
+		|| NsStunDecodePermissionSuccess(Relayed, TxId)
+		|| NsStunDecodeRelayed(PermOk, TxId, GotRelayIp, GotRelayPort)
+		|| NsStunDecodePeer(Alloc, TxId, GotPeerIp, GotPeerPort))
+	{
+		return StunFail(TEXT("stun: permission cross decode"));
+	}
+	TArray<uint8> PermErr;
+	StunW16(PermErr, 0x0118);
+	StunW16(PermErr, 0);
+	StunW32(PermErr, NsStunMagic);
+	PermErr.Append(TxId, NsStunTxIdBytes);
+	if (NsStunDecodePermissionSuccess(PermErr, TxId))
+	{
+		return StunFail(TEXT("stun: permission error accepted"));
+	}
+
 	return StunOk(TEXT("stun bind codec"));
 }
 
@@ -812,4 +859,115 @@ FNsSelfTestResult NsRunStunTurnSelfTest()
 	}
 
 	return StunOk(FString::Printf(TEXT("stun turn %s:%d"), *Host, Port));
+}
+
+FNsSelfTestResult NsRunStunPermitSelfTest()
+{
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return StunFail(TEXT("stun-permit: no sockets"));
+	}
+
+	FSocket* TurnSock = SS->CreateSocket(NAME_DGram, TEXT("NsTurnPermitFake"), FName(FNetworkProtocolTypes::IPv4));
+	if (!TurnSock)
+	{
+		return StunFail(TEXT("stun-permit: create"));
+	}
+	TurnSock->SetNonBlocking(true);
+	TSharedRef<FInternetAddr> BindAddr = SS->CreateInternetAddr();
+	BindAddr->SetLoopbackAddress();
+	BindAddr->SetPort(0);
+	if (!TurnSock->Bind(*BindAddr))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-permit: bind turn"));
+	}
+	TSharedRef<FInternetAddr> Bound = SS->CreateInternetAddr();
+	TurnSock->GetAddress(*Bound);
+	const int32 TurnPort = Bound->GetPort();
+	if (TurnPort <= 0)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-permit: turn port"));
+	}
+
+	FNsUdpNet Net;
+	if (!Net.Bind(ENsAddr::C0, 0, false))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-permit: bind c0"));
+	}
+
+	uint8 TxId[NsStunTxIdBytes];
+	NsStunFillTxId(TxId);
+	if (!Net.StunSendPermission(ENsAddr::C0, TEXT("127.0.0.1"), TurnPort,
+		TEXT("10.0.0.2"), 1234, TxId))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-permit: send"));
+	}
+
+	uint8 Buf[512];
+	int32 Read = 0;
+	TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+	bool bGotReq = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Read = 0;
+		if (TurnSock->RecvFrom(Buf, 512, Read, *From) && Read >= NsStunHeaderBytes)
+		{
+			bGotReq = true;
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (!bGotReq)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-permit: no request"));
+	}
+
+	TArray<uint8> Req;
+	Req.Append(Buf, Read);
+	uint32 PeerIp = 0;
+	int32 PeerPort = 0;
+	if (!NsStunIsCreatePermissionRequest(Req)
+		|| !NsStunDecodePeer(Req, TxId, PeerIp, PeerPort)
+		|| PeerIp != 0x0A000002u || PeerPort != 1234)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-permit: bad request"));
+	}
+
+	TArray<uint8> Reply;
+	if (!NsStunEncodeCreatePermissionSuccess(TxId, Reply))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-permit: encode reply"));
+	}
+	int32 Sent = 0;
+	if (!TurnSock->SendTo(Reply.GetData(), Reply.Num(), Sent, *From) || Sent != Reply.Num())
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-permit: send reply"));
+	}
+
+	bool bGotOk = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		if (Net.StunRecvPermission(ENsAddr::C0, TxId))
+		{
+			bGotOk = true;
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	StunDestroy(TurnSock);
+	if (!bGotOk)
+	{
+		return StunFail(TEXT("stun-permit: no success"));
+	}
+
+	return StunOk(TEXT("stun permit"));
 }

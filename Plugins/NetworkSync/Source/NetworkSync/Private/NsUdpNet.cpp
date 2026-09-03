@@ -400,6 +400,27 @@ bool FNsUdpNet::StunSendAllocate(ENsAddr Addr, const TCHAR* Host, int32 Port, ui
 	return NsUdpSendTo(Socks[i], Host, Port, Bytes);
 }
 
+bool FNsUdpNet::StunSendPermission(ENsAddr Addr, const TCHAR* TurnHost, int32 TurnPort,
+	const TCHAR* PeerHost, int32 PeerPort, uint8 TxId[NsStunTxIdBytes])
+{
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i] || !TxId || !PeerHost)
+	{
+		return false;
+	}
+	uint32 PeerIpv4 = 0;
+	if (!NsStunParseIpv4(PeerHost, PeerIpv4))
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	if (!NsStunEncodeCreatePermissionRequest(TxId, PeerIpv4, PeerPort, Bytes))
+	{
+		return false;
+	}
+	return NsUdpSendTo(Socks[i], TurnHost, TurnPort, Bytes);
+}
+
 bool FNsUdpNet::StunSendIndication(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes])
 {
 	const int32 i = static_cast<int32>(Addr);
@@ -483,6 +504,30 @@ bool FNsUdpNet::StunRecvRelayed(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes],
 	OutHost = NsStunIpv4ToString(Ipv4);
 	OutPort = RelayedPort;
 	return true;
+}
+
+bool FNsUdpNet::StunRecvPermission(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes])
+{
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i] || !TxId)
+	{
+		return false;
+	}
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return false;
+	}
+	uint8 Buf[512];
+	TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+	int32 Read = 0;
+	if (!Socks[i]->RecvFrom(Buf, 512, Read, *From) || Read <= 0)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	Bytes.Append(Buf, Read);
+	return NsStunDecodePermissionSuccess(Bytes, TxId);
 }
 
 bool FNsUdpNet::StunRecvIndication(ENsAddr Addr)
@@ -639,6 +684,63 @@ bool FNsUdpNet::StunCheckPeers()
 			FString Host;
 			int32 Port = 0;
 			if (StunServe(static_cast<ENsAddr>(i), bExpect[i] ? TxIds[i] : nullptr, Host, Port))
+			{
+				bHit = true;
+			}
+		}
+		if (bHit)
+		{
+			return true;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	return false;
+}
+
+bool FNsUdpNet::StunPermitPeers(const TCHAR* TurnHost, int32 TurnPort)
+{
+	if (!TurnHost || TurnPort <= 0)
+	{
+		return false;
+	}
+	uint8 TxIds[3][NsStunTxIdBytes] = {};
+	bool bExpect[3] = {};
+	bool bSent = false;
+	for (int32 From = 0; From < 3; ++From)
+	{
+		if (!Socks[From])
+		{
+			continue;
+		}
+		NsStunFillTxId(TxIds[From]);
+		for (int32 To = 0; To < 3; ++To)
+		{
+			if (Socks[To] || PeerPorts[To] <= 0 || PeerHosts[To].IsEmpty())
+			{
+				continue;
+			}
+			if (StunSendPermission(static_cast<ENsAddr>(From), TurnHost, TurnPort,
+				*PeerHosts[To], PeerPorts[To], TxIds[From]))
+			{
+				bSent = true;
+				bExpect[From] = true;
+			}
+		}
+	}
+	if (!bSent)
+	{
+		return false;
+	}
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		bool bHit = false;
+		for (int32 i = 0; i < 3; ++i)
+		{
+			if (!Socks[i] || !bExpect[i])
+			{
+				continue;
+			}
+			if (StunRecvPermission(static_cast<ENsAddr>(i), TxIds[i]))
 			{
 				bHit = true;
 			}

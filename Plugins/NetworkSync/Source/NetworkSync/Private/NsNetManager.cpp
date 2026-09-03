@@ -209,6 +209,10 @@ bool ANsNetManager::BindUdp()
 		{
 			return false;
 		}
+		if (!UdpTurnHost.IsEmpty() && UdpTurnPort > 0 && !Udp.StunPermitPeers(*UdpTurnHost, UdpTurnPort))
+		{
+			UE_LOG(LogNetworkSyncManager, Warning, TEXT("turn permit none"));
+		}
 		if (!Udp.PunchPeers())
 		{
 			UE_LOG(LogNetworkSyncManager, Warning, TEXT("udp punch sent none"));

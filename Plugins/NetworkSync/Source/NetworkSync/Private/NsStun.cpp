@@ -11,8 +11,11 @@ constexpr uint16 NsStunBindIndication = 0x0011;
 constexpr uint16 NsStunBindSuccess = 0x0101;
 constexpr uint16 NsStunAllocateRequest = 0x0003;
 constexpr uint16 NsStunAllocateSuccess = 0x0103;
+constexpr uint16 NsStunCreatePermissionRequest = 0x0008;
+constexpr uint16 NsStunCreatePermissionSuccess = 0x0108;
 constexpr uint16 NsStunAttrMapped = 0x0001;
 constexpr uint16 NsStunAttrXorMapped = 0x0020;
+constexpr uint16 NsStunAttrXorPeer = 0x0012;
 constexpr uint16 NsStunAttrXorRelayed = 0x0016;
 constexpr uint16 NsStunAttrRequestedTransport = 0x0019;
 constexpr uint8 NsStunFamilyIpv4 = 0x01;
@@ -183,6 +186,43 @@ bool NsStunEncodeXorRelayedReply(
 	return Out.Num() == NsStunHeaderBytes + 12;
 }
 
+bool NsStunEncodeCreatePermissionRequest(
+	const uint8 TxId[NsStunTxIdBytes], uint32 PeerIpv4Host, int32 PeerPort, TArray<uint8>& Out)
+{
+	if (!TxId || PeerPort <= 0 || PeerPort > 65535)
+	{
+		return false;
+	}
+	const uint16 XPort = static_cast<uint16>(PeerPort) ^ static_cast<uint16>(NsStunMagic >> 16);
+	const uint32 XAddr = PeerIpv4Host ^ NsStunMagic;
+	Out.Reset();
+	NsStunW16(Out, NsStunCreatePermissionRequest);
+	NsStunW16(Out, 12);
+	NsStunW32(Out, NsStunMagic);
+	Out.Append(TxId, NsStunTxIdBytes);
+	NsStunW16(Out, NsStunAttrXorPeer);
+	NsStunW16(Out, 8);
+	Out.Add(0);
+	Out.Add(NsStunFamilyIpv4);
+	NsStunW16(Out, XPort);
+	NsStunW32(Out, XAddr);
+	return Out.Num() == NsStunHeaderBytes + 12;
+}
+
+bool NsStunEncodeCreatePermissionSuccess(const uint8 TxId[NsStunTxIdBytes], TArray<uint8>& Out)
+{
+	if (!TxId)
+	{
+		return false;
+	}
+	Out.Reset();
+	NsStunW16(Out, NsStunCreatePermissionSuccess);
+	NsStunW16(Out, 0);
+	NsStunW32(Out, NsStunMagic);
+	Out.Append(TxId, NsStunTxIdBytes);
+	return Out.Num() == NsStunHeaderBytes;
+}
+
 bool NsStunDecodeMapped(
 	const TArray<uint8>& Bytes, const uint8 TxId[NsStunTxIdBytes], uint32& OutIpv4Host, int32& OutPort)
 {
@@ -315,6 +355,84 @@ bool NsStunDecodeRelayed(
 	return bHit;
 }
 
+bool NsStunDecodePeer(
+	const TArray<uint8>& Bytes, const uint8 TxId[NsStunTxIdBytes], uint32& OutIpv4Host, int32& OutPort)
+{
+	OutIpv4Host = 0;
+	OutPort = 0;
+	if (!TxId)
+	{
+		return false;
+	}
+	uint16 Type = 0;
+	uint16 Length = 0;
+	const uint8* GotTx = nullptr;
+	if (!NsStunReadHeader(Bytes, Type, Length, GotTx) || Type != NsStunCreatePermissionRequest)
+	{
+		return false;
+	}
+	if (FMemory::Memcmp(GotTx, TxId, NsStunTxIdBytes) != 0)
+	{
+		return false;
+	}
+
+	const uint8* Data = Bytes.GetData();
+	int32 At = NsStunHeaderBytes;
+	const int32 End = NsStunHeaderBytes + static_cast<int32>(Length);
+	bool bHit = false;
+	while (At + 4 <= End)
+	{
+		uint16 Attr = 0;
+		uint16 AttrLen = 0;
+		if (!NsStunR16(Data, Bytes.Num(), At, Attr) || !NsStunR16(Data, Bytes.Num(), At + 2, AttrLen))
+		{
+			return false;
+		}
+		const int32 Val = At + 4;
+		const int32 Next = Val + ((AttrLen + 3) & ~3);
+		if (Val + AttrLen > End)
+		{
+			return false;
+		}
+		if (Attr == NsStunAttrXorPeer && AttrLen >= 8)
+		{
+			if (Data[Val + 1] != NsStunFamilyIpv4)
+			{
+				At = Next;
+				continue;
+			}
+			uint16 WirePort = 0;
+			uint32 WireAddr = 0;
+			if (!NsStunR16(Data, Bytes.Num(), Val + 2, WirePort)
+				|| !NsStunR32(Data, Bytes.Num(), Val + 4, WireAddr))
+			{
+				return false;
+			}
+			OutPort = static_cast<int32>(WirePort ^ static_cast<uint16>(NsStunMagic >> 16));
+			OutIpv4Host = WireAddr ^ NsStunMagic;
+			bHit = OutPort > 0;
+		}
+		At = Next;
+	}
+	return bHit;
+}
+
+bool NsStunDecodePermissionSuccess(const TArray<uint8>& Bytes, const uint8 TxId[NsStunTxIdBytes])
+{
+	if (!TxId)
+	{
+		return false;
+	}
+	uint16 Type = 0;
+	uint16 Length = 0;
+	const uint8* GotTx = nullptr;
+	if (!NsStunReadHeader(Bytes, Type, Length, GotTx) || Type != NsStunCreatePermissionSuccess)
+	{
+		return false;
+	}
+	return FMemory::Memcmp(GotTx, TxId, NsStunTxIdBytes) == 0;
+}
+
 bool NsStunIsBindIndication(const TArray<uint8>& Bytes)
 {
 	uint16 Type = 0;
@@ -337,6 +455,14 @@ bool NsStunIsAllocateRequest(const TArray<uint8>& Bytes)
 	uint16 Length = 0;
 	const uint8* TxId = nullptr;
 	return NsStunReadHeader(Bytes, Type, Length, TxId) && Type == NsStunAllocateRequest;
+}
+
+bool NsStunIsCreatePermissionRequest(const TArray<uint8>& Bytes)
+{
+	uint16 Type = 0;
+	uint16 Length = 0;
+	const uint8* TxId = nullptr;
+	return NsStunReadHeader(Bytes, Type, Length, TxId) && Type == NsStunCreatePermissionRequest;
 }
 
 bool NsStunReadTxId(const TArray<uint8>& Bytes, uint8 TxId[NsStunTxIdBytes])
