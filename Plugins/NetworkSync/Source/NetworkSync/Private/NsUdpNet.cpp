@@ -368,6 +368,58 @@ bool NsUdpSendTo(FSocket* Sock, const TCHAR* Host, int32 Port, const TArray<uint
 	int32 Sent = 0;
 	return Sock->SendTo(Bytes.GetData(), Bytes.Num(), Sent, *Dest) && Sent == Bytes.Num();
 }
+
+struct FNsStunPendingRequest
+{
+	int32 SocketIndex = 0;
+	uint8 TxId[NsStunTxIdBytes] = {};
+	bool bComplete = false;
+};
+
+bool NsUdpAwaitStunReplies(FSocket* const* Socks, TArray<FNsStunPendingRequest>& Requests,
+	bool (*DecodeSuccess)(const TArray<uint8>&, const uint8*))
+{
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS || Requests.IsEmpty())
+	{
+		return false;
+	}
+	int32 Remaining = Requests.Num();
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		for (int32 i = 0; i < 3; ++i)
+		{
+			if (!Socks[i])
+			{
+				continue;
+			}
+			uint8 Buf[512];
+			TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+			int32 Read = 0;
+			if (!Socks[i]->RecvFrom(Buf, sizeof(Buf), Read, *From) || Read <= 0)
+			{
+				continue;
+			}
+			TArray<uint8> Bytes;
+			Bytes.Append(Buf, Read);
+			// Match the received transaction against every pending peer on this socket.
+			for (FNsStunPendingRequest& Request : Requests)
+			{
+				if (Request.SocketIndex == i && !Request.bComplete && DecodeSuccess(Bytes, Request.TxId))
+				{
+					Request.bComplete = true;
+					if (--Remaining == 0)
+					{
+						return true;
+					}
+					break;
+				}
+			}
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	return false;
+}
 }
 
 bool FNsUdpNet::StunSendBind(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes])
@@ -579,7 +631,7 @@ bool FNsUdpNet::StunSendChannelData(ENsAddr Addr, const TCHAR* TurnHost, int32 T
 	const TArray<uint8>& Payload)
 {
 	const int32 i = static_cast<int32>(Addr);
-	if (i < 0 || i > 2 || !Socks[i])
+	if (i < 0 || i > 2 || !Socks[i] || Payload.Num() > Ns::MaxPacketBytes)
 	{
 		return false;
 	}
@@ -605,10 +657,11 @@ bool FNsUdpNet::StunRecvChannelData(ENsAddr Addr, uint16& OutChannel, TArray<uin
 	{
 		return false;
 	}
-	uint8 Buf[512];
+	constexpr int32 MaxChannelBytes = (Ns::MaxPacketBytes + NsChannelDataHeaderBytes + 3) & ~3;
+	uint8 Buf[MaxChannelBytes + 1];
 	TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
 	int32 Read = 0;
-	if (!Socks[i]->RecvFrom(Buf, 512, Read, *From) || Read <= 0)
+	if (!Socks[i]->RecvFrom(Buf, sizeof(Buf), Read, *From) || Read <= 0 || Read > MaxChannelBytes)
 	{
 		return false;
 	}
@@ -790,55 +843,31 @@ bool FNsUdpNet::StunPermitPeers(const TCHAR* TurnHost, int32 TurnPort)
 	{
 		return false;
 	}
-	uint8 TxIds[3][NsStunTxIdBytes] = {};
-	bool bExpect[3] = {};
-	bool bSent = false;
+	TArray<FNsStunPendingRequest> Requests;
 	for (int32 From = 0; From < 3; ++From)
 	{
 		if (!Socks[From])
 		{
 			continue;
 		}
-		NsStunFillTxId(TxIds[From]);
 		for (int32 To = 0; To < 3; ++To)
 		{
 			if (Socks[To] || PeerPorts[To] <= 0 || PeerHosts[To].IsEmpty())
 			{
 				continue;
 			}
-			if (StunSendPermission(static_cast<ENsAddr>(From), TurnHost, TurnPort,
-				*PeerHosts[To], PeerPorts[To], TxIds[From]))
+			FNsStunPendingRequest Request;
+			Request.SocketIndex = From;
+			NsStunFillTxId(Request.TxId);
+			if (!StunSendPermission(static_cast<ENsAddr>(From), TurnHost, TurnPort,
+				*PeerHosts[To], PeerPorts[To], Request.TxId))
 			{
-				bSent = true;
-				bExpect[From] = true;
+				return false;
 			}
+			Requests.Add(Request);
 		}
 	}
-	if (!bSent)
-	{
-		return false;
-	}
-	for (int32 Try = 0; Try < 50; ++Try)
-	{
-		bool bHit = false;
-		for (int32 i = 0; i < 3; ++i)
-		{
-			if (!Socks[i] || !bExpect[i])
-			{
-				continue;
-			}
-			if (StunRecvPermission(static_cast<ENsAddr>(i), TxIds[i]))
-			{
-				bHit = true;
-			}
-		}
-		if (bHit)
-		{
-			return true;
-		}
-		FPlatformProcess::Sleep(0.001f);
-	}
-	return false;
+	return NsUdpAwaitStunReplies(Socks, Requests, NsStunDecodePermissionSuccess);
 }
 
 bool FNsUdpNet::StunBindPeerChannels(const TCHAR* TurnHost, int32 TurnPort)
@@ -847,16 +876,13 @@ bool FNsUdpNet::StunBindPeerChannels(const TCHAR* TurnHost, int32 TurnPort)
 	{
 		return false;
 	}
-	uint8 TxIds[3][NsStunTxIdBytes] = {};
-	bool bExpect[3] = {};
-	bool bSent = false;
+	TArray<FNsStunPendingRequest> Requests;
 	for (int32 From = 0; From < 3; ++From)
 	{
 		if (!Socks[From])
 		{
 			continue;
 		}
-		NsStunFillTxId(TxIds[From]);
 		for (int32 To = 0; To < 3; ++To)
 		{
 			if (Socks[To] || PeerPorts[To] <= 0 || PeerHosts[To].IsEmpty())
@@ -864,39 +890,18 @@ bool FNsUdpNet::StunBindPeerChannels(const TCHAR* TurnHost, int32 TurnPort)
 				continue;
 			}
 			const uint16 Channel = static_cast<uint16>(NsTurnChannelMin + To);
-			if (StunSendChannelBind(static_cast<ENsAddr>(From), TurnHost, TurnPort, Channel,
-				*PeerHosts[To], PeerPorts[To], TxIds[From]))
+			FNsStunPendingRequest Request;
+			Request.SocketIndex = From;
+			NsStunFillTxId(Request.TxId);
+			if (!StunSendChannelBind(static_cast<ENsAddr>(From), TurnHost, TurnPort, Channel,
+				*PeerHosts[To], PeerPorts[To], Request.TxId))
 			{
-				bSent = true;
-				bExpect[From] = true;
+				return false;
 			}
+			Requests.Add(Request);
 		}
 	}
-	if (!bSent)
-	{
-		return false;
-	}
-	for (int32 Try = 0; Try < 50; ++Try)
-	{
-		bool bHit = false;
-		for (int32 i = 0; i < 3; ++i)
-		{
-			if (!Socks[i] || !bExpect[i])
-			{
-				continue;
-			}
-			if (StunRecvChannelBind(static_cast<ENsAddr>(i), TxIds[i]))
-			{
-				bHit = true;
-			}
-		}
-		if (bHit)
-		{
-			return true;
-		}
-		FPlatformProcess::Sleep(0.001f);
-	}
-	return false;
+	return NsUdpAwaitStunReplies(Socks, Requests, NsStunDecodeChannelBindSuccess);
 }
 
 bool FNsUdpNet::RendezvousSendOffer(ENsAddr From, const TCHAR* HubHost, int32 HubPort)
@@ -955,9 +960,20 @@ bool FNsUdpNet::RendezvousRecvPeer(ENsAddr From)
 	return SetPeer(static_cast<ENsAddr>(Slot), *NsStunIpv4ToString(Ipv4), Port);
 }
 
-bool FNsUdpNet::RendezvousExchange(const TCHAR* HubHost, int32 HubPort)
+bool FNsUdpNet::RendezvousExchange(const TCHAR* HubHost, int32 HubPort, const TArray<ENsAddr>& RequiredPeers)
 {
-	bool bPeer = false;
+	if (RequiredPeers.IsEmpty())
+	{
+		return false;
+	}
+	for (ENsAddr Peer : RequiredPeers)
+	{
+		const int32 Slot = static_cast<int32>(Peer);
+		if (Slot < 0 || Slot > 2 || Socks[Slot])
+		{
+			return false;
+		}
+	}
 	for (int32 Try = 0; Try < 50; ++Try)
 	{
 		for (int32 i = 0; i < 3; ++i)
@@ -969,12 +985,17 @@ bool FNsUdpNet::RendezvousExchange(const TCHAR* HubHost, int32 HubPort)
 		}
 		for (int32 i = 0; i < 3; ++i)
 		{
-			if (Socks[i] && RendezvousRecvPeer(static_cast<ENsAddr>(i)))
+			if (Socks[i])
 			{
-				bPeer = true;
+				RendezvousRecvPeer(static_cast<ENsAddr>(i));
 			}
 		}
-		if (bPeer)
+		bool bComplete = true;
+		for (ENsAddr Peer : RequiredPeers)
+		{
+			bComplete &= PeerPort(Peer) > 0;
+		}
+		if (bComplete)
 		{
 			return true;
 		}

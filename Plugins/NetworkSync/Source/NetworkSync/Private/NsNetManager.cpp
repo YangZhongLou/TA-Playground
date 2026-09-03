@@ -181,10 +181,23 @@ bool ANsNetManager::BindUdp()
 		bool bPeers = false;
 		if (!UdpRendezvousHost.IsEmpty() && UdpRendezvousPort > 0)
 		{
-			bPeers = Udp.RendezvousExchange(*UdpRendezvousHost, UdpRendezvousPort);
+			TArray<ENsAddr> RequiredPeers;
+			if (UdpRole == ENsUdpRole::Host)
+			{
+				RequiredPeers.Add(ENsAddr::C1);
+			}
+			else if (AppliedScheme == ENsScheme::Rollback)
+			{
+				RequiredPeers.Add(ENsAddr::C0);
+			}
+			else
+			{
+				RequiredPeers = {ENsAddr::Sv, ENsAddr::C0};
+			}
+			bPeers = Udp.RendezvousExchange(*UdpRendezvousHost, UdpRendezvousPort, RequiredPeers);
 			if (!bPeers)
 			{
-				UE_LOG(LogNetworkSyncManager, Warning, TEXT("rendezvous got no peer"));
+				UE_LOG(LogNetworkSyncManager, Warning, TEXT("rendezvous missing required peers"));
 			}
 		}
 		if (!bPeers)
@@ -211,11 +224,11 @@ bool ANsNetManager::BindUdp()
 		}
 		if (!UdpTurnHost.IsEmpty() && UdpTurnPort > 0 && !Udp.StunPermitPeers(*UdpTurnHost, UdpTurnPort))
 		{
-			UE_LOG(LogNetworkSyncManager, Warning, TEXT("turn permit none"));
+			UE_LOG(LogNetworkSyncManager, Warning, TEXT("turn permissions incomplete"));
 		}
 		if (!UdpTurnHost.IsEmpty() && UdpTurnPort > 0 && !Udp.StunBindPeerChannels(*UdpTurnHost, UdpTurnPort))
 		{
-			UE_LOG(LogNetworkSyncManager, Warning, TEXT("turn channel none"));
+			UE_LOG(LogNetworkSyncManager, Warning, TEXT("turn channels incomplete"));
 		}
 		if (!Udp.PunchPeers())
 		{

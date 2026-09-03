@@ -48,7 +48,7 @@ public:
 	bool StunBindPeerChannels(const TCHAR* TurnHost, int32 TurnPort);
 	bool RendezvousSendOffer(ENsAddr From, const TCHAR* HubHost, int32 HubPort);
 	bool RendezvousRecvPeer(ENsAddr From);
-	bool RendezvousExchange(const TCHAR* HubHost, int32 HubPort);
+	bool RendezvousExchange(const TCHAR* HubHost, int32 HubPort, const TArray<ENsAddr>& RequiredPeers);
 
 	virtual void Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet) override;
 	virtual void Drain(ENsAddr Dst, TArray<FNsPacket>& Out) override;
