@@ -13,7 +13,10 @@ constexpr uint16 NsStunAllocateRequest = 0x0003;
 constexpr uint16 NsStunAllocateSuccess = 0x0103;
 constexpr uint16 NsStunCreatePermissionRequest = 0x0008;
 constexpr uint16 NsStunCreatePermissionSuccess = 0x0108;
+constexpr uint16 NsStunChannelBindRequest = 0x0009;
+constexpr uint16 NsStunChannelBindSuccess = 0x0109;
 constexpr uint16 NsStunAttrMapped = 0x0001;
+constexpr uint16 NsStunAttrChannelNumber = 0x000C;
 constexpr uint16 NsStunAttrXorMapped = 0x0020;
 constexpr uint16 NsStunAttrXorPeer = 0x0012;
 constexpr uint16 NsStunAttrXorRelayed = 0x0016;
@@ -217,6 +220,48 @@ bool NsStunEncodeCreatePermissionSuccess(const uint8 TxId[NsStunTxIdBytes], TArr
 	}
 	Out.Reset();
 	NsStunW16(Out, NsStunCreatePermissionSuccess);
+	NsStunW16(Out, 0);
+	NsStunW32(Out, NsStunMagic);
+	Out.Append(TxId, NsStunTxIdBytes);
+	return Out.Num() == NsStunHeaderBytes;
+}
+
+bool NsStunEncodeChannelBindRequest(
+	const uint8 TxId[NsStunTxIdBytes], uint16 Channel, uint32 PeerIpv4Host, int32 PeerPort, TArray<uint8>& Out)
+{
+	if (!TxId || PeerPort <= 0 || PeerPort > 65535
+		|| Channel < NsTurnChannelMin || Channel > NsTurnChannelMax)
+	{
+		return false;
+	}
+	const uint16 XPort = static_cast<uint16>(PeerPort) ^ static_cast<uint16>(NsStunMagic >> 16);
+	const uint32 XAddr = PeerIpv4Host ^ NsStunMagic;
+	Out.Reset();
+	NsStunW16(Out, NsStunChannelBindRequest);
+	NsStunW16(Out, 20);
+	NsStunW32(Out, NsStunMagic);
+	Out.Append(TxId, NsStunTxIdBytes);
+	NsStunW16(Out, NsStunAttrChannelNumber);
+	NsStunW16(Out, 4);
+	NsStunW16(Out, Channel);
+	NsStunW16(Out, 0);
+	NsStunW16(Out, NsStunAttrXorPeer);
+	NsStunW16(Out, 8);
+	Out.Add(0);
+	Out.Add(NsStunFamilyIpv4);
+	NsStunW16(Out, XPort);
+	NsStunW32(Out, XAddr);
+	return Out.Num() == NsStunHeaderBytes + 20;
+}
+
+bool NsStunEncodeChannelBindSuccess(const uint8 TxId[NsStunTxIdBytes], TArray<uint8>& Out)
+{
+	if (!TxId)
+	{
+		return false;
+	}
+	Out.Reset();
+	NsStunW16(Out, NsStunChannelBindSuccess);
 	NsStunW16(Out, 0);
 	NsStunW32(Out, NsStunMagic);
 	Out.Append(TxId, NsStunTxIdBytes);
@@ -463,6 +508,148 @@ bool NsStunIsCreatePermissionRequest(const TArray<uint8>& Bytes)
 	uint16 Length = 0;
 	const uint8* TxId = nullptr;
 	return NsStunReadHeader(Bytes, Type, Length, TxId) && Type == NsStunCreatePermissionRequest;
+}
+
+bool NsStunDecodeChannelBind(
+	const TArray<uint8>& Bytes, const uint8 TxId[NsStunTxIdBytes],
+	uint16& OutChannel, uint32& OutIpv4Host, int32& OutPort)
+{
+	OutChannel = 0;
+	OutIpv4Host = 0;
+	OutPort = 0;
+	if (!TxId)
+	{
+		return false;
+	}
+	uint16 Type = 0;
+	uint16 Length = 0;
+	const uint8* GotTx = nullptr;
+	if (!NsStunReadHeader(Bytes, Type, Length, GotTx) || Type != NsStunChannelBindRequest)
+	{
+		return false;
+	}
+	if (FMemory::Memcmp(GotTx, TxId, NsStunTxIdBytes) != 0)
+	{
+		return false;
+	}
+
+	const uint8* Data = Bytes.GetData();
+	int32 At = NsStunHeaderBytes;
+	const int32 End = NsStunHeaderBytes + static_cast<int32>(Length);
+	bool bCh = false;
+	bool bPeer = false;
+	while (At + 4 <= End)
+	{
+		uint16 Attr = 0;
+		uint16 AttrLen = 0;
+		if (!NsStunR16(Data, Bytes.Num(), At, Attr) || !NsStunR16(Data, Bytes.Num(), At + 2, AttrLen))
+		{
+			return false;
+		}
+		const int32 Val = At + 4;
+		const int32 Next = Val + ((AttrLen + 3) & ~3);
+		if (Val + AttrLen > End)
+		{
+			return false;
+		}
+		if (Attr == NsStunAttrChannelNumber && AttrLen >= 4)
+		{
+			uint16 Channel = 0;
+			if (!NsStunR16(Data, Bytes.Num(), Val, Channel)
+				|| Channel < NsTurnChannelMin || Channel > NsTurnChannelMax)
+			{
+				return false;
+			}
+			OutChannel = Channel;
+			bCh = true;
+		}
+		else if (Attr == NsStunAttrXorPeer && AttrLen >= 8)
+		{
+			if (Data[Val + 1] != NsStunFamilyIpv4)
+			{
+				At = Next;
+				continue;
+			}
+			uint16 WirePort = 0;
+			uint32 WireAddr = 0;
+			if (!NsStunR16(Data, Bytes.Num(), Val + 2, WirePort)
+				|| !NsStunR32(Data, Bytes.Num(), Val + 4, WireAddr))
+			{
+				return false;
+			}
+			OutPort = static_cast<int32>(WirePort ^ static_cast<uint16>(NsStunMagic >> 16));
+			OutIpv4Host = WireAddr ^ NsStunMagic;
+			bPeer = OutPort > 0;
+		}
+		At = Next;
+	}
+	return bCh && bPeer;
+}
+
+bool NsStunDecodeChannelBindSuccess(const TArray<uint8>& Bytes, const uint8 TxId[NsStunTxIdBytes])
+{
+	if (!TxId)
+	{
+		return false;
+	}
+	uint16 Type = 0;
+	uint16 Length = 0;
+	const uint8* GotTx = nullptr;
+	if (!NsStunReadHeader(Bytes, Type, Length, GotTx) || Type != NsStunChannelBindSuccess)
+	{
+		return false;
+	}
+	return FMemory::Memcmp(GotTx, TxId, NsStunTxIdBytes) == 0;
+}
+
+bool NsStunIsChannelBindRequest(const TArray<uint8>& Bytes)
+{
+	uint16 Type = 0;
+	uint16 Length = 0;
+	const uint8* TxId = nullptr;
+	return NsStunReadHeader(Bytes, Type, Length, TxId) && Type == NsStunChannelBindRequest;
+}
+
+bool NsEncodeChannelData(uint16 Channel, const TArray<uint8>& Payload, TArray<uint8>& Out)
+{
+	if (Channel < NsTurnChannelMin || Channel > NsTurnChannelMax || Payload.Num() > 0xffff)
+	{
+		return false;
+	}
+	Out.Reset();
+	NsStunW16(Out, Channel);
+	NsStunW16(Out, static_cast<uint16>(Payload.Num()));
+	Out.Append(Payload);
+	while ((Out.Num() & 3) != 0)
+	{
+		Out.Add(0);
+	}
+	return true;
+}
+
+bool NsDecodeChannelData(const TArray<uint8>& Bytes, uint16& OutChannel, TArray<uint8>& OutPayload)
+{
+	OutChannel = 0;
+	OutPayload.Reset();
+	if (Bytes.Num() < NsChannelDataHeaderBytes)
+	{
+		return false;
+	}
+	const uint8* Data = Bytes.GetData();
+	uint16 Channel = 0;
+	uint16 Len = 0;
+	if (!NsStunR16(Data, Bytes.Num(), 0, Channel) || !NsStunR16(Data, Bytes.Num(), 2, Len))
+	{
+		return false;
+	}
+	if (Channel < NsTurnChannelMin || Channel > NsTurnChannelMax
+		|| Bytes.Num() < NsChannelDataHeaderBytes + static_cast<int32>(Len))
+	{
+		return false;
+	}
+	OutChannel = Channel;
+	OutPayload.Append(Data + NsChannelDataHeaderBytes, Len);
+	return true;
 }
 
 bool NsStunReadTxId(const TArray<uint8>& Bytes, uint8 TxId[NsStunTxIdBytes])

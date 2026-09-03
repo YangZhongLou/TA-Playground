@@ -3,6 +3,7 @@
 #include "NsSelfTest.h"
 #include "NsStun.h"
 #include "NsUdpNet.h"
+#include "NsCodec.h"
 #include "HAL/PlatformProcess.h"
 #include "IPAddress.h"
 #include "Sockets.h"
@@ -328,6 +329,61 @@ FNsSelfTestResult NsRunStunBindSelfTest()
 	if (NsStunDecodePermissionSuccess(PermErr, TxId))
 	{
 		return StunFail(TEXT("stun: permission error accepted"));
+	}
+
+	const uint16 Ch = NsTurnChannelMin;
+	TArray<uint8> ChBind;
+	if (!NsStunEncodeChannelBindRequest(TxId, Ch, PeerIp, PeerPort, ChBind)
+		|| ChBind.Num() != NsStunHeaderBytes + 20)
+	{
+		return StunFail(TEXT("stun: channel bind size"));
+	}
+	if (ChBind[0] != 0 || ChBind[1] != 9)
+	{
+		return StunFail(TEXT("stun: channel bind type"));
+	}
+	if (!NsStunIsChannelBindRequest(ChBind)
+		|| NsStunIsChannelBindRequest(Perm)
+		|| NsStunIsCreatePermissionRequest(ChBind))
+	{
+		return StunFail(TEXT("stun: channel bind detect"));
+	}
+	uint16 GotCh = 0;
+	uint32 GotChIp = 0;
+	int32 GotChPort = 0;
+	if (!NsStunDecodeChannelBind(ChBind, TxId, GotCh, GotChIp, GotChPort)
+		|| GotCh != Ch || GotChIp != PeerIp || GotChPort != PeerPort)
+	{
+		return StunFail(TEXT("stun: channel bind decode"));
+	}
+	TArray<uint8> ChOk;
+	if (!NsStunEncodeChannelBindSuccess(TxId, ChOk) || ChOk.Num() != NsStunHeaderBytes)
+	{
+		return StunFail(TEXT("stun: channel bind success size"));
+	}
+	if (!NsStunDecodeChannelBindSuccess(ChOk, TxId)
+		|| NsStunDecodeChannelBindSuccess(PermOk, TxId)
+		|| NsStunDecodePermissionSuccess(ChOk, TxId))
+	{
+		return StunFail(TEXT("stun: channel bind cross decode"));
+	}
+	TArray<uint8> TinyPay;
+	TinyPay.Add(0xAB);
+	TArray<uint8> Chan;
+	if (!NsEncodeChannelData(Ch, TinyPay, Chan) || Chan.Num() != 8)
+	{
+		return StunFail(TEXT("stun: channel data pad"));
+	}
+	uint16 DecCh = 0;
+	TArray<uint8> DecPay;
+	if (!NsDecodeChannelData(Chan, DecCh, DecPay) || DecCh != Ch
+		|| DecPay.Num() != 1 || DecPay[0] != 0xAB)
+	{
+		return StunFail(TEXT("stun: channel data decode"));
+	}
+	if (NsDecodeChannelData(Req, DecCh, DecPay) || NsEncodeChannelData(1, TinyPay, Chan))
+	{
+		return StunFail(TEXT("stun: channel data reject"));
 	}
 
 	return StunOk(TEXT("stun bind codec"));
@@ -970,4 +1026,180 @@ FNsSelfTestResult NsRunStunPermitSelfTest()
 	}
 
 	return StunOk(TEXT("stun permit"));
+}
+
+FNsSelfTestResult NsRunStunChannelSelfTest()
+{
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return StunFail(TEXT("stun-channel: no sockets"));
+	}
+
+	FSocket* TurnSock = SS->CreateSocket(NAME_DGram, TEXT("NsTurnChanFake"), FName(FNetworkProtocolTypes::IPv4));
+	if (!TurnSock)
+	{
+		return StunFail(TEXT("stun-channel: create"));
+	}
+	TurnSock->SetNonBlocking(true);
+	TSharedRef<FInternetAddr> BindAddr = SS->CreateInternetAddr();
+	BindAddr->SetLoopbackAddress();
+	BindAddr->SetPort(0);
+	if (!TurnSock->Bind(*BindAddr))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-channel: bind turn"));
+	}
+	TSharedRef<FInternetAddr> Bound = SS->CreateInternetAddr();
+	TurnSock->GetAddress(*Bound);
+	const int32 TurnPort = Bound->GetPort();
+	if (TurnPort <= 0)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-channel: turn port"));
+	}
+
+	FNsUdpNet C0;
+	FNsUdpNet Sv;
+	if (!C0.Bind(ENsAddr::C0, 0, false) || !Sv.Bind(ENsAddr::Sv, 0, false))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-channel: bind peers"));
+	}
+
+	const uint16 Channel = NsTurnChannelMin;
+	uint8 TxId[NsStunTxIdBytes];
+	NsStunFillTxId(TxId);
+	if (!C0.StunSendChannelBind(ENsAddr::C0, TEXT("127.0.0.1"), TurnPort, Channel,
+		TEXT("127.0.0.1"), Sv.BoundPort(ENsAddr::Sv), TxId))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-channel: send bind"));
+	}
+
+	uint8 Buf[512];
+	int32 Read = 0;
+	TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+	bool bGotBind = false;
+	uint32 PeerIp = 0;
+	int32 PeerPort = 0;
+	uint16 GotCh = 0;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Read = 0;
+		if (TurnSock->RecvFrom(Buf, 512, Read, *From) && Read >= NsStunHeaderBytes)
+		{
+			TArray<uint8> Req;
+			Req.Append(Buf, Read);
+			if (NsStunDecodeChannelBind(Req, TxId, GotCh, PeerIp, PeerPort) && GotCh == Channel)
+			{
+				bGotBind = true;
+				break;
+			}
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (!bGotBind || PeerPort != Sv.BoundPort(ENsAddr::Sv))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-channel: no bind"));
+	}
+
+	TArray<uint8> BindOk;
+	if (!NsStunEncodeChannelBindSuccess(TxId, BindOk))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-channel: encode success"));
+	}
+	int32 Sent = 0;
+	if (!TurnSock->SendTo(BindOk.GetData(), BindOk.Num(), Sent, *From) || Sent != BindOk.Num())
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-channel: send success"));
+	}
+
+	bool bGotBindOk = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		if (C0.StunRecvChannelBind(ENsAddr::C0, TxId))
+		{
+			bGotBindOk = true;
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (!bGotBindOk)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-channel: no bind ok"));
+	}
+
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SInput;
+	Pkt.PlayerId = 0;
+	Pkt.Dx = 1;
+	TArray<uint8> Tans;
+	if (!NsEncodePacket(Pkt, Tans)
+		|| !C0.StunSendChannelData(ENsAddr::C0, TEXT("127.0.0.1"), TurnPort, Channel, Tans))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-channel: send data"));
+	}
+
+	bool bFwd = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Read = 0;
+		if (TurnSock->RecvFrom(Buf, 512, Read, *From) && Read > 0)
+		{
+			TArray<uint8> Chan;
+			Chan.Append(Buf, Read);
+			uint16 DataCh = 0;
+			TArray<uint8> Payload;
+			if (NsDecodeChannelData(Chan, DataCh, Payload) && DataCh == Channel)
+			{
+				TSharedRef<FInternetAddr> Dest = SS->CreateInternetAddr();
+				bool bOk = false;
+				Dest->SetIp(*NsStunIpv4ToString(PeerIp), bOk);
+				Dest->SetPort(PeerPort);
+				Sent = 0;
+				if (bOk && TurnSock->SendTo(Chan.GetData(), Chan.Num(), Sent, *Dest) && Sent == Chan.Num())
+				{
+					bFwd = true;
+					break;
+				}
+			}
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (!bFwd)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-channel: no forward"));
+	}
+
+	bool bGotData = false;
+	uint16 RecvCh = 0;
+	TArray<uint8> RecvPay;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		if (Sv.StunRecvChannelData(ENsAddr::Sv, RecvCh, RecvPay))
+		{
+			bGotData = true;
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	StunDestroy(TurnSock);
+	if (!bGotData || RecvCh != Channel)
+	{
+		return StunFail(TEXT("stun-channel: no data"));
+	}
+	FNsPacket Got;
+	if (!NsDecodePacket(RecvPay, Got) || Got.Dx != 1)
+	{
+		return StunFail(TEXT("stun-channel: tans"));
+	}
+
+	return StunOk(TEXT("stun channel"));
 }

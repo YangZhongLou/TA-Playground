@@ -11,11 +11,11 @@
 ## STUN Binding（RFC 5389）
 
 STUN 不是 `FNsPacket`。字节大端，magic `0x2112A442`，与 TANS 小端 `0x54414E53` 分开。
-`Drain` 解不出 TANS 就丢，所以 Binding / 打洞 / 会合 / 连通检查 / TURN Allocate / CreatePermission 走 `StunSendBind` / `StunRecvMapped` / `StunSendIndication` / `StunServe` / `RendezvousSendOffer` / `StunSendAllocate` / `StunRecvRelayed` / `StunSendPermission` / `StunRecvPermission`，不要塞进 `ENsMsg`。
+`Drain` 解不出 TANS 就丢，所以 Binding / 打洞 / 会合 / 连通检查 / TURN Allocate / CreatePermission / ChannelBind / ChannelData 走 `StunSendBind` / `StunRecvMapped` / `StunSendIndication` / `StunServe` / `RendezvousSendOffer` / `StunSendAllocate` / `StunRecvRelayed` / `StunSendPermission` / `StunRecvPermission` / `StunSendChannelBind` / `StunSendChannelData`，不要塞进 `ENsMsg`。
 
 Binding 问 STUN 服务器“我的映射 IPv4:port 是什么”。Host/Client 在 Binding 之后，对已填的 peer 发 Binding Indication（`0x0011`，无响应）开 NAT，再发 Binding Request；对端当 STUN 代理回 XOR-MAPPED Success，确认这条路径通。LocalMesh 跳过。不是完整 ICE（无 candidate 清单、无 controlling、无 SDP）。
 `UdpStunHost` 为空则跳过 Binding（自动化保持空）。失败只打警告，不拆 socket。
-填了 `UdpTurnHost` 时，对每个已绑 socket 打一次 TURN Allocate（`0x0003` + REQUESTED-TRANSPORT UDP），成功则打日志，不改 `Mapped*` / `UdpRemoteHost`。填好 peer 后再对每个对端 IP 打 CreatePermission（`0x0008` + XOR-PEER-ADDRESS）。无 MESSAGE-INTEGRITY、无 ChannelData / Send，TANS 还不走中继。`UdpTurnHost` 为空则跳过（自动化保持空）。失败只打警告。
+填了 `UdpTurnHost` 时，对每个已绑 socket 打一次 TURN Allocate（`0x0003` + REQUESTED-TRANSPORT UDP），成功则打日志，不改 `Mapped*` / `UdpRemoteHost`。填好 peer 后再对每个对端 IP 打 CreatePermission（`0x0008` + XOR-PEER-ADDRESS），再 ChannelBind（`0x0009`，channel `0x4000+slot`）。ChannelData 可把 TANS 载荷交给 TURN 转发；`Send` / `Drain` 仍走直连。无 MESSAGE-INTEGRITY。`UdpTurnHost` 为空则跳过（自动化保持空）。失败只打警告。
 
 填了 `UdpRendezvousHost` 时，两端把映射地址（无 STUN 则用 `127.0.0.1` + 本机端口）交给已知助手，用小端 magic `0x4E535256`（`NSRV`）换到对端 IPv4:port，再 `SetPeer` 后打洞。助手不是 TANS，`Drain` 会丢。助手为空则仍人手填 `UdpRemoteHost`。自动化保持空。
 
@@ -28,6 +28,10 @@ Binding 问 STUN 服务器“我的映射 IPv4:port 是什么”。Host/Client �
 | Allocate Success | `0x0103` |
 | CreatePermission Request | `0x0008` |
 | CreatePermission Success | `0x0108` |
+| ChannelBind Request | `0x0009` |
+| ChannelBind Success | `0x0109` |
+| CHANNEL-NUMBER | `0x000C`（`0x4000`–`0x7FFF`） |
+| ChannelData | 4 字节头（channel + length）+ 载荷，4 字节对齐填充 |
 | XOR-MAPPED-ADDRESS | `0x0020`（IPv4 family `0x01`） |
 | XOR-PEER-ADDRESS | `0x0012` |
 | XOR-RELAYED-ADDRESS | `0x0016` |
@@ -35,7 +39,7 @@ Binding 问 STUN 服务器“我的映射 IPv4:port 是什么”。Host/Client �
 | 会合 | `NsRendezvousEncode`，12 字节，slot + port + ipv4 |
 | 编解码 | `NsStun.h` |
 
-自动化：`NetworkSync.Stun.Bind`（编解码，含 Indication / 会合 / Request / Allocate / CreatePermission）、`NetworkSync.Stun.Loopback`（进程内假 STUN + `FNsUdpNet` C0）、`NetworkSync.Stun.Punch`（两 socket Indication 后 TANS 仍通）、`NetworkSync.Stun.Rendezvous`（假助手换地址后打洞再 TANS）、`NetworkSync.Stun.Check`（对端 Binding Request/Response 后 TANS）、`NetworkSync.Stun.Turn`（进程内假 TURN Allocate）、`NetworkSync.Stun.Permit`（进程内假 TURN CreatePermission）。不打公网 STUN / TURN。
+自动化：`NetworkSync.Stun.Bind`（编解码，含 Indication / 会合 / Request / Allocate / CreatePermission / ChannelBind / ChannelData）、`NetworkSync.Stun.Loopback`（进程内假 STUN + `FNsUdpNet` C0）、`NetworkSync.Stun.Punch`（两 socket Indication 后 TANS 仍通）、`NetworkSync.Stun.Rendezvous`（假助手换地址后打洞再 TANS）、`NetworkSync.Stun.Check`（对端 Binding Request/Response 后 TANS）、`NetworkSync.Stun.Turn`（进程内假 TURN Allocate）、`NetworkSync.Stun.Permit`（进程内假 TURN CreatePermission）、`NetworkSync.Stun.Channel`（假 TURN ChannelBind 后转发 ChannelData 里的 TANS）。不打公网 STUN / TURN。
 
 ## 包头（所有类型共用）
 

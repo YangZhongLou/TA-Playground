@@ -530,6 +530,93 @@ bool FNsUdpNet::StunRecvPermission(ENsAddr Addr, const uint8 TxId[NsStunTxIdByte
 	return NsStunDecodePermissionSuccess(Bytes, TxId);
 }
 
+bool FNsUdpNet::StunSendChannelBind(ENsAddr Addr, const TCHAR* TurnHost, int32 TurnPort, uint16 Channel,
+	const TCHAR* PeerHost, int32 PeerPort, uint8 TxId[NsStunTxIdBytes])
+{
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i] || !TxId || !PeerHost)
+	{
+		return false;
+	}
+	uint32 PeerIpv4 = 0;
+	if (!NsStunParseIpv4(PeerHost, PeerIpv4))
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	if (!NsStunEncodeChannelBindRequest(TxId, Channel, PeerIpv4, PeerPort, Bytes))
+	{
+		return false;
+	}
+	return NsUdpSendTo(Socks[i], TurnHost, TurnPort, Bytes);
+}
+
+bool FNsUdpNet::StunRecvChannelBind(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes])
+{
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i] || !TxId)
+	{
+		return false;
+	}
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return false;
+	}
+	uint8 Buf[512];
+	TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+	int32 Read = 0;
+	if (!Socks[i]->RecvFrom(Buf, 512, Read, *From) || Read <= 0)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	Bytes.Append(Buf, Read);
+	return NsStunDecodeChannelBindSuccess(Bytes, TxId);
+}
+
+bool FNsUdpNet::StunSendChannelData(ENsAddr Addr, const TCHAR* TurnHost, int32 TurnPort, uint16 Channel,
+	const TArray<uint8>& Payload)
+{
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i])
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	if (!NsEncodeChannelData(Channel, Payload, Bytes))
+	{
+		return false;
+	}
+	return NsUdpSendTo(Socks[i], TurnHost, TurnPort, Bytes);
+}
+
+bool FNsUdpNet::StunRecvChannelData(ENsAddr Addr, uint16& OutChannel, TArray<uint8>& OutPayload)
+{
+	OutChannel = 0;
+	OutPayload.Reset();
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i])
+	{
+		return false;
+	}
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return false;
+	}
+	uint8 Buf[512];
+	TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+	int32 Read = 0;
+	if (!Socks[i]->RecvFrom(Buf, 512, Read, *From) || Read <= 0)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	Bytes.Append(Buf, Read);
+	return NsDecodeChannelData(Bytes, OutChannel, OutPayload);
+}
+
 bool FNsUdpNet::StunRecvIndication(ENsAddr Addr)
 {
 	const int32 i = static_cast<int32>(Addr);
@@ -741,6 +828,64 @@ bool FNsUdpNet::StunPermitPeers(const TCHAR* TurnHost, int32 TurnPort)
 				continue;
 			}
 			if (StunRecvPermission(static_cast<ENsAddr>(i), TxIds[i]))
+			{
+				bHit = true;
+			}
+		}
+		if (bHit)
+		{
+			return true;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	return false;
+}
+
+bool FNsUdpNet::StunBindPeerChannels(const TCHAR* TurnHost, int32 TurnPort)
+{
+	if (!TurnHost || TurnPort <= 0)
+	{
+		return false;
+	}
+	uint8 TxIds[3][NsStunTxIdBytes] = {};
+	bool bExpect[3] = {};
+	bool bSent = false;
+	for (int32 From = 0; From < 3; ++From)
+	{
+		if (!Socks[From])
+		{
+			continue;
+		}
+		NsStunFillTxId(TxIds[From]);
+		for (int32 To = 0; To < 3; ++To)
+		{
+			if (Socks[To] || PeerPorts[To] <= 0 || PeerHosts[To].IsEmpty())
+			{
+				continue;
+			}
+			const uint16 Channel = static_cast<uint16>(NsTurnChannelMin + To);
+			if (StunSendChannelBind(static_cast<ENsAddr>(From), TurnHost, TurnPort, Channel,
+				*PeerHosts[To], PeerPorts[To], TxIds[From]))
+			{
+				bSent = true;
+				bExpect[From] = true;
+			}
+		}
+	}
+	if (!bSent)
+	{
+		return false;
+	}
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		bool bHit = false;
+		for (int32 i = 0; i < 3; ++i)
+		{
+			if (!Socks[i] || !bExpect[i])
+			{
+				continue;
+			}
+			if (StunRecvChannelBind(static_cast<ENsAddr>(i), TxIds[i]))
 			{
 				bHit = true;
 			}

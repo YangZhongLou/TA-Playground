@@ -83,6 +83,7 @@ NETWORKSYNC_API FNsSelfTestResult NsRunStunRendezvousSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStunCheckSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStunTurnSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStunPermitSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunStunChannelSelfTest();
 
 NETWORKSYNC_API FNsSelfTestResult NsRunCodecStressSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunFakeNetStressSelfTest();

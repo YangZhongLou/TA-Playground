@@ -34,11 +34,18 @@ public:
 	bool StunRecvMapped(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes], FString& OutHost, int32& OutPort);
 	bool StunRecvRelayed(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes], FString& OutHost, int32& OutPort);
 	bool StunRecvPermission(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes]);
+	bool StunSendChannelBind(ENsAddr Addr, const TCHAR* TurnHost, int32 TurnPort, uint16 Channel,
+		const TCHAR* PeerHost, int32 PeerPort, uint8 TxId[NsStunTxIdBytes]);
+	bool StunRecvChannelBind(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes]);
+	bool StunSendChannelData(ENsAddr Addr, const TCHAR* TurnHost, int32 TurnPort, uint16 Channel,
+		const TArray<uint8>& Payload);
+	bool StunRecvChannelData(ENsAddr Addr, uint16& OutChannel, TArray<uint8>& OutPayload);
 	bool StunRecvIndication(ENsAddr Addr);
 	bool StunServe(ENsAddr Addr, const uint8* ExpectTxId, FString& OutHost, int32& OutPort);
 	bool PunchPeers();
 	bool StunCheckPeers();
 	bool StunPermitPeers(const TCHAR* TurnHost, int32 TurnPort);
+	bool StunBindPeerChannels(const TCHAR* TurnHost, int32 TurnPort);
 	bool RendezvousSendOffer(ENsAddr From, const TCHAR* HubHost, int32 HubPort);
 	bool RendezvousRecvPeer(ENsAddr From);
 	bool RendezvousExchange(const TCHAR* HubHost, int32 HubPort);
