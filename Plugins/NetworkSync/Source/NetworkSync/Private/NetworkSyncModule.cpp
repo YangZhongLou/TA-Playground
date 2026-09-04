@@ -3,6 +3,7 @@
 #include "NetworkSyncModule.h"
 #include "NsSelfTest.h"
 #include "NsNetManager.h"
+#include "NsUdpNet.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
@@ -65,6 +66,32 @@ static void NsDropRateCmd(const TArray<FString>& Args)
 	NsLogFakeNetDropRate(Drop, Count);
 }
 
+static void NsRendezvousHubCmd(const TArray<FString>& Args)
+{
+	int32 Port = 3479;
+	if (Args.Num() >= 1)
+	{
+		Port = FCString::Atoi(*Args[0]);
+	}
+	if (Port < 0 || Port > 65535)
+	{
+		UE_LOG(LogNetworkSyncModule, Warning, TEXT("ns.RendezvousHub: port 0-65535"));
+		return;
+	}
+	if (!NsStartRendezvousHub(Port))
+	{
+		UE_LOG(LogNetworkSyncModule, Warning, TEXT("ns.RendezvousHub: bind failed port=%d"), Port);
+		return;
+	}
+	UE_LOG(LogNetworkSyncModule, Display, TEXT("ns.RendezvousHub bound port=%d"), NsRendezvousHubBoundPort());
+}
+
+static void NsRendezvousHubStopCmd()
+{
+	NsStopRendezvousHub();
+	UE_LOG(LogNetworkSyncModule, Display, TEXT("ns.RendezvousHub stopped"));
+}
+
 void FNetworkSyncModule::StartupModule()
 {
 	SelfTestCmd = IConsoleManager::Get().RegisterConsoleCommand(
@@ -82,8 +109,18 @@ void FNetworkSyncModule::StartupModule()
 		TEXT("Spawn ANsNetManager (A/D vs arrow keys, debug spheres)"),
 		FConsoleCommandDelegate::CreateStatic(&NsSpawnDemo),
 		ECVF_Default);
+	HubCmd = IConsoleManager::Get().RegisterConsoleCommand(
+		TEXT("ns.RendezvousHub"),
+		TEXT("Run ICE/NSRV rendezvous hub. Usage: ns.RendezvousHub [port]"),
+		FConsoleCommandWithArgsDelegate::CreateStatic(&NsRendezvousHubCmd),
+		ECVF_Default);
+	HubStopCmd = IConsoleManager::Get().RegisterConsoleCommand(
+		TEXT("ns.RendezvousHubStop"),
+		TEXT("Stop ns.RendezvousHub"),
+		FConsoleCommandDelegate::CreateStatic(&NsRendezvousHubStopCmd),
+		ECVF_Default);
 	UE_LOG(LogNetworkSyncModule, Log,
-		TEXT("NetworkSync started. Console: ns.SelfTest, ns.DropRate, ns.SpawnDemo"));
+		TEXT("NetworkSync started. Console: ns.SelfTest, ns.DropRate, ns.SpawnDemo, ns.RendezvousHub"));
 }
 
 void FNetworkSyncModule::ShutdownModule()
@@ -103,6 +140,17 @@ void FNetworkSyncModule::ShutdownModule()
 		IConsoleManager::Get().UnregisterConsoleObject(SpawnCmd);
 		SpawnCmd = nullptr;
 	}
+	if (HubCmd)
+	{
+		IConsoleManager::Get().UnregisterConsoleObject(HubCmd);
+		HubCmd = nullptr;
+	}
+	if (HubStopCmd)
+	{
+		IConsoleManager::Get().UnregisterConsoleObject(HubStopCmd);
+		HubStopCmd = nullptr;
+	}
+	NsStopRendezvousHub();
 }
 
 IMPLEMENT_MODULE(FNetworkSyncModule, NetworkSync)

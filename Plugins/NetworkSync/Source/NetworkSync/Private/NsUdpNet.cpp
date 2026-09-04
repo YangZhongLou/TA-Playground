@@ -2,6 +2,7 @@
 
 #include "NsUdpNet.h"
 #include "NsCodec.h"
+#include "Async/Async.h"
 #include "HAL/PlatformProcess.h"
 #include "Sockets.h"
 #include "SocketSubsystem.h"
@@ -1187,19 +1188,34 @@ bool FNsUdpNet::IceCheckPairs()
 	{
 		return false;
 	}
-	uint8 TxId[NsStunTxIdBytes];
-	NsStunFillTxId(TxId);
+	uint8 CheckTx[NsStunTxIdBytes];
+	uint8 NomTx[NsStunTxIdBytes];
+	NsStunFillTxId(CheckTx);
+	do
+	{
+		NsStunFillTxId(NomTx);
+	} while (FMemory::Memcmp(CheckTx, NomTx, NsStunTxIdBytes) == 0);
+	bool bNominated[3] = {};
 	const ENsAddr From = static_cast<ENsAddr>(FromSlot);
 	for (int32 Try = 0; Try < 50; ++Try)
 	{
 		for (int32 To = 0; To < 3; ++To)
 		{
-			if (!bNeed[To] || bWon[To] || PairIdx[To] >= Pairs[To].Num())
+			if (!bNeed[To] || bNominated[To])
+			{
+				continue;
+			}
+			if (bWon[To])
+			{
+				StunSendNominate(From, *PeerHosts[To], PeerPorts[To], NomTx);
+				continue;
+			}
+			if (PairIdx[To] >= Pairs[To].Num())
 			{
 				continue;
 			}
 			const FNsIceCandidate& Remote = Pairs[To][PairIdx[To]].Remote;
-			StunSendNominate(From, *NsStunIpv4ToString(Remote.Ipv4), Remote.Port, TxId);
+			StunSendBind(From, *NsStunIpv4ToString(Remote.Ipv4), Remote.Port, CheckTx);
 		}
 		for (int32 i = 0; i < 3; ++i)
 		{
@@ -1244,7 +1260,9 @@ bool FNsUdpNet::IceCheckPairs()
 			}
 			uint32 MappedIp = 0;
 			int32 MappedPort = 0;
-			if (!NsStunDecodeMapped(Bytes, TxId, MappedIp, MappedPort))
+			const bool bCheckOk = NsStunDecodeMapped(Bytes, CheckTx, MappedIp, MappedPort);
+			const bool bNomOk = !bCheckOk && NsStunDecodeMapped(Bytes, NomTx, MappedIp, MappedPort);
+			if (!bCheckOk && !bNomOk)
 			{
 				continue;
 			}
@@ -1256,7 +1274,22 @@ bool FNsUdpNet::IceCheckPairs()
 			}
 			for (int32 To = 0; To < 3; ++To)
 			{
-				if (!bNeed[To] || bWon[To])
+				if (!bNeed[To] || bNominated[To])
+				{
+					continue;
+				}
+				if (bNomOk)
+				{
+					if (bWon[To] && PeerPorts[To] == ReplyPort
+						&& (PeerHosts[To] == NsStunIpv4ToString(ReplyIp)
+							|| (NsIsLoopbackHost(PeerHosts[To])
+								&& NsIsLoopbackHost(ReplyFrom->ToString(false)))))
+					{
+						bNominated[To] = true;
+					}
+					continue;
+				}
+				if (bWon[To])
 				{
 					continue;
 				}
@@ -1278,10 +1311,10 @@ bool FNsUdpNet::IceCheckPairs()
 		bool bDone = true;
 		for (int32 To = 0; To < 3; ++To)
 		{
-			if (bNeed[To] && !bWon[To])
+			if (bNeed[To] && !bNominated[To])
 			{
 				bDone = false;
-				if ((Try + 1) % 15 == 0)
+				if (!bWon[To] && (Try + 1) % 15 == 0)
 				{
 					++PairIdx[To];
 				}
@@ -1295,7 +1328,7 @@ bool FNsUdpNet::IceCheckPairs()
 	}
 	for (int32 To = 0; To < 3; ++To)
 	{
-		if (bNeed[To] && !bWon[To])
+		if (bNeed[To] && !bNominated[To])
 		{
 			return false;
 		}
@@ -1508,4 +1541,173 @@ bool FNsUdpNet::RendezvousExchange(const TCHAR* HubHost, int32 HubPort, const TA
 		FPlatformProcess::Sleep(0.001f);
 	}
 	return false;
+}
+
+FNsRendezvousHub::~FNsRendezvousHub()
+{
+	Close();
+}
+
+int32 FNsRendezvousHub::BoundPort() const
+{
+	return LocalPort;
+}
+
+void FNsRendezvousHub::Close()
+{
+	if (Sock)
+	{
+		ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+		Sock->Close();
+		if (SS)
+		{
+			SS->DestroySocket(Sock);
+		}
+		Sock = nullptr;
+	}
+	LocalPort = 0;
+	for (int32 i = 0; i < 3; ++i)
+	{
+		Last[i].Reset();
+		bHave[i] = false;
+	}
+}
+
+bool FNsRendezvousHub::Bind(int32 BindPort)
+{
+	Close();
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return false;
+	}
+	FSocket* NewSock = SS->CreateSocket(NAME_DGram, TEXT("NsRendezvousHub"), FName(FNetworkProtocolTypes::IPv4));
+	if (!NewSock)
+	{
+		return false;
+	}
+	NewSock->SetNonBlocking(true);
+	NewSock->SetReuseAddr(true);
+	TSharedRef<FInternetAddr> BindAddr = SS->CreateInternetAddr();
+	BindAddr->SetLoopbackAddress();
+	BindAddr->SetPort(BindPort);
+	if (!NewSock->Bind(*BindAddr))
+	{
+		SS->DestroySocket(NewSock);
+		return false;
+	}
+	TSharedRef<FInternetAddr> Bound = SS->CreateInternetAddr();
+	NewSock->GetAddress(*Bound);
+	const int32 BoundPortValue = Bound->GetPort();
+	if (BoundPortValue <= 0)
+	{
+		SS->DestroySocket(NewSock);
+		return false;
+	}
+	Sock = NewSock;
+	LocalPort = BoundPortValue;
+	return true;
+}
+
+bool FNsRendezvousHub::Serve()
+{
+	if (!Sock)
+	{
+		return false;
+	}
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return false;
+	}
+	bool bAny = false;
+	for (;;)
+	{
+		uint8 Buf[64];
+		TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+		int32 Read = 0;
+		if (!Sock->RecvFrom(Buf, 64, Read, *From) || Read <= 0)
+		{
+			break;
+		}
+		bAny = true;
+		TArray<uint8> Bytes;
+		Bytes.Append(Buf, Read);
+		uint8 Slot = 0;
+		TArray<FNsIceCandidate> Cands;
+		uint32 Ipv4 = 0;
+		int32 OfferPort = 0;
+		if (NsIceDecode(Bytes, Slot, Cands))
+		{
+			if (Slot > 2)
+			{
+				continue;
+			}
+		}
+		else if (NsRendezvousDecode(Bytes, Slot, Ipv4, OfferPort))
+		{
+			if (Slot > 2)
+			{
+				continue;
+			}
+		}
+		else
+		{
+			continue;
+		}
+		Last[Slot] = Bytes;
+		bHave[Slot] = true;
+		for (int32 Other = 0; Other < 3; ++Other)
+		{
+			if (Other == static_cast<int32>(Slot) || !bHave[Other] || Last[Other].Num() <= 0)
+			{
+				continue;
+			}
+			int32 Sent = 0;
+			Sock->SendTo(Last[Other].GetData(), Last[Other].Num(), Sent, *From);
+		}
+	}
+	return bAny;
+}
+
+namespace
+{
+FNsRendezvousHub GNsHub;
+TAtomic<bool> GNsHubRun{false};
+TFuture<void> GNsHubPump;
+}
+
+bool NsStartRendezvousHub(int32 BindPort)
+{
+	NsStopRendezvousHub();
+	if (!GNsHub.Bind(BindPort))
+	{
+		return false;
+	}
+	GNsHubRun.Store(true);
+	GNsHubPump = Async(EAsyncExecution::Thread, []()
+	{
+		while (GNsHubRun.Load())
+		{
+			GNsHub.Serve();
+			FPlatformProcess::Sleep(0.001f);
+		}
+	});
+	return true;
+}
+
+void NsStopRendezvousHub()
+{
+	GNsHubRun.Store(false);
+	if (GNsHubPump.IsValid())
+	{
+		GNsHubPump.Get();
+		GNsHubPump = TFuture<void>();
+	}
+	GNsHub.Close();
+}
+
+int32 NsRendezvousHubBoundPort()
+{
+	return GNsHub.BoundPort();
 }

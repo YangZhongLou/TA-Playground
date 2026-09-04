@@ -17,7 +17,8 @@ STUN 不是 `FNsPacket`。字节大端，magic `0x2112A442`，与 TANS 小端 `0
 
 Binding 问 STUN 服务器“我的映射 IPv4:port 是什么”。Host/Client 在 Binding 之后，对已填的 peer 发 Binding Indication（`0x0011`，无响应）开 NAT，
 再发 Binding Request；对端当 STUN 代理回 XOR-MAPPED Success，确认这条路径通。
-LocalMesh 跳过。可列出并配对 host / srflx 候选；Host 发带 USE-CANDIDATE 的检查，Client 收到后再 `SetPeer`。无 SDP。
+LocalMesh 跳过。可列出并配对 host / srflx 候选；Host 先检查再对通的那对发 USE-CANDIDATE，Client 收到提名后再 `SetPeer`。
+`NsIceSdpEncode` / `NsIceSdpDecode` 把同一清单编成 SDP 文本；会合仍走 `NSIC`，不改助手缓冲。
 `UdpStunHost` 为空则跳过 Binding（自动化保持空）。失败只打警告，不拆 socket。
 填了 `UdpTurnHost` 时，对每个已绑 socket 打一次 TURN Allocate（`0x0003` + REQUESTED-TRANSPORT UDP），
 成功则记下 Relayed* 并打日志，不改 `Mapped*` / `UdpRemoteHost`。
@@ -32,20 +33,23 @@ TURN 向 peer 转发时，从分配的 relay 地址发出裸 TANS；peer 回包�
 无 MESSAGE-INTEGRITY。`UdpTurnHost` 为空则跳过（自动化保持空）。失败只打警告。
 
 填了 `UdpRendezvousHost` 时，两端先用 `IceExchange` 换 `NSIC` 候选清单，`SetPeer` 取对端 host 候选（无 host 则取清单第一条），
-再 `IceCheckPairs`（Host，检查带 USE-CANDIDATE）或 `IceWaitNominate`（Client，收到提名才改 `SetPeer`）。
+再 `IceCheckPairs`（Host，先检查再提名）或 `IceWaitNominate`（Client，收到提名才改 `SetPeer`）。
 助手若只懂 12 字节 `NSRV`，再回落到 `RendezvousExchange`。
+`FNsRendezvousHub` 在进程内绑定一个 UDP 口，记下每 slot 最后一包 `NSIC` 或 `NSRV`，回给对端；TANS / STUN 丢弃。
+第三进程跑 `ns.RendezvousHub [port]`（默认 3479），Host/Client 把 `UdpRendezvousHost` 指过去；`ns.RendezvousHubStop` 停。自动化保持 `UdpRendezvousHost` 为空。
 助手不是 TANS，`Drain` 会丢。助手为空则仍人手填 `UdpRemoteHost`。自动化保持空。
 
 `RendezvousExchange` 要求调用方传入 `RequiredPeers`，收齐才返回成功；超时未收齐则由 Manager 回落到手动地址。
 Host 要求 C1，Rollback Client 要求 C0，其他 Client 要求 Sv 和 C0；先收到 C0 不能跳过服务器地址。
 
-ICE 候选不是 SDP。小端 magic `0x4E534943`（`NSIC`），6 字节头（slot + count）加每条 7 字节 `(type, port, ipv4)`。
+会合线上的 ICE 候选是 `NSIC`，不是 SDP。小端 magic `0x4E534943`，6 字节头（slot + count）加每条 7 字节 `(type, port, ipv4)`。
 type：0 host、1 srflx、2 relay。每 socket 最多 3 条，地址端口重复则去重。
 `GatherIceCandidates` 从本机端口、STUN 映射、TURN 中继拼清单。
 `IceSendOffer` / `IceRecvPeer` / `IceExchange` 经会合助手交换清单；`IceRecvPeer` 拒收 `NSRV`。
 `NsIceFormPairs` 把本端 host/srflx 与对端 host/srflx 排成对（host-host 优先，不含 relay）。
-`IceCheckPairs` 按序对每对发带 USE-CANDIDATE 的 Binding（Host 控制方）；先通的地址 `SetPeer`。
-`IceWaitNominate` 只在收到 USE-CANDIDATE 时 `SetPeer`（Client）。无 SDP / regular nomination。
+`IceCheckPairs` 按序对每对发普通 Binding（Host 控制方）；先通的地址 `SetPeer`，再用独立 txid 对该地址发 USE-CANDIDATE。
+`IceWaitNominate` 只在收到 USE-CANDIDATE 时 `SetPeer`（Client）。
+`NsIceSdpEncode` 写出 RFC 4566 会话加 `a=candidate` 行；`o=- <slot>` 带 NSIC 槽位。`NsIceSdpDecode` 认 CRLF / LF，只收 UDP 的 host / srflx / relay，最多 3 条。无 ice-ufrag。会合不发这段文本。
 无远程 ICE 清单时仍走 `StunCheckPeers`。relay 对仍靠 TURN ChannelData。
 
 | 项 | 值 |
@@ -67,8 +71,10 @@ type：0 host、1 srflx、2 relay。每 socket 最多 3 条，地址端口重复
 | REQUESTED-TRANSPORT | `0x0019`（UDP=17） |
 | 会合 | `NsRendezvousEncode`，12 字节，slot + port + ipv4 |
 | ICE 候选 | `NsIceEncode`，`NSIC` + slot + count + 每条 type/port/ipv4 |
+| ICE SDP | `NsIceSdpEncode` / `NsIceSdpDecode`，`o=- <slot>` + `a=candidate` |
 | ICE 配对 | `NsIceFormPairs`，host/srflx 笛卡尔积，host-host 优先 |
-| USE-CANDIDATE | `0x0025`（length 0），Host `IceCheckPairs` 带上；Client `IceWaitNominate` 认 |
+| 会合助手 | `FNsRendezvousHub` / `ns.RendezvousHub`，转发 `NSIC` / `NSRV` |
+| USE-CANDIDATE | `0x0025`（length 0），Host 在检查成功后才带；Client `IceWaitNominate` 认 |
 | 编解码 | `NsStun.h` |
 
 自动化：`NetworkSync.Stun.Bind`（编解码，含 Indication / 会合 / Request / Allocate / CreatePermission / ChannelBind / ChannelData / USE-CANDIDATE）、
@@ -83,7 +89,10 @@ type：0 host、1 srflx、2 relay。每 socket 最多 3 条，地址端口重复
 `NetworkSync.Stun.Ice`（候选清单编解码与 host/srflx/relay gather）、
 `NetworkSync.Stun.IceExchange`（假助手换 `NSIC` 后打洞再 TANS）、
 `NetworkSync.Stun.IcePairs`（host-host 优先配对，host 不通则改 srflx）、
-`NetworkSync.Stun.IceNominate`（Client 只在 USE-CANDIDATE 后改 `SetPeer`）。不打公网 STUN / TURN。
+`NetworkSync.Stun.IceNominate`（先检查后提名；Client 只在 USE-CANDIDATE 后改 `SetPeer`）、
+`NetworkSync.Stun.Hub`（进程内 `FNsRendezvousHub` 转发 `NSIC` / `NSRV` 后再 TANS）、
+`NetworkSync.Stun.HubProcess`（后台 `NsStartRendezvousHub` 供两端 `IceExchange`）、
+`NetworkSync.Stun.IceSdp`（SDP 候选清单编解码）。不打公网 STUN / TURN。
 
 回归：`NetworkSync.Stun.RendezvousOrder` 覆盖乱序、缺地址和 Host / Rollback 必需 peer；
 `.ChannelPeers` / `.PermitPeers` 覆盖多请求、跨 socket、乱序、重复和缺失响应；
@@ -93,7 +102,10 @@ type：0 host、1 srflx、2 relay。每 socket 最多 3 条，地址端口重复
 `.Ice` 验证 `NSIC` 往返、拒收会合包，以及 Binding / Allocate 之后 gather 出 host / srflx / relay。
 `.IceExchange` 验证助手转发清单后 `SetPeer` 用 host 候选，并拒收 `NSRV`。
 `.IcePairs` 验证假 host 候选不通时改用 srflx，再 TANS。
-`.IceNominate` 验证两端假 host 不通时，控制方提名 srflx，受控方按 USE-CANDIDATE `SetPeer`，再双向 TANS。
+`.IceNominate` 验证两端假 host 不通时，控制方先检查 srflx 再发 USE-CANDIDATE，受控方按提名 `SetPeer`，再双向 TANS。
+`.Hub` 验证助手线程 `Serve` 时两端 `IceExchange` / `RendezvousExchange` 都能换到对端 host 并 TANS。
+`.HubProcess` 验证 `NsStartRendezvousHub` 后台转发后可停。
+`.IceSdp` 验证 host / srflx / relay 往返、LF、以及坏 slot / TCP / prflx / 超条数拒绝。会合仍走 `NSIC`。
 
 ## 包头（所有类型共用）
 

@@ -83,3 +83,27 @@ private:
 	bool bTurnRelay = false;
 	FNsSeqWindow Seq;
 };
+
+class NETWORKSYNC_API FNsRendezvousHub
+{
+public:
+	FNsRendezvousHub() = default;
+	~FNsRendezvousHub();
+	FNsRendezvousHub(const FNsRendezvousHub&) = delete;
+	FNsRendezvousHub& operator=(const FNsRendezvousHub&) = delete;
+
+	bool Bind(int32 Port = 0);
+	void Close();
+	int32 BoundPort() const;
+	bool Serve();
+
+private:
+	FSocket* Sock = nullptr;
+	int32 LocalPort = 0;
+	TArray<uint8> Last[3];
+	bool bHave[3] = {};
+};
+
+NETWORKSYNC_API bool NsStartRendezvousHub(int32 Port = 0);
+NETWORKSYNC_API void NsStopRendezvousHub();
+NETWORKSYNC_API int32 NsRendezvousHubBoundPort();

@@ -16,4 +16,6 @@ private:
 	IConsoleCommand* SelfTestCmd = nullptr;
 	IConsoleCommand* DropRateCmd = nullptr;
 	IConsoleCommand* SpawnCmd = nullptr;
+	IConsoleCommand* HubCmd = nullptr;
+	IConsoleCommand* HubStopCmd = nullptr;
 };

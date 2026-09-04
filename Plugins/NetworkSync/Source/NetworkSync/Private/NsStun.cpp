@@ -923,3 +923,161 @@ bool NsIceFormPairs(
 	});
 	return true;
 }
+
+namespace
+{
+const TCHAR* NsIceSdpTypeName(ENsIceType Type)
+{
+	if (Type == ENsIceType::Host)
+	{
+		return TEXT("host");
+	}
+	if (Type == ENsIceType::Srflx)
+	{
+		return TEXT("srflx");
+	}
+	if (Type == ENsIceType::Relay)
+	{
+		return TEXT("relay");
+	}
+	return nullptr;
+}
+
+uint32 NsIceSdpPriority(ENsIceType Type)
+{
+	uint32 Pref = 0;
+	if (Type == ENsIceType::Host)
+	{
+		Pref = 126;
+	}
+	else if (Type == ENsIceType::Srflx)
+	{
+		Pref = 110;
+	}
+	return (Pref << 24) | (65535u << 8) | 255u;
+}
+
+bool NsIceSdpParseType(const FString& Name, ENsIceType& OutType)
+{
+	if (Name == TEXT("host"))
+	{
+		OutType = ENsIceType::Host;
+		return true;
+	}
+	if (Name == TEXT("srflx"))
+	{
+		OutType = ENsIceType::Srflx;
+		return true;
+	}
+	if (Name == TEXT("relay"))
+	{
+		OutType = ENsIceType::Relay;
+		return true;
+	}
+	return false;
+}
+}
+
+bool NsIceSdpEncode(uint8 Slot, const TArray<FNsIceCandidate>& Cands, FString& Out)
+{
+	Out.Reset();
+	if (Slot > 2 || Cands.Num() < 1 || Cands.Num() > NsIceMaxCandidates)
+	{
+		return false;
+	}
+	for (const FNsIceCandidate& Cand : Cands)
+	{
+		if (!NsIceSdpTypeName(Cand.Type) || Cand.Port <= 0 || Cand.Port > 65535)
+		{
+			return false;
+		}
+	}
+	Out = FString::Printf(
+		TEXT("v=0\r\no=- %u 0 IN IP4 0.0.0.0\r\ns=-\r\nt=0 0\r\nm=application 9 UDP ICE\r\nc=IN IP4 0.0.0.0\r\n"),
+		static_cast<uint32>(Slot));
+	for (int32 i = 0; i < Cands.Num(); ++i)
+	{
+		const FNsIceCandidate& Cand = Cands[i];
+		Out += FString::Printf(
+			TEXT("a=candidate:%d 1 UDP %u %s %d typ %s\r\n"),
+			i + 1,
+			NsIceSdpPriority(Cand.Type),
+			*NsStunIpv4ToString(Cand.Ipv4),
+			Cand.Port,
+			NsIceSdpTypeName(Cand.Type));
+	}
+	return true;
+}
+
+bool NsIceSdpDecode(const FString& Text, uint8& OutSlot, TArray<FNsIceCandidate>& OutCands)
+{
+	OutSlot = 0;
+	OutCands.Reset();
+	FString Norm = Text;
+	Norm.ReplaceInline(TEXT("\r\n"), TEXT("\n"));
+	Norm.ReplaceInline(TEXT("\r"), TEXT("\n"));
+	TArray<FString> Lines;
+	Norm.ParseIntoArray(Lines, TEXT("\n"), true);
+	if (Lines.Num() < 1)
+	{
+		return false;
+	}
+	for (FString& Line : Lines)
+	{
+		Line.TrimStartAndEndInline();
+	}
+	if (Lines[0] != TEXT("v=0"))
+	{
+		return false;
+	}
+	bool bGotOrigin = false;
+	for (const FString& Line : Lines)
+	{
+		if (Line.StartsWith(TEXT("o=")))
+		{
+			TArray<FString> Parts;
+			Line.Mid(2).ParseIntoArray(Parts, TEXT(" "), true);
+			if (bGotOrigin || Parts.Num() < 6 || Parts[0] != TEXT("-")
+				|| Parts[1].Len() != 1 || Parts[1][0] < TEXT('0') || Parts[1][0] > TEXT('2'))
+			{
+				OutCands.Reset();
+				OutSlot = 0;
+				return false;
+			}
+			OutSlot = static_cast<uint8>(Parts[1][0] - TEXT('0'));
+			bGotOrigin = true;
+			continue;
+		}
+		if (!Line.StartsWith(TEXT("a=candidate:")))
+		{
+			continue;
+		}
+		TArray<FString> Parts;
+		Line.Mid(12).ParseIntoArray(Parts, TEXT(" "), true);
+		ENsIceType Type = ENsIceType::Host;
+		uint32 Ipv4 = 0;
+		const int32 Port = Parts.Num() >= 8 ? FCString::Atoi(*Parts[5]) : 0;
+		if (Parts.Num() < 8 || Parts[0].IsEmpty() || Parts[1] != TEXT("1")
+			|| !Parts[2].Equals(TEXT("UDP"), ESearchCase::IgnoreCase)
+			|| Parts[6] != TEXT("typ") || !NsIceSdpParseType(Parts[7], Type)
+			|| !NsStunParseIpv4(Parts[4], Ipv4) || Port <= 0 || Port > 65535
+			|| OutCands.Num() >= NsIceMaxCandidates)
+		{
+			OutCands.Reset();
+			OutSlot = 0;
+			return false;
+		}
+		FNsIceCandidate Cand;
+		Cand.Type = Type;
+		Cand.Ipv4 = Ipv4;
+		Cand.Port = Port;
+		OutCands.Add(Cand);
+	}
+	if (!bGotOrigin || OutCands.Num() < 1)
+	{
+		OutCands.Reset();
+		OutSlot = 0;
+		return false;
+	}
+	return true;
+}

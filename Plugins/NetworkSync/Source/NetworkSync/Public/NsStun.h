@@ -78,6 +78,9 @@ constexpr int32 NsIceMaxCandidates = 3;
 NETWORKSYNC_API bool NsIceEncode(uint8 Slot, const TArray<FNsIceCandidate>& Cands, TArray<uint8>& Out);
 NETWORKSYNC_API bool NsIceDecode(
 	const TArray<uint8>& Bytes, uint8& OutSlot, TArray<FNsIceCandidate>& OutCands);
+NETWORKSYNC_API bool NsIceSdpEncode(uint8 Slot, const TArray<FNsIceCandidate>& Cands, FString& Out);
+NETWORKSYNC_API bool NsIceSdpDecode(
+	const FString& Text, uint8& OutSlot, TArray<FNsIceCandidate>& OutCands);
 
 struct FNsIcePair
 {
