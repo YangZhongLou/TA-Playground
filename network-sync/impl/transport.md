@@ -11,7 +11,7 @@
 ## STUN Binding（RFC 5389）
 
 STUN 不是 `FNsPacket`。字节大端，magic `0x2112A442`，与 TANS 小端 `0x54414E53` 分开。
-`Drain` 解不出 TANS 就丢，所以 Binding / 打洞 / 会合 / 连通检查 / TURN Allocate / CreatePermission / ChannelBind / ChannelData
+`Drain` 解不出 TANS 就丢（TURN 中继打开时先拆 ChannelData），所以 Binding / 打洞 / 会合 / 连通检查 / TURN Allocate / CreatePermission / ChannelBind
 走 `StunSendBind` / `StunRecvMapped` / `StunSendIndication` / `StunServe` / `RendezvousSendOffer` / `StunSendAllocate` /
 `StunRecvRelayed` / `StunSendPermission` / `StunRecvPermission` / `StunSendChannelBind` / `StunSendChannelData`，不要塞进 `ENsMsg`。
 
@@ -25,7 +25,7 @@ LocalMesh 跳过。不是完整 ICE（无 candidate 清单、无 controlling、�
 再 ChannelBind（`0x0009`，channel `0x4000+slot`）。
 每个请求有独立 txid，按 socket 和 txid 匹配全部响应；乱序、重复响应不能提前完成其他请求。
 
-ChannelData 可把 TANS 载荷交给 TURN 转发；`Send` / `Drain` 仍走直连。
+ChannelData 可把 TANS 载荷交给 TURN 转发。连通检查失败且 ChannelBind 成功时，`EnableTurnRelay` 让 `Send` 把 TANS 封进 ChannelData 发往 TURN；`Drain` 按 channel `0x4000+slot` 还原 Src。自动化里 `UdpTurnHost` 为空，不走中继。
 UDP ChannelData 收发支持最多 1200 字节应用载荷，另加 4 字节头及对齐填充，超限则拒绝。
 TURN 向 peer 转发时，从分配的 relay 地址发出裸 TANS；peer 回包到 relay 地址后，TURN 再封装 ChannelData 发给客户端。
 
@@ -65,12 +65,14 @@ Host 要求 C1，Rollback Client 要求 C0，其他 Client 要求 Sv 和 C0；�
 `NetworkSync.Stun.Check`（对端 Binding Request/Response 后 TANS）、
 `NetworkSync.Stun.Turn`（进程内假 TURN Allocate）、
 `NetworkSync.Stun.Permit`（进程内假 TURN CreatePermission）、
-`NetworkSync.Stun.Channel`（假 TURN ChannelBind 后转发 ChannelData 里的 TANS）。不打公网 STUN / TURN。
+`NetworkSync.Stun.Channel`（假 TURN ChannelBind 后转发 ChannelData 里的 TANS）、
+`NetworkSync.Stun.Relay`（假 TURN 上 `Send` / `Drain` 走 ChannelData）。不打公网 STUN / TURN。
 
 回归：`NetworkSync.Stun.RendezvousOrder` 覆盖乱序、缺地址和 Host / Rollback 必需 peer；
 `.ChannelPeers` / `.PermitPeers` 覆盖多请求、跨 socket、乱序、重复和缺失响应；
 `.ChannelMtu` 覆盖 508 / 509 / 1200 字节及超限拒绝。
 `.Channel` 用独立 relay socket 验证近 MTU 的裸 TANS 转发和回程 ChannelData 封装。
+`.Relay` 验证直连失败后 `Send` 封装、对端 `Drain` 裸 TANS、回程 `Drain` 拆 ChannelData。
 
 ## 包头（所有类型共用）
 

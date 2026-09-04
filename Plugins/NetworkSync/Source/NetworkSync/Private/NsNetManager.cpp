@@ -222,13 +222,18 @@ bool ANsNetManager::BindUdp()
 		{
 			return false;
 		}
-		if (!UdpTurnHost.IsEmpty() && UdpTurnPort > 0 && !Udp.StunPermitPeers(*UdpTurnHost, UdpTurnPort))
+		bool bChannels = false;
+		if (!UdpTurnHost.IsEmpty() && UdpTurnPort > 0)
 		{
-			UE_LOG(LogNetworkSyncManager, Warning, TEXT("turn permissions incomplete"));
-		}
-		if (!UdpTurnHost.IsEmpty() && UdpTurnPort > 0 && !Udp.StunBindPeerChannels(*UdpTurnHost, UdpTurnPort))
-		{
-			UE_LOG(LogNetworkSyncManager, Warning, TEXT("turn channels incomplete"));
+			if (!Udp.StunPermitPeers(*UdpTurnHost, UdpTurnPort))
+			{
+				UE_LOG(LogNetworkSyncManager, Warning, TEXT("turn permissions incomplete"));
+			}
+			bChannels = Udp.StunBindPeerChannels(*UdpTurnHost, UdpTurnPort);
+			if (!bChannels)
+			{
+				UE_LOG(LogNetworkSyncManager, Warning, TEXT("turn channels incomplete"));
+			}
 		}
 		if (!Udp.PunchPeers())
 		{
@@ -237,6 +242,10 @@ bool ANsNetManager::BindUdp()
 		if (!Udp.StunCheckPeers())
 		{
 			UE_LOG(LogNetworkSyncManager, Warning, TEXT("udp stun check none"));
+			if (bChannels && Udp.EnableTurnRelay(*UdpTurnHost, UdpTurnPort))
+			{
+				UE_LOG(LogNetworkSyncManager, Display, TEXT("udp turn relay"));
+			}
 		}
 	}
 	return true;

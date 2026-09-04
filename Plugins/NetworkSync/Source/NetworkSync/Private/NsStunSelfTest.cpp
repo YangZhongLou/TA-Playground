@@ -1278,3 +1278,240 @@ FNsSelfTestResult NsRunStunChannelSelfTest()
 
 	return StunOk(TEXT("stun channel"));
 }
+
+FNsSelfTestResult NsRunStunRelaySelfTest()
+{
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return StunFail(TEXT("stun-relay: no sockets"));
+	}
+
+	FSocket* TurnSock = SS->CreateSocket(NAME_DGram, TEXT("NsTurnRelayFake"), FName(FNetworkProtocolTypes::IPv4));
+	if (!TurnSock)
+	{
+		return StunFail(TEXT("stun-relay: create"));
+	}
+	TurnSock->SetNonBlocking(true);
+	TSharedRef<FInternetAddr> BindAddr = SS->CreateInternetAddr();
+	BindAddr->SetLoopbackAddress();
+	BindAddr->SetPort(0);
+	if (!TurnSock->Bind(*BindAddr))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: bind turn"));
+	}
+	TSharedRef<FInternetAddr> Bound = SS->CreateInternetAddr();
+	TurnSock->GetAddress(*Bound);
+	const int32 TurnPort = Bound->GetPort();
+	if (TurnPort <= 0)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: turn port"));
+	}
+	FSocket* Relay = SS->CreateSocket(NAME_DGram, TEXT("NsTurnRelayPath"), FName(FNetworkProtocolTypes::IPv4));
+	if (!Relay)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: relay create"));
+	}
+	ON_SCOPE_EXIT { StunDestroy(Relay); };
+	Relay->SetNonBlocking(true);
+	if (!Relay->Bind(*BindAddr))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: relay bind"));
+	}
+	TSharedRef<FInternetAddr> RelayAddr = SS->CreateInternetAddr();
+	Relay->GetAddress(*RelayAddr);
+
+	FNsUdpNet C0;
+	FNsUdpNet Sv;
+	if (!C0.Bind(ENsAddr::C0, 0, false) || !Sv.Bind(ENsAddr::Sv, 0, false))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: bind peers"));
+	}
+	if (!C0.SetPeer(ENsAddr::Sv, TEXT("127.0.0.1"), Sv.BoundPort(ENsAddr::Sv))
+		|| !Sv.SetPeer(ENsAddr::C0, TEXT("127.0.0.1"), RelayAddr->GetPort()))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: set peer"));
+	}
+
+	const uint16 Channel = static_cast<uint16>(NsTurnChannelMin + static_cast<int32>(ENsAddr::Sv));
+	uint8 TxId[NsStunTxIdBytes];
+	NsStunFillTxId(TxId);
+	if (!C0.StunSendChannelBind(ENsAddr::C0, TEXT("127.0.0.1"), TurnPort, Channel,
+		TEXT("127.0.0.1"), Sv.BoundPort(ENsAddr::Sv), TxId))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: send bind"));
+	}
+
+	uint8 Buf[Ns::MaxPacketBytes + NsChannelDataHeaderBytes + 4];
+	int32 Read = 0;
+	TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+	bool bGotBind = false;
+	uint32 PeerIp = 0;
+	int32 PeerPort = 0;
+	uint16 GotCh = 0;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Read = 0;
+		if (TurnSock->RecvFrom(Buf, 512, Read, *From) && Read >= NsStunHeaderBytes)
+		{
+			TArray<uint8> Req;
+			Req.Append(Buf, Read);
+			if (NsStunDecodeChannelBind(Req, TxId, GotCh, PeerIp, PeerPort) && GotCh == Channel)
+			{
+				bGotBind = true;
+				break;
+			}
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (!bGotBind || PeerPort != Sv.BoundPort(ENsAddr::Sv))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: no bind"));
+	}
+
+	TArray<uint8> BindOk;
+	if (!NsStunEncodeChannelBindSuccess(TxId, BindOk))
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: encode success"));
+	}
+	int32 Sent = 0;
+	if (!TurnSock->SendTo(BindOk.GetData(), BindOk.Num(), Sent, *From) || Sent != BindOk.Num())
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: send success"));
+	}
+
+	bool bGotBindOk = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		if (C0.StunRecvChannelBind(ENsAddr::C0, TxId))
+		{
+			bGotBindOk = true;
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (!bGotBindOk || !C0.EnableTurnRelay(TEXT("127.0.0.1"), TurnPort) || !C0.UsesTurnRelay())
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: enable"));
+	}
+
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SInput;
+	Pkt.PlayerId = 0;
+	Pkt.Dx = 1;
+	C0.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
+
+	bool bFwd = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Read = 0;
+		if (TurnSock->RecvFrom(Buf, sizeof(Buf), Read, *From) && Read > 0)
+		{
+			TArray<uint8> Chan;
+			Chan.Append(Buf, Read);
+			uint16 DataCh = 0;
+			TArray<uint8> Payload;
+			if (NsDecodeChannelData(Chan, DataCh, Payload) && DataCh == Channel)
+			{
+				TSharedRef<FInternetAddr> Dest = SS->CreateInternetAddr();
+				bool bOk = false;
+				Dest->SetIp(*NsStunIpv4ToString(PeerIp), bOk);
+				Dest->SetPort(PeerPort);
+				Sent = 0;
+				if (bOk && Relay->SendTo(Payload.GetData(), Payload.Num(), Sent, *Dest) && Sent == Payload.Num())
+				{
+					bFwd = true;
+					break;
+				}
+			}
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (!bFwd)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: no forward"));
+	}
+
+	TArray<FNsPacket> PeerPackets;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Sv.Drain(ENsAddr::Sv, PeerPackets);
+		if (!PeerPackets.IsEmpty())
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (PeerPackets.Num() != 1 || PeerPackets[0].Src != ENsAddr::C0 || PeerPackets[0].Dx != 1)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: peer must Drain raw TANS from relay"));
+	}
+
+	FNsPacket Reply;
+	Reply.Type = ENsMsg::S2CSnapshot;
+	Reply.Tick = 3;
+	Sv.Send(ENsAddr::Sv, ENsAddr::C0, Reply);
+	bool bReturnForwarded = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Read = 0;
+		if (Relay->RecvFrom(Buf, sizeof(Buf), Read, *From) && Read > 0)
+		{
+			TArray<uint8> PeerData;
+			PeerData.Append(Buf, Read);
+			FNsPacket PeerPacket;
+			TArray<uint8> ChannelData;
+			if (From->GetPort() != Sv.BoundPort(ENsAddr::Sv)
+				|| !NsDecodePacket(PeerData, PeerPacket)
+				|| !NsEncodeChannelData(Channel, PeerData, ChannelData))
+			{
+				StunDestroy(TurnSock);
+				return StunFail(TEXT("stun-relay: raw peer return"));
+			}
+			TSharedRef<FInternetAddr> ClientAddr = SS->CreateInternetAddr();
+			ClientAddr->SetLoopbackAddress();
+			ClientAddr->SetPort(C0.BoundPort(ENsAddr::C0));
+			Sent = 0;
+			bReturnForwarded = TurnSock->SendTo(ChannelData.GetData(), ChannelData.Num(), Sent, *ClientAddr)
+				&& Sent == ChannelData.Num();
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (!bReturnForwarded)
+	{
+		StunDestroy(TurnSock);
+		return StunFail(TEXT("stun-relay: return forward"));
+	}
+
+	TArray<FNsPacket> ClientPackets;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		C0.Drain(ENsAddr::C0, ClientPackets);
+		if (!ClientPackets.IsEmpty())
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	StunDestroy(TurnSock);
+	if (ClientPackets.Num() != 1 || ClientPackets[0].Src != ENsAddr::Sv || ClientPackets[0].Tick != 3)
+	{
+		return StunFail(TEXT("stun-relay: Drain must unwrap ChannelData"));
+	}
+
+	return StunOk(TEXT("stun relay"));
+}

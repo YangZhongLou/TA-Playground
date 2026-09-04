@@ -46,6 +46,8 @@ public:
 	bool StunCheckPeers();
 	bool StunPermitPeers(const TCHAR* TurnHost, int32 TurnPort);
 	bool StunBindPeerChannels(const TCHAR* TurnHost, int32 TurnPort);
+	bool EnableTurnRelay(const TCHAR* TurnHost, int32 TurnPort);
+	bool UsesTurnRelay() const;
 	bool RendezvousSendOffer(ENsAddr From, const TCHAR* HubHost, int32 HubPort);
 	bool RendezvousRecvPeer(ENsAddr From);
 	bool RendezvousExchange(const TCHAR* HubHost, int32 HubPort, const TArray<ENsAddr>& RequiredPeers);
@@ -65,5 +67,8 @@ private:
 	int32 PeerPorts[3] = {};
 	uint32 MappedIpv4[3] = {};
 	int32 MappedPorts[3] = {};
+	uint32 TurnIpv4 = 0;
+	int32 TurnServerPort = 0;
+	bool bTurnRelay = false;
 	FNsSeqWindow Seq;
 };

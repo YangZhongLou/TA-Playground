@@ -79,6 +79,9 @@ void FNsUdpNet::Close()
 		MappedIpv4[i] = 0;
 		MappedPorts[i] = 0;
 	}
+	TurnIpv4 = 0;
+	TurnServerPort = 0;
+	bTurnRelay = false;
 	ResetSession();
 }
 
@@ -168,6 +171,24 @@ bool FNsUdpNet::SetPeer(ENsAddr Addr, const TCHAR* Host, int32 Port)
 	return true;
 }
 
+bool FNsUdpNet::EnableTurnRelay(const TCHAR* Host, int32 Port)
+{
+	uint32 Parsed = 0;
+	if (!Host || Port <= 0 || !NsStunParseIpv4(Host, Parsed))
+	{
+		return false;
+	}
+	TurnIpv4 = Parsed;
+	TurnServerPort = Port;
+	bTurnRelay = true;
+	return true;
+}
+
+bool FNsUdpNet::UsesTurnRelay() const
+{
+	return bTurnRelay;
+}
+
 bool FNsUdpNet::MakeDest(ENsAddr Dst, TSharedRef<FInternetAddr>& Out) const
 {
 	const int32 Di = static_cast<int32>(Dst);
@@ -248,8 +269,11 @@ void FNsUdpNet::Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet)
 	{
 		return;
 	}
+	const int32 Di = static_cast<int32>(Dst);
+	const bool bRelay = bTurnRelay && TurnIpv4 != 0 && TurnServerPort > 0
+		&& Di >= 0 && Di <= 2 && !Socks[Di] && PeerPorts[Di] > 0;
 	TSharedRef<FInternetAddr> Dest = SS->CreateInternetAddr();
-	if (!MakeDest(Dst, Dest))
+	if (!bRelay && !MakeDest(Dst, Dest))
 	{
 		return;
 	}
@@ -266,6 +290,12 @@ void FNsUdpNet::Send(ENsAddr Src, ENsAddr Dst, const FNsPacket& Packet)
 		TArray<uint8> Bytes;
 		if (!NsEncodePacket(Part, Bytes))
 		{
+			continue;
+		}
+		if (bRelay)
+		{
+			const uint16 Channel = static_cast<uint16>(NsTurnChannelMin + Di);
+			StunSendChannelData(Src, *NsStunIpv4ToString(TurnIpv4), TurnServerPort, Channel, Bytes);
 			continue;
 		}
 		int32 Sent = 0;
@@ -286,12 +316,13 @@ void FNsUdpNet::Drain(ENsAddr Dst, TArray<FNsPacket>& Out)
 	{
 		return;
 	}
-	uint8 Buf[Ns::MaxPacketBytes + 1];
+	constexpr int32 MaxChannelBytes = (Ns::MaxPacketBytes + NsChannelDataHeaderBytes + 3) & ~3;
+	uint8 Buf[MaxChannelBytes + 1];
 	for (;;)
 	{
 		TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
 		int32 Read = 0;
-		if (!Socks[Di]->RecvFrom(Buf, Ns::MaxPacketBytes + 1, Read, *From))
+		if (!Socks[Di]->RecvFrom(Buf, sizeof(Buf), Read, *From))
 		{
 			break;
 		}
@@ -299,21 +330,31 @@ void FNsUdpNet::Drain(ENsAddr Dst, TArray<FNsPacket>& Out)
 		{
 			break;
 		}
-		if (Read > Ns::MaxPacketBytes)
+		if (Read > MaxChannelBytes)
 		{
 			continue;
 		}
 		TArray<uint8> Bytes;
 		Bytes.Append(Buf, Read);
 		FNsPacket Wired;
-		if (!NsDecodePacket(Bytes, Wired))
-		{
-			continue;
-		}
 		ENsAddr Src;
-		if (!FindPeer(*From, Src))
+		uint16 Channel = 0;
+		TArray<uint8> Payload;
+		if (bTurnRelay && NsDecodeChannelData(Bytes, Channel, Payload))
 		{
-			continue;
+			const int32 Slot = static_cast<int32>(Channel) - NsTurnChannelMin;
+			if (Slot < 0 || Slot > 2 || Slot == Di || Socks[Slot] || !NsDecodePacket(Payload, Wired))
+			{
+				continue;
+			}
+			Src = static_cast<ENsAddr>(Slot);
+		}
+		else
+		{
+			if (Read > Ns::MaxPacketBytes || !NsDecodePacket(Bytes, Wired) || !FindPeer(*From, Src))
+			{
+				continue;
+			}
 		}
 		Wired.Src = Src;
 		Wired.Dst = Dst;
