@@ -194,7 +194,11 @@ bool ANsNetManager::BindUdp()
 			{
 				RequiredPeers = {ENsAddr::Sv, ENsAddr::C0};
 			}
-			bPeers = Udp.RendezvousExchange(*UdpRendezvousHost, UdpRendezvousPort, RequiredPeers);
+			bPeers = Udp.IceExchange(*UdpRendezvousHost, UdpRendezvousPort, RequiredPeers);
+			if (!bPeers)
+			{
+				bPeers = Udp.RendezvousExchange(*UdpRendezvousHost, UdpRendezvousPort, RequiredPeers);
+			}
 			if (!bPeers)
 			{
 				UE_LOG(LogNetworkSyncManager, Warning, TEXT("rendezvous missing required peers"));
@@ -239,7 +243,10 @@ bool ANsNetManager::BindUdp()
 		{
 			UE_LOG(LogNetworkSyncManager, Warning, TEXT("udp punch sent none"));
 		}
-		if (!Udp.StunCheckPeers())
+		const bool bIceOk = (UdpRole == ENsUdpRole::Host)
+			? Udp.IceCheckPairs()
+			: Udp.IceWaitNominate();
+		if (!bIceOk && !Udp.StunCheckPeers())
 		{
 			UE_LOG(LogNetworkSyncManager, Warning, TEXT("udp stun check none"));
 			if (bChannels && Udp.EnableTurnRelay(*UdpTurnHost, UdpTurnPort))

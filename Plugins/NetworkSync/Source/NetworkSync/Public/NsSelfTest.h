@@ -89,6 +89,10 @@ NETWORKSYNC_API FNsSelfTestResult NsRunStunPermitPeersSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStunRendezvousOrderSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStunChannelMtuSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunStunRelaySelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunStunIceSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunStunIceExchangeSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunStunIcePairsSelfTest();
+NETWORKSYNC_API FNsSelfTestResult NsRunStunIceNominateSelfTest();
 
 NETWORKSYNC_API FNsSelfTestResult NsRunCodecStressSelfTest();
 NETWORKSYNC_API FNsSelfTestResult NsRunFakeNetStressSelfTest();

@@ -350,6 +350,10 @@ NS_WRAP(FNsStun_PermitPeers, "NetworkSync.Stun.PermitPeers", NsRunStunPermitPeer
 NS_WRAP(FNsStun_RendezvousOrder, "NetworkSync.Stun.RendezvousOrder", NsRunStunRendezvousOrderSelfTest, NsAutoFlags)
 NS_WRAP(FNsStun_ChannelMtu, "NetworkSync.Stun.ChannelMtu", NsRunStunChannelMtuSelfTest, NsAutoFlags)
 NS_WRAP(FNsStun_Relay, "NetworkSync.Stun.Relay", NsRunStunRelaySelfTest, NsAutoFlags)
+NS_WRAP(FNsStun_Ice, "NetworkSync.Stun.Ice", NsRunStunIceSelfTest, NsAutoFlags)
+NS_WRAP(FNsStun_IceExchange, "NetworkSync.Stun.IceExchange", NsRunStunIceExchangeSelfTest, NsAutoFlags)
+NS_WRAP(FNsStun_IcePairs, "NetworkSync.Stun.IcePairs", NsRunStunIcePairsSelfTest, NsAutoFlags)
+NS_WRAP(FNsStun_IceNominate, "NetworkSync.Stun.IceNominate", NsRunStunIceNominateSelfTest, NsAutoFlags)
 
 NS_WRAP(FNsWorld_Stress, "NetworkSync.Stress.World", NsRunWorldStressSelfTest, NsAutoFlags)
 NS_WRAP(FNsCodec_Stress, "NetworkSync.Stress.Codec", NsRunCodecStressSelfTest, NsAutoFlags)

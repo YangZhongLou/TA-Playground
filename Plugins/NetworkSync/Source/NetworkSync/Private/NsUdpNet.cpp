@@ -78,6 +78,9 @@ void FNsUdpNet::Close()
 		PeerPorts[i] = 0;
 		MappedIpv4[i] = 0;
 		MappedPorts[i] = 0;
+		RelayedIpv4[i] = 0;
+		RelayedPorts[i] = 0;
+		PeerCandCount[i] = 0;
 	}
 	TurnIpv4 = 0;
 	TurnServerPort = 0;
@@ -410,6 +413,36 @@ bool NsUdpSendTo(FSocket* Sock, const TCHAR* Host, int32 Port, const TArray<uint
 	return Sock->SendTo(Bytes.GetData(), Bytes.Num(), Sent, *Dest) && Sent == Bytes.Num();
 }
 
+bool NsIcePickAddress(const TArray<FNsIceCandidate>& Cands, uint32& OutIpv4, int32& OutPort)
+{
+	OutIpv4 = 0;
+	OutPort = 0;
+	const FNsIceCandidate* Pick = nullptr;
+	for (const FNsIceCandidate& Cand : Cands)
+	{
+		if (Cand.Port <= 0)
+		{
+			continue;
+		}
+		if (Cand.Type == ENsIceType::Host)
+		{
+			Pick = &Cand;
+			break;
+		}
+		if (!Pick)
+		{
+			Pick = &Cand;
+		}
+	}
+	if (!Pick)
+	{
+		return false;
+	}
+	OutIpv4 = Pick->Ipv4;
+	OutPort = Pick->Port;
+	return true;
+}
+
 struct FNsStunPendingRequest
 {
 	int32 SocketIndex = 0;
@@ -472,6 +505,21 @@ bool FNsUdpNet::StunSendBind(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 
 	}
 	TArray<uint8> Bytes;
 	if (!NsStunEncodeBindRequest(TxId, Bytes))
+	{
+		return false;
+	}
+	return NsUdpSendTo(Socks[i], Host, Port, Bytes);
+}
+
+bool FNsUdpNet::StunSendNominate(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes])
+{
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i] || !TxId)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	if (!NsStunEncodeBindNominate(TxId, Bytes))
 	{
 		return false;
 	}
@@ -596,6 +644,8 @@ bool FNsUdpNet::StunRecvRelayed(ENsAddr Addr, const uint8 TxId[NsStunTxIdBytes],
 	}
 	OutHost = NsStunIpv4ToString(Ipv4);
 	OutPort = RelayedPort;
+	RelayedIpv4[i] = Ipv4;
+	RelayedPorts[i] = OutPort;
 	return true;
 }
 
@@ -943,6 +993,421 @@ bool FNsUdpNet::StunBindPeerChannels(const TCHAR* TurnHost, int32 TurnPort)
 		}
 	}
 	return NsUdpAwaitStunReplies(Socks, Requests, NsStunDecodeChannelBindSuccess);
+}
+
+bool FNsUdpNet::GatherIceCandidates(ENsAddr Addr, TArray<FNsIceCandidate>& Out) const
+{
+	Out.Reset();
+	const int32 i = static_cast<int32>(Addr);
+	if (i < 0 || i > 2 || !Socks[i] || LocalPorts[i] <= 0)
+	{
+		return false;
+	}
+	uint32 HostIp = 0;
+	if (!NsStunParseIpv4(TEXT("127.0.0.1"), HostIp))
+	{
+		return false;
+	}
+	auto AddUnique = [&Out](ENsIceType Type, uint32 Ipv4, int32 Port)
+	{
+		if (Port <= 0 || Out.Num() >= NsIceMaxCandidates)
+		{
+			return;
+		}
+		for (const FNsIceCandidate& Cand : Out)
+		{
+			if (Cand.Ipv4 == Ipv4 && Cand.Port == Port)
+			{
+				return;
+			}
+		}
+		FNsIceCandidate Cand;
+		Cand.Type = Type;
+		Cand.Ipv4 = Ipv4;
+		Cand.Port = Port;
+		Out.Add(Cand);
+	};
+	AddUnique(ENsIceType::Host, HostIp, LocalPorts[i]);
+	if (MappedPorts[i] > 0)
+	{
+		AddUnique(ENsIceType::Srflx, MappedIpv4[i], MappedPorts[i]);
+	}
+	if (RelayedPorts[i] > 0)
+	{
+		AddUnique(ENsIceType::Relay, RelayedIpv4[i], RelayedPorts[i]);
+	}
+	return Out.Num() > 0;
+}
+
+bool FNsUdpNet::IceSendOffer(ENsAddr From, const TCHAR* HubHost, int32 HubPort)
+{
+	TArray<FNsIceCandidate> Cands;
+	if (!GatherIceCandidates(From, Cands))
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	if (!NsIceEncode(static_cast<uint8>(From), Cands, Bytes))
+	{
+		return false;
+	}
+	const int32 i = static_cast<int32>(From);
+	return NsUdpSendTo(Socks[i], HubHost, HubPort, Bytes);
+}
+
+bool FNsUdpNet::IceRecvPeer(ENsAddr From)
+{
+	const int32 i = static_cast<int32>(From);
+	if (i < 0 || i > 2 || !Socks[i])
+	{
+		return false;
+	}
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return false;
+	}
+	uint8 Buf[64];
+	TSharedRef<FInternetAddr> FromAddr = SS->CreateInternetAddr();
+	int32 Read = 0;
+	if (!Socks[i]->RecvFrom(Buf, 64, Read, *FromAddr) || Read <= 0)
+	{
+		return false;
+	}
+	TArray<uint8> Bytes;
+	Bytes.Append(Buf, Read);
+	uint8 Slot = 0;
+	TArray<FNsIceCandidate> Cands;
+	uint32 Ipv4 = 0;
+	int32 Port = 0;
+	if (!NsIceDecode(Bytes, Slot, Cands) || Slot > 2 || Socks[Slot]
+		|| !NsIcePickAddress(Cands, Ipv4, Port))
+	{
+		return false;
+	}
+	const int32 n = FMath::Min(Cands.Num(), NsIceMaxCandidates);
+	PeerCandCount[Slot] = n;
+	for (int32 c = 0; c < n; ++c)
+	{
+		PeerCands[Slot][c] = Cands[c];
+	}
+	return SetPeer(static_cast<ENsAddr>(Slot), *NsStunIpv4ToString(Ipv4), Port);
+}
+
+bool FNsUdpNet::IceExchange(const TCHAR* HubHost, int32 HubPort, const TArray<ENsAddr>& RequiredPeers)
+{
+	if (RequiredPeers.IsEmpty())
+	{
+		return false;
+	}
+	for (ENsAddr Peer : RequiredPeers)
+	{
+		const int32 Slot = static_cast<int32>(Peer);
+		if (Slot < 0 || Slot > 2 || Socks[Slot])
+		{
+			return false;
+		}
+	}
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		for (int32 i = 0; i < 3; ++i)
+		{
+			if (Socks[i])
+			{
+				IceSendOffer(static_cast<ENsAddr>(i), HubHost, HubPort);
+			}
+		}
+		for (int32 i = 0; i < 3; ++i)
+		{
+			if (Socks[i])
+			{
+				IceRecvPeer(static_cast<ENsAddr>(i));
+			}
+		}
+		bool bComplete = true;
+		for (ENsAddr Peer : RequiredPeers)
+		{
+			bComplete &= PeerPort(Peer) > 0;
+		}
+		if (bComplete)
+		{
+			return true;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	return false;
+}
+
+bool FNsUdpNet::IceCheckPairs()
+{
+	int32 FromSlot = -1;
+	for (int32 i = 0; i < 3; ++i)
+	{
+		if (Socks[i])
+		{
+			FromSlot = i;
+			break;
+		}
+	}
+	if (FromSlot < 0)
+	{
+		return false;
+	}
+	TArray<FNsIceCandidate> Local;
+	if (!GatherIceCandidates(static_cast<ENsAddr>(FromSlot), Local))
+	{
+		return false;
+	}
+	TArray<FNsIcePair> Pairs[3];
+	bool bNeed[3] = {};
+	bool bWon[3] = {};
+	int32 PairIdx[3] = {};
+	for (int32 To = 0; To < 3; ++To)
+	{
+		if (Socks[To] || PeerCandCount[To] <= 0)
+		{
+			continue;
+		}
+		TArray<FNsIceCandidate> Remote;
+		for (int32 c = 0; c < PeerCandCount[To]; ++c)
+		{
+			Remote.Add(PeerCands[To][c]);
+		}
+		if (NsIceFormPairs(Local, Remote, Pairs[To]))
+		{
+			bNeed[To] = true;
+		}
+	}
+	bool bAny = false;
+	for (int32 To = 0; To < 3; ++To)
+	{
+		bAny |= bNeed[To];
+	}
+	if (!bAny)
+	{
+		return false;
+	}
+	uint8 TxId[NsStunTxIdBytes];
+	NsStunFillTxId(TxId);
+	const ENsAddr From = static_cast<ENsAddr>(FromSlot);
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		for (int32 To = 0; To < 3; ++To)
+		{
+			if (!bNeed[To] || bWon[To] || PairIdx[To] >= Pairs[To].Num())
+			{
+				continue;
+			}
+			const FNsIceCandidate& Remote = Pairs[To][PairIdx[To]].Remote;
+			StunSendNominate(From, *NsStunIpv4ToString(Remote.Ipv4), Remote.Port, TxId);
+		}
+		for (int32 i = 0; i < 3; ++i)
+		{
+			if (!Socks[i])
+			{
+				continue;
+			}
+			ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+			if (!SS)
+			{
+				continue;
+			}
+			uint8 Buf[512];
+			TSharedRef<FInternetAddr> ReplyFrom = SS->CreateInternetAddr();
+			int32 Read = 0;
+			if (!Socks[i]->RecvFrom(Buf, 512, Read, *ReplyFrom) || Read <= 0)
+			{
+				continue;
+			}
+			TArray<uint8> Bytes;
+			Bytes.Append(Buf, Read);
+			if (NsStunIsBindRequest(Bytes))
+			{
+				uint8 ReqTx[NsStunTxIdBytes];
+				uint32 FromIp = 0;
+				const int32 FromPort = ReplyFrom->GetPort();
+				if (NsStunReadTxId(Bytes, ReqTx) && FromPort > 0
+					&& NsStunParseIpv4(ReplyFrom->ToString(false), FromIp))
+				{
+					TArray<uint8> Reply;
+					if (NsStunEncodeXorMappedReply(ReqTx, FromIp, FromPort, Reply))
+					{
+						int32 Sent = 0;
+						Socks[i]->SendTo(Reply.GetData(), Reply.Num(), Sent, *ReplyFrom);
+					}
+				}
+				continue;
+			}
+			if (i != FromSlot)
+			{
+				continue;
+			}
+			uint32 MappedIp = 0;
+			int32 MappedPort = 0;
+			if (!NsStunDecodeMapped(Bytes, TxId, MappedIp, MappedPort))
+			{
+				continue;
+			}
+			uint32 ReplyIp = 0;
+			const int32 ReplyPort = ReplyFrom->GetPort();
+			if (ReplyPort <= 0 || !NsStunParseIpv4(ReplyFrom->ToString(false), ReplyIp))
+			{
+				continue;
+			}
+			for (int32 To = 0; To < 3; ++To)
+			{
+				if (!bNeed[To] || bWon[To])
+				{
+					continue;
+				}
+				for (int32 c = 0; c < PeerCandCount[To]; ++c)
+				{
+					const FNsIceCandidate& Cand = PeerCands[To][c];
+					const bool bHostOk = Cand.Ipv4 == ReplyIp
+						|| (NsIsLoopbackHost(NsStunIpv4ToString(Cand.Ipv4))
+							&& NsIsLoopbackHost(ReplyFrom->ToString(false)));
+					if (Cand.Port == ReplyPort && bHostOk
+						&& SetPeer(static_cast<ENsAddr>(To), *NsStunIpv4ToString(ReplyIp), ReplyPort))
+					{
+						bWon[To] = true;
+						break;
+					}
+				}
+			}
+		}
+		bool bDone = true;
+		for (int32 To = 0; To < 3; ++To)
+		{
+			if (bNeed[To] && !bWon[To])
+			{
+				bDone = false;
+				if ((Try + 1) % 15 == 0)
+				{
+					++PairIdx[To];
+				}
+			}
+		}
+		if (bDone)
+		{
+			return true;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	for (int32 To = 0; To < 3; ++To)
+	{
+		if (bNeed[To] && !bWon[To])
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool FNsUdpNet::IceWaitNominate()
+{
+	bool bNeed[3] = {};
+	bool bWon[3] = {};
+	bool bAny = false;
+	for (int32 To = 0; To < 3; ++To)
+	{
+		if (Socks[To] || PeerCandCount[To] <= 0)
+		{
+			continue;
+		}
+		bNeed[To] = true;
+		bAny = true;
+	}
+	if (!bAny)
+	{
+		return false;
+	}
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		for (int32 i = 0; i < 3; ++i)
+		{
+			if (!Socks[i])
+			{
+				continue;
+			}
+			ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+			if (!SS)
+			{
+				continue;
+			}
+			uint8 Buf[512];
+			TSharedRef<FInternetAddr> ReplyFrom = SS->CreateInternetAddr();
+			int32 Read = 0;
+			if (!Socks[i]->RecvFrom(Buf, 512, Read, *ReplyFrom) || Read <= 0)
+			{
+				continue;
+			}
+			TArray<uint8> Bytes;
+			Bytes.Append(Buf, Read);
+			if (!NsStunIsBindRequest(Bytes))
+			{
+				continue;
+			}
+			uint8 ReqTx[NsStunTxIdBytes];
+			uint32 FromIp = 0;
+			const int32 FromPort = ReplyFrom->GetPort();
+			if (!NsStunReadTxId(Bytes, ReqTx) || FromPort <= 0
+				|| !NsStunParseIpv4(ReplyFrom->ToString(false), FromIp))
+			{
+				continue;
+			}
+			TArray<uint8> Reply;
+			if (NsStunEncodeXorMappedReply(ReqTx, FromIp, FromPort, Reply))
+			{
+				int32 Sent = 0;
+				Socks[i]->SendTo(Reply.GetData(), Reply.Num(), Sent, *ReplyFrom);
+			}
+			if (!NsStunHasUseCandidate(Bytes))
+			{
+				continue;
+			}
+			for (int32 To = 0; To < 3; ++To)
+			{
+				if (!bNeed[To] || bWon[To])
+				{
+					continue;
+				}
+				for (int32 c = 0; c < PeerCandCount[To]; ++c)
+				{
+					const FNsIceCandidate& Cand = PeerCands[To][c];
+					const bool bHostOk = Cand.Ipv4 == FromIp
+						|| (NsIsLoopbackHost(NsStunIpv4ToString(Cand.Ipv4))
+							&& NsIsLoopbackHost(ReplyFrom->ToString(false)));
+					if (Cand.Port == FromPort && bHostOk
+						&& SetPeer(static_cast<ENsAddr>(To), *NsStunIpv4ToString(FromIp), FromPort))
+					{
+						bWon[To] = true;
+						break;
+					}
+				}
+			}
+		}
+		bool bDone = true;
+		for (int32 To = 0; To < 3; ++To)
+		{
+			if (bNeed[To] && !bWon[To])
+			{
+				bDone = false;
+			}
+		}
+		if (bDone)
+		{
+			return true;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	for (int32 To = 0; To < 3; ++To)
+	{
+		if (bNeed[To] && !bWon[To])
+		{
+			return false;
+		}
+	}
+	return true;
 }
 
 bool FNsUdpNet::RendezvousSendOffer(ENsAddr From, const TCHAR* HubHost, int32 HubPort)

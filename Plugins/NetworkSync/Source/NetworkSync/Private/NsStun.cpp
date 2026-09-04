@@ -21,6 +21,7 @@ constexpr uint16 NsStunAttrXorMapped = 0x0020;
 constexpr uint16 NsStunAttrXorPeer = 0x0012;
 constexpr uint16 NsStunAttrXorRelayed = 0x0016;
 constexpr uint16 NsStunAttrRequestedTransport = 0x0019;
+constexpr uint16 NsStunAttrUseCandidate = 0x0025;
 constexpr uint8 NsStunFamilyIpv4 = 0x01;
 constexpr uint8 NsStunProtoUdp = 17;
 
@@ -107,6 +108,22 @@ bool NsStunEncodeBindRequest(const uint8 TxId[NsStunTxIdBytes], TArray<uint8>& O
 	NsStunW32(Out, NsStunMagic);
 	Out.Append(TxId, NsStunTxIdBytes);
 	return Out.Num() == NsStunHeaderBytes;
+}
+
+bool NsStunEncodeBindNominate(const uint8 TxId[NsStunTxIdBytes], TArray<uint8>& Out)
+{
+	if (!TxId)
+	{
+		return false;
+	}
+	Out.Reset();
+	NsStunW16(Out, NsStunBindRequest);
+	NsStunW16(Out, 4);
+	NsStunW32(Out, NsStunMagic);
+	Out.Append(TxId, NsStunTxIdBytes);
+	NsStunW16(Out, NsStunAttrUseCandidate);
+	NsStunW16(Out, 0);
+	return Out.Num() == NsStunHeaderBytes + 4;
 }
 
 bool NsStunEncodeBindIndication(const uint8 TxId[NsStunTxIdBytes], TArray<uint8>& Out)
@@ -494,6 +511,41 @@ bool NsStunIsBindRequest(const TArray<uint8>& Bytes)
 	return NsStunReadHeader(Bytes, Type, Length, TxId) && Type == NsStunBindRequest;
 }
 
+bool NsStunHasUseCandidate(const TArray<uint8>& Bytes)
+{
+	uint16 Type = 0;
+	uint16 Length = 0;
+	const uint8* TxId = nullptr;
+	if (!NsStunReadHeader(Bytes, Type, Length, TxId) || Type != NsStunBindRequest)
+	{
+		return false;
+	}
+	const uint8* Data = Bytes.GetData();
+	int32 At = NsStunHeaderBytes;
+	const int32 End = NsStunHeaderBytes + static_cast<int32>(Length);
+	while (At + 4 <= End)
+	{
+		uint16 Attr = 0;
+		uint16 AttrLen = 0;
+		if (!NsStunR16(Data, Bytes.Num(), At, Attr) || !NsStunR16(Data, Bytes.Num(), At + 2, AttrLen))
+		{
+			return false;
+		}
+		const int32 Val = At + 4;
+		const int32 Next = Val + ((AttrLen + 3) & ~3);
+		if (Val + AttrLen > End)
+		{
+			return false;
+		}
+		if (Attr == NsStunAttrUseCandidate && AttrLen == 0)
+		{
+			return true;
+		}
+		At = Next;
+	}
+	return false;
+}
+
 bool NsStunIsAllocateRequest(const TArray<uint8>& Bytes)
 {
 	uint16 Type = 0;
@@ -745,5 +797,129 @@ bool NsRendezvousDecode(const TArray<uint8>& Bytes, uint8& OutSlot, uint32& OutI
 		| (static_cast<uint32>(Data[9]) << 8)
 		| (static_cast<uint32>(Data[10]) << 16)
 		| (static_cast<uint32>(Data[11]) << 24);
+	return true;
+}
+
+bool NsIceEncode(uint8 Slot, const TArray<FNsIceCandidate>& Cands, TArray<uint8>& Out)
+{
+	if (Slot > 2 || Cands.Num() < 1 || Cands.Num() > NsIceMaxCandidates)
+	{
+		return false;
+	}
+	for (const FNsIceCandidate& Cand : Cands)
+	{
+		const uint8 Type = static_cast<uint8>(Cand.Type);
+		if (Type > static_cast<uint8>(ENsIceType::Relay) || Cand.Port <= 0 || Cand.Port > 65535)
+		{
+			return false;
+		}
+	}
+	Out.Reset();
+	Out.Add(static_cast<uint8>(NsIceMagic));
+	Out.Add(static_cast<uint8>(NsIceMagic >> 8));
+	Out.Add(static_cast<uint8>(NsIceMagic >> 16));
+	Out.Add(static_cast<uint8>(NsIceMagic >> 24));
+	Out.Add(Slot);
+	Out.Add(static_cast<uint8>(Cands.Num()));
+	for (const FNsIceCandidate& Cand : Cands)
+	{
+		Out.Add(static_cast<uint8>(Cand.Type));
+		const uint16 WirePort = static_cast<uint16>(Cand.Port);
+		Out.Add(static_cast<uint8>(WirePort));
+		Out.Add(static_cast<uint8>(WirePort >> 8));
+		Out.Add(static_cast<uint8>(Cand.Ipv4));
+		Out.Add(static_cast<uint8>(Cand.Ipv4 >> 8));
+		Out.Add(static_cast<uint8>(Cand.Ipv4 >> 16));
+		Out.Add(static_cast<uint8>(Cand.Ipv4 >> 24));
+	}
+	return Out.Num() == NsIceHeaderBytes + NsIceCandBytes * Cands.Num();
+}
+
+bool NsIceDecode(const TArray<uint8>& Bytes, uint8& OutSlot, TArray<FNsIceCandidate>& OutCands)
+{
+	OutSlot = 0;
+	OutCands.Reset();
+	if (Bytes.Num() < NsIceHeaderBytes)
+	{
+		return false;
+	}
+	const uint8* Data = Bytes.GetData();
+	const uint32 Magic = static_cast<uint32>(Data[0])
+		| (static_cast<uint32>(Data[1]) << 8)
+		| (static_cast<uint32>(Data[2]) << 16)
+		| (static_cast<uint32>(Data[3]) << 24);
+	const int32 Count = static_cast<int32>(Data[5]);
+	if (Magic != NsIceMagic || Data[4] > 2 || Count < 1 || Count > NsIceMaxCandidates
+		|| Bytes.Num() != NsIceHeaderBytes + NsIceCandBytes * Count)
+	{
+		return false;
+	}
+	for (int32 i = 0; i < Count; ++i)
+	{
+		const int32 Off = NsIceHeaderBytes + NsIceCandBytes * i;
+		const uint8 Type = Data[Off];
+		const int32 Port = static_cast<int32>(Data[Off + 1] | (static_cast<uint16>(Data[Off + 2]) << 8));
+		if (Type > static_cast<uint8>(ENsIceType::Relay) || Port <= 0)
+		{
+			OutCands.Reset();
+			return false;
+		}
+		FNsIceCandidate Cand;
+		Cand.Type = static_cast<ENsIceType>(Type);
+		Cand.Port = Port;
+		Cand.Ipv4 = static_cast<uint32>(Data[Off + 3])
+			| (static_cast<uint32>(Data[Off + 4]) << 8)
+			| (static_cast<uint32>(Data[Off + 5]) << 16)
+			| (static_cast<uint32>(Data[Off + 6]) << 24);
+		OutCands.Add(Cand);
+	}
+	OutSlot = Data[4];
+	return true;
+}
+
+bool NsIceFormPairs(
+	const TArray<FNsIceCandidate>& Local, const TArray<FNsIceCandidate>& Remote, TArray<FNsIcePair>& Out)
+{
+	Out.Reset();
+	auto Rank = [](ENsIceType Type) -> int32
+	{
+		if (Type == ENsIceType::Host)
+		{
+			return 0;
+		}
+		if (Type == ENsIceType::Srflx)
+		{
+			return 1;
+		}
+		return 9;
+	};
+	for (const FNsIceCandidate& L : Local)
+	{
+		if (L.Type == ENsIceType::Relay || L.Port <= 0)
+		{
+			continue;
+		}
+		for (const FNsIceCandidate& R : Remote)
+		{
+			if (R.Type == ENsIceType::Relay || R.Port <= 0)
+			{
+				continue;
+			}
+			FNsIcePair Pair;
+			Pair.Local = L;
+			Pair.Remote = R;
+			Out.Add(Pair);
+		}
+	}
+	if (Out.IsEmpty())
+	{
+		return false;
+	}
+	Out.Sort([&Rank](const FNsIcePair& A, const FNsIcePair& B)
+	{
+		const int32 Ra = Rank(A.Local.Type) + Rank(A.Remote.Type);
+		const int32 Rb = Rank(B.Local.Type) + Rank(B.Remote.Type);
+		return Ra < Rb;
+	});
 	return true;
 }

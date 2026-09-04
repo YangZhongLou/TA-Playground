@@ -27,6 +27,7 @@ public:
 	int32 PeerPort(ENsAddr Addr) const;
 
 	bool StunSendBind(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes]);
+	bool StunSendNominate(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes]);
 	bool StunSendAllocate(ENsAddr Addr, const TCHAR* Host, int32 Port, uint8 TxId[NsStunTxIdBytes]);
 	bool StunSendPermission(ENsAddr Addr, const TCHAR* TurnHost, int32 TurnPort,
 		const TCHAR* PeerHost, int32 PeerPort, uint8 TxId[NsStunTxIdBytes]);
@@ -48,6 +49,12 @@ public:
 	bool StunBindPeerChannels(const TCHAR* TurnHost, int32 TurnPort);
 	bool EnableTurnRelay(const TCHAR* TurnHost, int32 TurnPort);
 	bool UsesTurnRelay() const;
+	bool GatherIceCandidates(ENsAddr Addr, TArray<FNsIceCandidate>& Out) const;
+	bool IceSendOffer(ENsAddr From, const TCHAR* HubHost, int32 HubPort);
+	bool IceRecvPeer(ENsAddr From);
+	bool IceExchange(const TCHAR* HubHost, int32 HubPort, const TArray<ENsAddr>& RequiredPeers);
+	bool IceCheckPairs();
+	bool IceWaitNominate();
 	bool RendezvousSendOffer(ENsAddr From, const TCHAR* HubHost, int32 HubPort);
 	bool RendezvousRecvPeer(ENsAddr From);
 	bool RendezvousExchange(const TCHAR* HubHost, int32 HubPort, const TArray<ENsAddr>& RequiredPeers);
@@ -67,6 +74,10 @@ private:
 	int32 PeerPorts[3] = {};
 	uint32 MappedIpv4[3] = {};
 	int32 MappedPorts[3] = {};
+	uint32 RelayedIpv4[3] = {};
+	int32 RelayedPorts[3] = {};
+	FNsIceCandidate PeerCands[3][NsIceMaxCandidates] = {};
+	int32 PeerCandCount[3] = {};
 	uint32 TurnIpv4 = 0;
 	int32 TurnServerPort = 0;
 	bool bTurnRelay = false;

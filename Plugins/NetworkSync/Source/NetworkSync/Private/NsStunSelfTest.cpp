@@ -4,6 +4,7 @@
 #include "NsStun.h"
 #include "NsUdpNet.h"
 #include "NsCodec.h"
+#include "Async/Async.h"
 #include "HAL/PlatformProcess.h"
 #include "Misc/ScopeExit.h"
 #include "IPAddress.h"
@@ -204,6 +205,24 @@ FNsSelfTestResult NsRunStunBindSelfTest()
 	if (!NsStunIsBindRequest(Req) || NsStunIsBindRequest(Ind))
 	{
 		return StunFail(TEXT("stun: bind request detect"));
+	}
+	TArray<uint8> Nom;
+	if (!NsStunEncodeBindNominate(TxId, Nom) || Nom.Num() != NsStunHeaderBytes + 4)
+	{
+		return StunFail(TEXT("stun: nominate size"));
+	}
+	if (Nom[0] != 0 || Nom[1] != 1 || Nom[2] != 0 || Nom[3] != 4)
+	{
+		return StunFail(TEXT("stun: nominate type"));
+	}
+	if (Nom[20] != 0 || Nom[21] != 0x25 || Nom[22] != 0 || Nom[23] != 0)
+	{
+		return StunFail(TEXT("stun: use-candidate"));
+	}
+	if (!NsStunIsBindRequest(Nom) || !NsStunHasUseCandidate(Nom) || NsStunHasUseCandidate(Req)
+		|| NsStunHasUseCandidate(Ind))
+	{
+		return StunFail(TEXT("stun: nominate detect"));
 	}
 	uint8 GotTx[NsStunTxIdBytes];
 	if (!NsStunReadTxId(Req, GotTx) || FMemory::Memcmp(GotTx, TxId, NsStunTxIdBytes) != 0)
@@ -1514,4 +1533,621 @@ FNsSelfTestResult NsRunStunRelaySelfTest()
 	}
 
 	return StunOk(TEXT("stun relay"));
+}
+
+FNsSelfTestResult NsRunStunIceSelfTest()
+{
+	TArray<FNsIceCandidate> Cands;
+	FNsIceCandidate HostCand;
+	HostCand.Type = ENsIceType::Host;
+	HostCand.Ipv4 = 0x7F000001u;
+	HostCand.Port = 27000;
+	FNsIceCandidate SrflxCand;
+	SrflxCand.Type = ENsIceType::Srflx;
+	SrflxCand.Ipv4 = 0x0A000001u;
+	SrflxCand.Port = 40000;
+	FNsIceCandidate RelayCand;
+	RelayCand.Type = ENsIceType::Relay;
+	RelayCand.Ipv4 = 0x0A000002u;
+	RelayCand.Port = 50000;
+	Cands.Add(HostCand);
+	Cands.Add(SrflxCand);
+	Cands.Add(RelayCand);
+
+	TArray<uint8> Wire;
+	if (!NsIceEncode(1, Cands, Wire)
+		|| Wire.Num() != NsIceHeaderBytes + NsIceCandBytes * 3
+		|| Wire[0] != 0x43 || Wire[1] != 0x49 || Wire[2] != 0x53 || Wire[3] != 0x4E)
+	{
+		return StunFail(TEXT("stun-ice: encode"));
+	}
+	uint8 Slot = 99;
+	TArray<FNsIceCandidate> Got;
+	if (!NsIceDecode(Wire, Slot, Got) || Slot != 1 || Got.Num() != 3
+		|| Got[0].Type != ENsIceType::Host || Got[0].Port != 27000 || Got[0].Ipv4 != HostCand.Ipv4
+		|| Got[1].Type != ENsIceType::Srflx || Got[1].Port != 40000 || Got[1].Ipv4 != SrflxCand.Ipv4
+		|| Got[2].Type != ENsIceType::Relay || Got[2].Port != 50000 || Got[2].Ipv4 != RelayCand.Ipv4)
+	{
+		return StunFail(TEXT("stun-ice: decode"));
+	}
+
+	TArray<FNsIceCandidate> Empty;
+	TArray<uint8> Bad;
+	FNsIceCandidate BadType = HostCand;
+	BadType.Type = static_cast<ENsIceType>(3);
+	TArray<FNsIceCandidate> BadCands;
+	BadCands.Add(BadType);
+	FNsIceCandidate ZeroPort = HostCand;
+	ZeroPort.Port = 0;
+	TArray<FNsIceCandidate> ZeroCands;
+	ZeroCands.Add(ZeroPort);
+	if (NsIceEncode(3, Cands, Bad) || NsIceEncode(0, Empty, Bad) || NsIceEncode(0, BadCands, Bad)
+		|| NsIceEncode(0, ZeroCands, Bad))
+	{
+		return StunFail(TEXT("stun-ice: bad encode accepted"));
+	}
+	TArray<uint8> Trunc = Wire;
+	Trunc.SetNum(Wire.Num() - 1);
+	TArray<uint8> Extra = Wire;
+	Extra.Add(0);
+	TArray<uint8> Offer;
+	uint8 OfferSlot = 0;
+	uint32 OfferIp = 0;
+	int32 OfferPort = 0;
+	if (!NsRendezvousEncode(1, HostCand.Ipv4, HostCand.Port, Offer)
+		|| NsIceDecode(Trunc, Slot, Got) || NsIceDecode(Extra, Slot, Got)
+		|| NsIceDecode(Offer, Slot, Got) || NsRendezvousDecode(Wire, OfferSlot, OfferIp, OfferPort))
+	{
+		return StunFail(TEXT("stun-ice: cross decode"));
+	}
+
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return StunFail(TEXT("stun-ice: no sockets"));
+	}
+	FNsUdpNet Net;
+	if (!Net.Bind(ENsAddr::C0, 0, false) || !Net.GatherIceCandidates(ENsAddr::C0, Got)
+		|| Got.Num() != 1 || Got[0].Type != ENsIceType::Host
+		|| Got[0].Port != Net.BoundPort(ENsAddr::C0) || Got[0].Ipv4 != 0x7F000001u)
+	{
+		return StunFail(TEXT("stun-ice: host candidate"));
+	}
+
+	auto ServeXor = [SS](FNsUdpNet& IceNet, bool bRelayed, uint32 Ipv4, int32 Port, const TCHAR* Fail) -> FNsSelfTestResult
+	{
+		FSocket* Fake = SS->CreateSocket(NAME_DGram, TEXT("NsIceFake"), FName(FNetworkProtocolTypes::IPv4));
+		if (!Fake)
+		{
+			return StunFail(Fail);
+		}
+		Fake->SetNonBlocking(true);
+		TSharedRef<FInternetAddr> BindAddr = SS->CreateInternetAddr();
+		BindAddr->SetLoopbackAddress();
+		BindAddr->SetPort(0);
+		if (!Fake->Bind(*BindAddr))
+		{
+			StunDestroy(Fake);
+			return StunFail(Fail);
+		}
+		TSharedRef<FInternetAddr> Bound = SS->CreateInternetAddr();
+		Fake->GetAddress(*Bound);
+		const int32 FakePort = Bound->GetPort();
+		uint8 TxId[NsStunTxIdBytes];
+		NsStunFillTxId(TxId);
+		const bool bSent = bRelayed
+			? IceNet.StunSendAllocate(ENsAddr::C0, TEXT("127.0.0.1"), FakePort, TxId)
+			: IceNet.StunSendBind(ENsAddr::C0, TEXT("127.0.0.1"), FakePort, TxId);
+		if (FakePort <= 0 || !bSent)
+		{
+			StunDestroy(Fake);
+			return StunFail(Fail);
+		}
+		uint8 Buf[512];
+		int32 Read = 0;
+		TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+		bool bGotReq = false;
+		for (int32 Try = 0; Try < 50 && !bGotReq; ++Try)
+		{
+			Read = 0;
+			bGotReq = Fake->RecvFrom(Buf, 512, Read, *From) && Read >= NsStunHeaderBytes;
+			if (!bGotReq)
+			{
+				FPlatformProcess::Sleep(0.001f);
+			}
+		}
+		TArray<uint8> Reply;
+		const bool bEncoded = bRelayed
+			? NsStunEncodeXorRelayedReply(TxId, Ipv4, Port, Reply)
+			: NsStunEncodeXorMappedReply(TxId, Ipv4, Port, Reply);
+		int32 Sent = 0;
+		if (!bGotReq || !bEncoded || !Fake->SendTo(Reply.GetData(), Reply.Num(), Sent, *From)
+			|| Sent != Reply.Num())
+		{
+			StunDestroy(Fake);
+			return StunFail(Fail);
+		}
+		FString Host;
+		int32 GotPort = 0;
+		bool bGot = false;
+		for (int32 Try = 0; Try < 50 && !bGot; ++Try)
+		{
+			bGot = bRelayed
+				? IceNet.StunRecvRelayed(ENsAddr::C0, TxId, Host, GotPort)
+				: IceNet.StunRecvMapped(ENsAddr::C0, TxId, Host, GotPort);
+			if (!bGot)
+			{
+				FPlatformProcess::Sleep(0.001f);
+			}
+		}
+		StunDestroy(Fake);
+		if (!bGot || GotPort != Port)
+		{
+			return StunFail(Fail);
+		}
+		return StunOk(TEXT("ok"));
+	};
+
+	FNsSelfTestResult Mapped = ServeXor(Net, false, SrflxCand.Ipv4, SrflxCand.Port, TEXT("stun-ice: mapped"));
+	if (!Mapped.bOk)
+	{
+		return Mapped;
+	}
+	if (!Net.GatherIceCandidates(ENsAddr::C0, Got) || Got.Num() != 2
+		|| Got[0].Type != ENsIceType::Host || Got[1].Type != ENsIceType::Srflx
+		|| Got[1].Ipv4 != SrflxCand.Ipv4 || Got[1].Port != SrflxCand.Port)
+	{
+		return StunFail(TEXT("stun-ice: srflx candidate"));
+	}
+
+	FNsSelfTestResult Relayed = ServeXor(Net, true, RelayCand.Ipv4, RelayCand.Port, TEXT("stun-ice: relayed"));
+	if (!Relayed.bOk)
+	{
+		return Relayed;
+	}
+	if (!Net.GatherIceCandidates(ENsAddr::C0, Got) || Got.Num() != 3
+		|| Got[0].Type != ENsIceType::Host || Got[1].Type != ENsIceType::Srflx
+		|| Got[2].Type != ENsIceType::Relay || Got[2].Ipv4 != RelayCand.Ipv4 || Got[2].Port != RelayCand.Port)
+	{
+		return StunFail(TEXT("stun-ice: relay candidate"));
+	}
+	if (!NsIceEncode(static_cast<uint8>(ENsAddr::C0), Got, Wire) || !NsIceDecode(Wire, Slot, Cands)
+		|| Slot != static_cast<uint8>(ENsAddr::C0) || Cands.Num() != 3)
+	{
+		return StunFail(TEXT("stun-ice: gathered wire"));
+	}
+
+	return StunOk(TEXT("stun ice"));
+}
+
+FNsSelfTestResult NsRunStunIceExchangeSelfTest()
+{
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return StunFail(TEXT("stun-ice-xchg: no sockets"));
+	}
+
+	FNsUdpNet Owned;
+	if (!Owned.Bind(ENsAddr::C1, 0, false)
+		|| Owned.IceExchange(TEXT("127.0.0.1"), 9, TArray<ENsAddr>{ENsAddr::C1})
+		|| Owned.IceExchange(TEXT("127.0.0.1"), 9, TArray<ENsAddr>{}))
+	{
+		return StunFail(TEXT("stun-ice-xchg: required peers"));
+	}
+
+	FSocket* Hub = SS->CreateSocket(NAME_DGram, TEXT("NsIceHub"), FName(FNetworkProtocolTypes::IPv4));
+	if (!Hub)
+	{
+		return StunFail(TEXT("stun-ice-xchg: hub create"));
+	}
+	Hub->SetNonBlocking(true);
+	TSharedRef<FInternetAddr> BindAddr = SS->CreateInternetAddr();
+	BindAddr->SetLoopbackAddress();
+	BindAddr->SetPort(0);
+	if (!Hub->Bind(*BindAddr))
+	{
+		StunDestroy(Hub);
+		return StunFail(TEXT("stun-ice-xchg: hub bind"));
+	}
+	TSharedRef<FInternetAddr> Bound = SS->CreateInternetAddr();
+	Hub->GetAddress(*Bound);
+	const int32 HubPort = Bound->GetPort();
+	if (HubPort <= 0)
+	{
+		StunDestroy(Hub);
+		return StunFail(TEXT("stun-ice-xchg: hub port"));
+	}
+
+	FNsUdpNet Sv;
+	FNsUdpNet C0;
+	if (!Sv.Bind(ENsAddr::Sv, 0, false) || !C0.Bind(ENsAddr::C0, 0, false))
+	{
+		StunDestroy(Hub);
+		return StunFail(TEXT("stun-ice-xchg: bind"));
+	}
+
+	TArray<uint8> Nsrv;
+	if (!NsRendezvousEncode(static_cast<uint8>(ENsAddr::Sv), 0x7F000001u, Sv.BoundPort(ENsAddr::Sv), Nsrv))
+	{
+		StunDestroy(Hub);
+		return StunFail(TEXT("stun-ice-xchg: nsrv"));
+	}
+	TSharedRef<FInternetAddr> C0Addr = SS->CreateInternetAddr();
+	C0Addr->SetLoopbackAddress();
+	C0Addr->SetPort(C0.BoundPort(ENsAddr::C0));
+	int32 Sent = 0;
+	if (!Hub->SendTo(Nsrv.GetData(), Nsrv.Num(), Sent, *C0Addr) || Sent != Nsrv.Num()
+		|| C0.IceRecvPeer(ENsAddr::C0) || C0.PeerPort(ENsAddr::Sv) > 0)
+	{
+		StunDestroy(Hub);
+		return StunFail(TEXT("stun-ice-xchg: nsrv rejected"));
+	}
+
+	TArray<FNsIceCandidate> HubCands[3];
+	bool HubHave[3] = {};
+	bool bSvPeer = false;
+	bool bC0Peer = false;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Sv.IceSendOffer(ENsAddr::Sv, TEXT("127.0.0.1"), HubPort);
+		C0.IceSendOffer(ENsAddr::C0, TEXT("127.0.0.1"), HubPort);
+		uint8 Buf[64];
+		TSharedRef<FInternetAddr> From = SS->CreateInternetAddr();
+		int32 Read = 0;
+		while (Hub->RecvFrom(Buf, 64, Read, *From) && Read > 0)
+		{
+			TArray<uint8> Bytes;
+			Bytes.Append(Buf, Read);
+			uint8 Slot = 0;
+			TArray<FNsIceCandidate> Cands;
+			if (!NsIceDecode(Bytes, Slot, Cands) || Slot > 2)
+			{
+				continue;
+			}
+			HubCands[Slot] = MoveTemp(Cands);
+			HubHave[Slot] = true;
+			for (int32 Other = 0; Other < 3; ++Other)
+			{
+				if (Other == static_cast<int32>(Slot) || !HubHave[Other])
+				{
+					continue;
+				}
+				TArray<uint8> Reply;
+				if (!NsIceEncode(static_cast<uint8>(Other), HubCands[Other], Reply))
+				{
+					continue;
+				}
+				Hub->SendTo(Reply.GetData(), Reply.Num(), Sent, *From);
+			}
+		}
+		bSvPeer = bSvPeer || Sv.IceRecvPeer(ENsAddr::Sv);
+		bC0Peer = bC0Peer || C0.IceRecvPeer(ENsAddr::C0);
+		if (bSvPeer && bC0Peer)
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	StunDestroy(Hub);
+	if (!bSvPeer || !bC0Peer)
+	{
+		return StunFail(TEXT("stun-ice-xchg: no peer"));
+	}
+	if (Sv.PeerPort(ENsAddr::C0) != C0.BoundPort(ENsAddr::C0)
+		|| C0.PeerPort(ENsAddr::Sv) != Sv.BoundPort(ENsAddr::Sv))
+	{
+		return StunFail(TEXT("stun-ice-xchg: host candidate"));
+	}
+
+	if (!Sv.PunchPeers() || !C0.PunchPeers())
+	{
+		return StunFail(TEXT("stun-ice-xchg: punch"));
+	}
+	TArray<FNsPacket> Flush;
+	Sv.Drain(ENsAddr::Sv, Flush);
+	C0.Drain(ENsAddr::C0, Flush);
+
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SInput;
+	Pkt.PlayerId = 0;
+	Pkt.Dx = 1;
+	C0.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
+	TArray<FNsPacket> Got;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Sv.Drain(ENsAddr::Sv, Got);
+		if (Got.Num() > 0)
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (Got.Num() != 1 || Got[0].Dx != 1 || Got[0].Src != ENsAddr::C0)
+	{
+		return StunFail(TEXT("stun-ice-xchg: tans"));
+	}
+
+	return StunOk(TEXT("stun ice exchange"));
+}
+
+FNsSelfTestResult NsRunStunIcePairsSelfTest()
+{
+	TArray<FNsIceCandidate> Local;
+	TArray<FNsIceCandidate> Remote;
+	FNsIceCandidate Host;
+	Host.Type = ENsIceType::Host;
+	Host.Ipv4 = 0x7F000001u;
+	Host.Port = 27000;
+	FNsIceCandidate Srflx;
+	Srflx.Type = ENsIceType::Srflx;
+	Srflx.Ipv4 = 0x0A000001u;
+	Srflx.Port = 40000;
+	FNsIceCandidate PeerHost = Host;
+	PeerHost.Port = 1;
+	FNsIceCandidate PeerSrflx;
+	PeerSrflx.Type = ENsIceType::Srflx;
+	PeerSrflx.Ipv4 = 0x7F000001u;
+	PeerSrflx.Port = 27001;
+	FNsIceCandidate Relay;
+	Relay.Type = ENsIceType::Relay;
+	Relay.Ipv4 = 0x0A000002u;
+	Relay.Port = 50000;
+	Local.Add(Host);
+	Local.Add(Srflx);
+	Remote.Add(PeerHost);
+	Remote.Add(PeerSrflx);
+	Remote.Add(Relay);
+	TArray<FNsIcePair> Pairs;
+	if (!NsIceFormPairs(Local, Remote, Pairs) || Pairs.Num() != 4
+		|| Pairs[0].Local.Type != ENsIceType::Host || Pairs[0].Remote.Type != ENsIceType::Host
+		|| Pairs[0].Remote.Port != 1)
+	{
+		return StunFail(TEXT("stun-ice-pairs: host-host first"));
+	}
+	for (const FNsIcePair& Pair : Pairs)
+	{
+		if (Pair.Local.Type == ENsIceType::Relay || Pair.Remote.Type == ENsIceType::Relay)
+		{
+			return StunFail(TEXT("stun-ice-pairs: relay excluded"));
+		}
+	}
+	TArray<FNsIceCandidate> Empty;
+	TArray<FNsIcePair> None;
+	if (NsIceFormPairs(Local, Empty, None) || NsIceFormPairs(Empty, Remote, None))
+	{
+		return StunFail(TEXT("stun-ice-pairs: empty"));
+	}
+
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return StunFail(TEXT("stun-ice-pairs: no sockets"));
+	}
+	FNsUdpNet Sv;
+	FNsUdpNet C0;
+	FNsUdpNet Dead;
+	if (!Sv.Bind(ENsAddr::Sv, 0, false) || !C0.Bind(ENsAddr::C0, 0, false)
+		|| !Dead.Bind(ENsAddr::C1, 0, false)
+		|| !Sv.SetPeer(ENsAddr::C0, TEXT("127.0.0.1"), C0.BoundPort(ENsAddr::C0)))
+	{
+		return StunFail(TEXT("stun-ice-pairs: bind"));
+	}
+
+	TArray<FNsIceCandidate> Offer;
+	FNsIceCandidate Bogus;
+	Bogus.Type = ENsIceType::Host;
+	Bogus.Ipv4 = 0x7F000001u;
+	Bogus.Port = Dead.BoundPort(ENsAddr::C1);
+	FNsIceCandidate Real;
+	Real.Type = ENsIceType::Srflx;
+	Real.Ipv4 = 0x7F000001u;
+	Real.Port = Sv.BoundPort(ENsAddr::Sv);
+	Offer.Add(Bogus);
+	Offer.Add(Real);
+	TArray<uint8> Wire;
+	if (!NsIceEncode(static_cast<uint8>(ENsAddr::Sv), Offer, Wire))
+	{
+		return StunFail(TEXT("stun-ice-pairs: encode"));
+	}
+	FSocket* Inj = SS->CreateSocket(NAME_DGram, TEXT("NsIcePairInj"), FName(FNetworkProtocolTypes::IPv4));
+	if (!Inj)
+	{
+		return StunFail(TEXT("stun-ice-pairs: inject"));
+	}
+	ON_SCOPE_EXIT { StunDestroy(Inj); };
+	Inj->SetNonBlocking(true);
+	TSharedRef<FInternetAddr> BindAddr = SS->CreateInternetAddr();
+	BindAddr->SetLoopbackAddress();
+	BindAddr->SetPort(0);
+	if (!Inj->Bind(*BindAddr))
+	{
+		return StunFail(TEXT("stun-ice-pairs: inj bind"));
+	}
+	TSharedRef<FInternetAddr> Dest = SS->CreateInternetAddr();
+	Dest->SetLoopbackAddress();
+	Dest->SetPort(C0.BoundPort(ENsAddr::C0));
+	int32 Sent = 0;
+	if (!Inj->SendTo(Wire.GetData(), Wire.Num(), Sent, *Dest) || Sent != Wire.Num()
+		|| !C0.IceRecvPeer(ENsAddr::C0) || C0.PeerPort(ENsAddr::Sv) != Bogus.Port)
+	{
+		return StunFail(TEXT("stun-ice-pairs: bogus host"));
+	}
+
+	auto Checker = Async(EAsyncExecution::Thread, [&C0]()
+	{
+		return C0.IceCheckPairs();
+	});
+	for (int32 Try = 0; Try < 80; ++Try)
+	{
+		FString MappedHost;
+		int32 MappedPort = 0;
+		Sv.StunServe(ENsAddr::Sv, nullptr, MappedHost, MappedPort);
+		if (Checker.IsReady())
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (!Checker.Get() || C0.PeerPort(ENsAddr::Sv) != Sv.BoundPort(ENsAddr::Sv))
+	{
+		return StunFail(TEXT("stun-ice-pairs: nominate srflx"));
+	}
+
+	TArray<FNsPacket> Flush;
+	Sv.Drain(ENsAddr::Sv, Flush);
+	C0.Drain(ENsAddr::C0, Flush);
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SInput;
+	Pkt.PlayerId = 0;
+	Pkt.Dx = 1;
+	C0.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
+	TArray<FNsPacket> Got;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Sv.Drain(ENsAddr::Sv, Got);
+		if (Got.Num() > 0)
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (Got.Num() != 1 || Got[0].Dx != 1 || Got[0].Src != ENsAddr::C0)
+	{
+		return StunFail(TEXT("stun-ice-pairs: tans"));
+	}
+
+	return StunOk(TEXT("stun ice pairs"));
+}
+
+FNsSelfTestResult NsRunStunIceNominateSelfTest()
+{
+	FNsUdpNet Empty;
+	if (!Empty.Bind(ENsAddr::C0, 0, false) || Empty.IceWaitNominate())
+	{
+		return StunFail(TEXT("stun-ice-nom: empty"));
+	}
+
+	ISocketSubsystem* SS = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM);
+	if (!SS)
+	{
+		return StunFail(TEXT("stun-ice-nom: no sockets"));
+	}
+	FNsUdpNet Sv;
+	FNsUdpNet C0;
+	FNsUdpNet DeadSv;
+	FNsUdpNet DeadC0;
+	if (!Sv.Bind(ENsAddr::Sv, 0, false) || !C0.Bind(ENsAddr::C0, 0, false)
+		|| !DeadSv.Bind(ENsAddr::C1, 0, false) || !DeadC0.Bind(ENsAddr::C1, 0, false))
+	{
+		return StunFail(TEXT("stun-ice-nom: bind"));
+	}
+
+	FSocket* Inj = SS->CreateSocket(NAME_DGram, TEXT("NsIceNomInj"), FName(FNetworkProtocolTypes::IPv4));
+	if (!Inj)
+	{
+		return StunFail(TEXT("stun-ice-nom: inject"));
+	}
+	ON_SCOPE_EXIT { StunDestroy(Inj); };
+	Inj->SetNonBlocking(true);
+	TSharedRef<FInternetAddr> BindAddr = SS->CreateInternetAddr();
+	BindAddr->SetLoopbackAddress();
+	BindAddr->SetPort(0);
+	if (!Inj->Bind(*BindAddr))
+	{
+		return StunFail(TEXT("stun-ice-nom: inj bind"));
+	}
+	TSharedRef<FInternetAddr> Dest = SS->CreateInternetAddr();
+	Dest->SetLoopbackAddress();
+	auto Inject = [&](FNsUdpNet& Net, ENsAddr Recv, ENsAddr OfferSlot,
+		const TArray<FNsIceCandidate>& Cands, int32 ExpectPort) -> bool
+	{
+		TArray<uint8> Wire;
+		if (!NsIceEncode(static_cast<uint8>(OfferSlot), Cands, Wire))
+		{
+			return false;
+		}
+		Dest->SetPort(Net.BoundPort(Recv));
+		int32 Sent = 0;
+		return Inj->SendTo(Wire.GetData(), Wire.Num(), Sent, *Dest) && Sent == Wire.Num()
+			&& Net.IceRecvPeer(Recv) && Net.PeerPort(OfferSlot) == ExpectPort;
+	};
+
+	TArray<FNsIceCandidate> ForC0;
+	FNsIceCandidate BogusSv;
+	BogusSv.Type = ENsIceType::Host;
+	BogusSv.Ipv4 = 0x7F000001u;
+	BogusSv.Port = DeadSv.BoundPort(ENsAddr::C1);
+	FNsIceCandidate RealSv;
+	RealSv.Type = ENsIceType::Srflx;
+	RealSv.Ipv4 = 0x7F000001u;
+	RealSv.Port = Sv.BoundPort(ENsAddr::Sv);
+	ForC0.Add(BogusSv);
+	ForC0.Add(RealSv);
+	TArray<FNsIceCandidate> ForSv;
+	FNsIceCandidate BogusC0;
+	BogusC0.Type = ENsIceType::Host;
+	BogusC0.Ipv4 = 0x7F000001u;
+	BogusC0.Port = DeadC0.BoundPort(ENsAddr::C1);
+	FNsIceCandidate RealC0;
+	RealC0.Type = ENsIceType::Srflx;
+	RealC0.Ipv4 = 0x7F000001u;
+	RealC0.Port = C0.BoundPort(ENsAddr::C0);
+	ForSv.Add(BogusC0);
+	ForSv.Add(RealC0);
+	if (!Inject(C0, ENsAddr::C0, ENsAddr::Sv, ForC0, BogusSv.Port)
+		|| !Inject(Sv, ENsAddr::Sv, ENsAddr::C0, ForSv, BogusC0.Port))
+	{
+		return StunFail(TEXT("stun-ice-nom: bogus host"));
+	}
+
+	auto Checker = Async(EAsyncExecution::Thread, [&C0]()
+	{
+		return C0.IceCheckPairs();
+	});
+	const bool bNom = Sv.IceWaitNominate();
+	if (!Checker.Get() || !bNom
+		|| C0.PeerPort(ENsAddr::Sv) != Sv.BoundPort(ENsAddr::Sv)
+		|| Sv.PeerPort(ENsAddr::C0) != C0.BoundPort(ENsAddr::C0))
+	{
+		return StunFail(TEXT("stun-ice-nom: use-candidate"));
+	}
+
+	TArray<FNsPacket> Flush;
+	Sv.Drain(ENsAddr::Sv, Flush);
+	C0.Drain(ENsAddr::C0, Flush);
+	FNsPacket Pkt;
+	Pkt.Type = ENsMsg::C2SInput;
+	Pkt.PlayerId = 0;
+	Pkt.Dx = 1;
+	C0.Send(ENsAddr::C0, ENsAddr::Sv, Pkt);
+	TArray<FNsPacket> GotSv;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		Sv.Drain(ENsAddr::Sv, GotSv);
+		if (GotSv.Num() > 0)
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	Pkt.Dx = -1;
+	Sv.Send(ENsAddr::Sv, ENsAddr::C0, Pkt);
+	TArray<FNsPacket> GotC0;
+	for (int32 Try = 0; Try < 50; ++Try)
+	{
+		C0.Drain(ENsAddr::C0, GotC0);
+		if (GotC0.Num() > 0)
+		{
+			break;
+		}
+		FPlatformProcess::Sleep(0.001f);
+	}
+	if (GotSv.Num() != 1 || GotSv[0].Dx != 1 || GotSv[0].Src != ENsAddr::C0
+		|| GotC0.Num() != 1 || GotC0[0].Dx != -1 || GotC0[0].Src != ENsAddr::Sv)
+	{
+		return StunFail(TEXT("stun-ice-nom: tans"));
+	}
+
+	return StunOk(TEXT("stun ice nominate"));
 }

@@ -11,16 +11,16 @@
 ## STUN Binding（RFC 5389）
 
 STUN 不是 `FNsPacket`。字节大端，magic `0x2112A442`，与 TANS 小端 `0x54414E53` 分开。
-`Drain` 解不出 TANS 就丢（TURN 中继打开时先拆 ChannelData），所以 Binding / 打洞 / 会合 / 连通检查 / TURN Allocate / CreatePermission / ChannelBind
+`Drain` 解不出 TANS 就丢（TURN 中继打开时先拆 ChannelData），所以 Binding / 打洞 / 会合 / 连通检查 / TURN Allocate / CreatePermission / ChannelBind / ICE 候选
 走 `StunSendBind` / `StunRecvMapped` / `StunSendIndication` / `StunServe` / `RendezvousSendOffer` / `StunSendAllocate` /
-`StunRecvRelayed` / `StunSendPermission` / `StunRecvPermission` / `StunSendChannelBind` / `StunSendChannelData`，不要塞进 `ENsMsg`。
+`StunRecvRelayed` / `StunSendPermission` / `StunRecvPermission` / `StunSendChannelBind` / `StunSendChannelData` / `IceSendOffer` / `StunSendNominate`，不要塞进 `ENsMsg`。
 
 Binding 问 STUN 服务器“我的映射 IPv4:port 是什么”。Host/Client 在 Binding 之后，对已填的 peer 发 Binding Indication（`0x0011`，无响应）开 NAT，
 再发 Binding Request；对端当 STUN 代理回 XOR-MAPPED Success，确认这条路径通。
-LocalMesh 跳过。不是完整 ICE（无 candidate 清单、无 controlling、无 SDP）。
+LocalMesh 跳过。可列出并配对 host / srflx 候选；Host 发带 USE-CANDIDATE 的检查，Client 收到后再 `SetPeer`。无 SDP。
 `UdpStunHost` 为空则跳过 Binding（自动化保持空）。失败只打警告，不拆 socket。
 填了 `UdpTurnHost` 时，对每个已绑 socket 打一次 TURN Allocate（`0x0003` + REQUESTED-TRANSPORT UDP），
-成功则打日志，不改 `Mapped*` / `UdpRemoteHost`。
+成功则记下 Relayed* 并打日志，不改 `Mapped*` / `UdpRemoteHost`。
 填好 peer 后再对每个对端 IP 打 CreatePermission（`0x0008` + XOR-PEER-ADDRESS），
 再 ChannelBind（`0x0009`，channel `0x4000+slot`）。
 每个请求有独立 txid，按 socket 和 txid 匹配全部响应；乱序、重复响应不能提前完成其他请求。
@@ -31,12 +31,22 @@ TURN 向 peer 转发时，从分配的 relay 地址发出裸 TANS；peer 回包�
 
 无 MESSAGE-INTEGRITY。`UdpTurnHost` 为空则跳过（自动化保持空）。失败只打警告。
 
-填了 `UdpRendezvousHost` 时，两端把映射地址（无 STUN 则用 `127.0.0.1` + 本机端口）交给已知助手，
-用小端 magic `0x4E535256`（`NSRV`）换到对端 IPv4:port，再 `SetPeer` 后打洞。
+填了 `UdpRendezvousHost` 时，两端先用 `IceExchange` 换 `NSIC` 候选清单，`SetPeer` 取对端 host 候选（无 host 则取清单第一条），
+再 `IceCheckPairs`（Host，检查带 USE-CANDIDATE）或 `IceWaitNominate`（Client，收到提名才改 `SetPeer`）。
+助手若只懂 12 字节 `NSRV`，再回落到 `RendezvousExchange`。
 助手不是 TANS，`Drain` 会丢。助手为空则仍人手填 `UdpRemoteHost`。自动化保持空。
 
 `RendezvousExchange` 要求调用方传入 `RequiredPeers`，收齐才返回成功；超时未收齐则由 Manager 回落到手动地址。
 Host 要求 C1，Rollback Client 要求 C0，其他 Client 要求 Sv 和 C0；先收到 C0 不能跳过服务器地址。
+
+ICE 候选不是 SDP。小端 magic `0x4E534943`（`NSIC`），6 字节头（slot + count）加每条 7 字节 `(type, port, ipv4)`。
+type：0 host、1 srflx、2 relay。每 socket 最多 3 条，地址端口重复则去重。
+`GatherIceCandidates` 从本机端口、STUN 映射、TURN 中继拼清单。
+`IceSendOffer` / `IceRecvPeer` / `IceExchange` 经会合助手交换清单；`IceRecvPeer` 拒收 `NSRV`。
+`NsIceFormPairs` 把本端 host/srflx 与对端 host/srflx 排成对（host-host 优先，不含 relay）。
+`IceCheckPairs` 按序对每对发带 USE-CANDIDATE 的 Binding（Host 控制方）；先通的地址 `SetPeer`。
+`IceWaitNominate` 只在收到 USE-CANDIDATE 时 `SetPeer`（Client）。无 SDP / regular nomination。
+无远程 ICE 清单时仍走 `StunCheckPeers`。relay 对仍靠 TURN ChannelData。
 
 | 项 | 值 |
 | --- | --- |
@@ -56,9 +66,12 @@ Host 要求 C1，Rollback Client 要求 C0，其他 Client 要求 Sv 和 C0；�
 | XOR-RELAYED-ADDRESS | `0x0016` |
 | REQUESTED-TRANSPORT | `0x0019`（UDP=17） |
 | 会合 | `NsRendezvousEncode`，12 字节，slot + port + ipv4 |
+| ICE 候选 | `NsIceEncode`，`NSIC` + slot + count + 每条 type/port/ipv4 |
+| ICE 配对 | `NsIceFormPairs`，host/srflx 笛卡尔积，host-host 优先 |
+| USE-CANDIDATE | `0x0025`（length 0），Host `IceCheckPairs` 带上；Client `IceWaitNominate` 认 |
 | 编解码 | `NsStun.h` |
 
-自动化：`NetworkSync.Stun.Bind`（编解码，含 Indication / 会合 / Request / Allocate / CreatePermission / ChannelBind / ChannelData）、
+自动化：`NetworkSync.Stun.Bind`（编解码，含 Indication / 会合 / Request / Allocate / CreatePermission / ChannelBind / ChannelData / USE-CANDIDATE）、
 `NetworkSync.Stun.Loopback`（进程内假 STUN + `FNsUdpNet` C0）、
 `NetworkSync.Stun.Punch`（两 socket Indication 后 TANS 仍通）、
 `NetworkSync.Stun.Rendezvous`（假助手换地址后打洞再 TANS）、
@@ -66,13 +79,21 @@ Host 要求 C1，Rollback Client 要求 C0，其他 Client 要求 Sv 和 C0；�
 `NetworkSync.Stun.Turn`（进程内假 TURN Allocate）、
 `NetworkSync.Stun.Permit`（进程内假 TURN CreatePermission）、
 `NetworkSync.Stun.Channel`（假 TURN ChannelBind 后转发 ChannelData 里的 TANS）、
-`NetworkSync.Stun.Relay`（假 TURN 上 `Send` / `Drain` 走 ChannelData）。不打公网 STUN / TURN。
+`NetworkSync.Stun.Relay`（假 TURN 上 `Send` / `Drain` 走 ChannelData）、
+`NetworkSync.Stun.Ice`（候选清单编解码与 host/srflx/relay gather）、
+`NetworkSync.Stun.IceExchange`（假助手换 `NSIC` 后打洞再 TANS）、
+`NetworkSync.Stun.IcePairs`（host-host 优先配对，host 不通则改 srflx）、
+`NetworkSync.Stun.IceNominate`（Client 只在 USE-CANDIDATE 后改 `SetPeer`）。不打公网 STUN / TURN。
 
 回归：`NetworkSync.Stun.RendezvousOrder` 覆盖乱序、缺地址和 Host / Rollback 必需 peer；
 `.ChannelPeers` / `.PermitPeers` 覆盖多请求、跨 socket、乱序、重复和缺失响应；
 `.ChannelMtu` 覆盖 508 / 509 / 1200 字节及超限拒绝。
 `.Channel` 用独立 relay socket 验证近 MTU 的裸 TANS 转发和回程 ChannelData 封装。
 `.Relay` 验证直连失败后 `Send` 封装、对端 `Drain` 裸 TANS、回程 `Drain` 拆 ChannelData。
+`.Ice` 验证 `NSIC` 往返、拒收会合包，以及 Binding / Allocate 之后 gather 出 host / srflx / relay。
+`.IceExchange` 验证助手转发清单后 `SetPeer` 用 host 候选，并拒收 `NSRV`。
+`.IcePairs` 验证假 host 候选不通时改用 srflx，再 TANS。
+`.IceNominate` 验证两端假 host 不通时，控制方提名 srflx，受控方按 USE-CANDIDATE `SetPeer`，再双向 TANS。
 
 ## 包头（所有类型共用）
 
